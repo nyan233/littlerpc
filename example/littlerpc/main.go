@@ -2,8 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/nyan233/littlerpc/client"
-	"github.com/nyan233/littlerpc/server"
+	"github.com/nyan233/littlerpc"
 	"github.com/zbh255/bilog"
 	"os"
 	"sync/atomic"
@@ -18,11 +17,11 @@ type Hello struct {
 func (h *Hello) Hello(str string) error {
 	atomic.AddInt64(&h.count, 1)
 	fmt.Println(str)
-	return server.Nil
+	return littlerpc.Nil
 }
 
 func Server() {
-	s := server.NewServer(logger)
+	s := littlerpc.NewServer(logger)
 	err := s.Elem(new(Hello))
 	if err != nil {
 		panic(err)
@@ -34,7 +33,7 @@ func Server() {
 }
 
 func Client() {
-	c := client.NewClient(logger)
+	c := littlerpc.NewClient(logger)
 	err := c.Dial(":1234")
 	if err != nil {
 		panic(err)

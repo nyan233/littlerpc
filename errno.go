@@ -1,4 +1,4 @@
-package server
+package littlerpc
 
 import (
 	"github.com/nyan233/littlerpc/coder"

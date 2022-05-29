@@ -1,11 +1,10 @@
-package client
+package littlerpc
 
 import (
 	"encoding/json"
 	"github.com/nyan233/littlerpc/coder"
 	"github.com/zbh255/bilog"
 	"net"
-	"reflect"
 )
 
 type Client struct {
@@ -32,7 +31,7 @@ func (c *Client) Dial(addr string) error {
 
 func (c *Client) Call(methodName string,args interface{}) error {
 	req := &coder.CallerMd{
-		ArgType:    checkType(args),
+		ArgType:    checkIType(args),
 		MethodName: methodName,
 	}
 	anyArgs := coder.AnyArgs{Any: args}
@@ -67,28 +66,5 @@ func (c *Client) Call(methodName string,args interface{}) error {
 		panic(err)
 	}
 	return errNo
-}
-
-func checkType(i interface{}) coder.Type {
-	switch i.(type) {
-	case int,int8,int16,int32,int64:
-		return coder.Integer
-	case uint,uint8,uint16,uint32,uint64:
-		return coder.UInteger
-	case string:
-		return coder.String
-	case float32,float64:
-		return coder.Double
-	}
-	switch reflect.TypeOf(i).Kind() {
-	case reflect.Slice,reflect.Array:
-		return coder.Array
-	case reflect.Map:
-		return coder.Map
-	case reflect.Struct:
-		return coder.Struct
-	default:
-		panic("the type error")
-	}
 }
 
