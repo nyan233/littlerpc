@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc"
 	"github.com/zbh255/bilog"
@@ -14,10 +15,12 @@ type Hello struct {
 	count int64
 }
 
-func (h *Hello) Hello(str string) error {
-	atomic.AddInt64(&h.count, 1)
+func (h *Hello) Hello(str string,count int64, p []byte) (*int64,error) {
+	atomic.AddInt64(&h.count, count)
 	fmt.Println(str)
-	return littlerpc.Nil
+	fmt.Println(string(p))
+	var v int64 =  1024 * 1024 * 1024
+	return &v,errors.New("我没有错！")
 }
 
 func Server() {
@@ -38,10 +41,12 @@ func Client() {
 	if err != nil {
 		panic(err)
 	}
-	err = c.Call("Hello", "Hello LittleRpc ->")
+	rValue, err := c.Call("Hello", "Hello LittleRpc ->",1 << 20,[]byte("Calling Function Hello.Hello"))
 	if err != nil {
 		fmt.Println(err.Error())
 	}
+	r1 := rValue[0].(*int64)
+	fmt.Printf("Rpc Server Return Value Pointer : %p -> Value : %d\n",r1,*r1)
 }
 
 func main() {
