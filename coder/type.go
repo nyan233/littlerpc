@@ -3,7 +3,8 @@ package coder
 type Type uint8
 
 const (
-	String   Type = iota
+	String   Type = (iota + 1) << 1
+	Byte          // 1B
 	Long          // 4B
 	Integer       // 8B
 	ULong         // 4B
@@ -13,6 +14,7 @@ const (
 	Array
 	Struct
 	Map
+	Pointer // 表示一个指针或者暗含一个指针
 )
 
 // AnyArgs 用于所有的参数传递

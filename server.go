@@ -62,8 +62,8 @@ func (s *Server) Bind(addr string) error {
 	}
 	g := nbio.NewEngine(config)
 	g.OnData(func(c *nbio.Conn, data []byte) {
-		callerMd := &coder.CallerMd{}
-		var rep = &coder.CalleeMd{}
+		callerMd := &coder.RStackFrame{}
+		var rep = &coder.RStackFrame{}
 		err := json.Unmarshal(data, callerMd)
 		if err != nil {
 			HandleError(*rep,*ErrJsonUnMarshal,c,"")
@@ -76,51 +76,86 @@ func (s *Server) Bind(addr string) error {
 			HandleError(*rep,*ErrMethodNoRegister,c,"")
 			return
 		}
-		callArg,err := checkType(*callerMd)
-		if err != nil {
-			HandleError(*rep,*ErrServer,c,err.Error())
-			return
-		}
-		callResult := method.Call([]reflect.Value{
+		callArgs := []reflect.Value{
 			// receiver
 			s.elem.data,
-			// args
-			reflect.ValueOf(callArg),
-		})
-		var errTmp reflect.Value
-		// Multi Return Value
-		if len(callResult) == 2 {
-			rep.ArgType = coder.Array
-			errTmp = callResult[1]
-		} else {
-			rep.ArgType = coder.Struct
-			errTmp = callResult[0]
 		}
-		var any coder.AnyArgs
-		switch i := errTmp.Interface();i.(type) {
-		case *coder.Error:
-			errBytes, err := json.Marshal(i)
+		for _,v := range callerMd.Request {
+			callArg,err := checkCoderType(v)
 			if err != nil {
 				HandleError(*rep,*ErrServer,c,err.Error())
 				return
 			}
-			rep.Rep = errBytes
+			callArgs = append(callArgs,reflect.ValueOf(callArg))
+		}
+		callResult := method.Call(callArgs)
+		// 过程定义的返回值中没有error则不是一个正确的过程
+		if len(callResult) == 0 {
+			panic("the process return value len == 0")
+		}
+		// Multi Return Value
+		for _,v := range callResult[:len(callResult) - 1] {
+			var md coder.CalleeMd
+			var eface = v.Interface()
+			typ := checkIType(eface)
+			// 返回值的类型为指针的情况，为其设置参数类型和正确的附加类型
+			if typ == coder.Pointer {
+				md.ArgType = coder.Pointer
+				md.AppendType = checkIType(v.Elem().Interface())
+			} else {
+				md.ArgType = typ
+			}
+			any := coder.AnyArgs{
+				Any: eface,
+			}
+			anyBytes, err := json.Marshal(&any)
+			if err != nil {
+				HandleError(*rep,*ErrServer,c,"")
+				return
+			}
+			md.Rep = anyBytes
+			rep.Response = append(rep.Response,md)
+		}
+		errMd := coder.CalleeMd{
+			ArgType: coder.Struct,
+		}
+		switch i := callResult[len(callResult) - 1].Interface();i.(type) {
+		case *coder.Error:
+			any := coder.AnyArgs{Any: i}
+			errBytes, err := json.Marshal(&any)
+			if err != nil {
+				HandleError(*rep,*ErrServer,c,err.Error())
+				return
+			}
+			errMd.ArgType = coder.Pointer
+			errMd.AppendType = coder.Struct
+			errMd.Rep = errBytes
 		case error:
-			any.Any = i.(error).Error()
+			any := coder.AnyArgs{
+				Any: i.(error).Error(),
+			}
 			anyBytes, err := json.Marshal(&any)
 			if err != nil {
 				return
 			}
-			rep.Rep = anyBytes
+			errMd.ArgType = coder.String
+			errMd.Rep = anyBytes
 		case nil:
-			rep.Rep,err = json.Marshal(Nil)
+			any := coder.AnyArgs{
+				Any: 0,
+			}
+			errMd.ArgType = coder.Integer
+			anyBytes,err := json.Marshal(&any)
 			if err != nil {
 				HandleError(*rep,*ErrServer,c,err.Error())
 				return
 			}
+			errMd.Rep = anyBytes
 		default:
-			break
+			// 最后一个返回值不是error/*coder.Error类型则视为声明的过程格式不正确
+			panic("the last return value type is not error/*code.Error")
 		}
+		rep.Response = append(rep.Response,errMd)
 		repBytes, err := json.Marshal(rep)
 		if err != nil {
 			HandleError(*rep,*ErrServer,c,err.Error())

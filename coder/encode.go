@@ -6,8 +6,8 @@ import "encoding/json"
 type CallerMd struct {
 	// Meta Type
 	ArgType Type
-	// Method Name
-	MethodName string
+	// 附加类型
+	AppendType Type
 	// Request Args
 	Req []byte
 }

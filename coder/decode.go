@@ -5,7 +5,8 @@ import "encoding/json"
 // CalleeMd 被调用者(服务端)的元数据
 type CalleeMd struct {
 	ArgType Type
-	MethodName string
+	// 附加类型
+	AppendType Type
 	Rep []byte
 }
 
