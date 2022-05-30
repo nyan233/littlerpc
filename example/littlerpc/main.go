@@ -19,6 +19,7 @@ func (h *Hello) Hello(str string,count int64, p []byte) (*int64,error) {
 	atomic.AddInt64(&h.count, count)
 	fmt.Println(str)
 	fmt.Println(string(p))
+	fmt.Println(count)
 	var v int64 =  1024 * 1024 * 1024
 	return &v,errors.New("我没有错！")
 }
