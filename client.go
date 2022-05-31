@@ -46,6 +46,16 @@ func (c *Client) Call(methodName string,args ...interface{}) (rep []interface{},
 			md.AppendType = checkIType(reflect.IdentArrayOrSliceType(v))
 		}
 		// 将参数json序列化到any包装器中
+		// Map/Struct类型不需要any包装器，直接序列化即可
+		if md.ArgType == coder.Struct || md.ArgType == coder.Map {
+			bytes,err := json.Marshal(v)
+			if err != nil {
+				panic(err)
+			}
+			md.Req = bytes
+			sp.Request = append(sp.Request,md)
+			continue
+		}
 		any := coder.AnyArgs{
 			Any: v,
 		}
@@ -96,7 +106,7 @@ func (c *Client) Call(methodName string,args ...interface{}) (rep []interface{},
 			ArgType:    v.ArgType,
 			AppendType: v.AppendType,
 			Req:        v.Rep,
-		})
+		},nil)
 		if err != nil {
 			return nil, err
 		}

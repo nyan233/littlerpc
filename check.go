@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/nyan233/littlerpc/coder"
+	lreflect "github.com/nyan233/littlerpc/reflect"
 	"reflect"
 	"unsafe"
 )
 
-func checkCoderType(callerMd coder.CallerMd) (interface{},error) {
+// structPtr中必须是指针变量
+func checkCoderType(callerMd coder.CallerMd,structPtr interface{}) (interface{},error) {
 	switch callerMd.ArgType {
 	// 处理额外的指针类型
 	case coder.Pointer:
@@ -59,9 +61,14 @@ func checkCoderType(callerMd coder.CallerMd) (interface{},error) {
 		}
 		return tmp.Any,nil
 	case coder.Map:
-		return nil,nil
+		// go里面map本来就是指针类型，不用项struct那样做处理
+		val := lreflect.ToTypePtr(structPtr)
+		err := json.Unmarshal(callerMd.Req, val)
+		return structPtr,err
 	case coder.Struct:
-		return nil,nil
+		val := lreflect.ToTypePtr(structPtr)
+		err := json.Unmarshal(callerMd.Req, val)
+		return structPtr, err
 	default:
 		return nil,errors.New("type is not found")
 	}

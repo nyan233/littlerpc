@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/lesismal/nbio"
 	"github.com/nyan233/littlerpc/coder"
+	lreflect "github.com/nyan233/littlerpc/reflect"
 	"github.com/zbh255/bilog"
 	"reflect"
 	"runtime"
@@ -80,8 +81,10 @@ func (s *Server) Bind(addr string) error {
 			// receiver
 			s.elem.data,
 		}
-		for _,v := range callerMd.Request {
-			callArg,err := checkCoderType(v)
+		inputTypeList := lreflect.FuncInputTypeList(method)
+		for k,v := range callerMd.Request {
+			// 排除receiver
+			callArg,err := checkCoderType(v,inputTypeList[k + 1])
 			if err != nil {
 				HandleError(*rep,*ErrServer,c,err.Error())
 				return
