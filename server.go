@@ -97,16 +97,36 @@ func (s *Server) Bind(addr string) error {
 			panic("the process return value len == 0")
 		}
 		// Multi Return Value
+		// 服务器返回的参数中不区分是是否是指针类型
+		// 客户端在处理返回值的类型时需要自己根据注册的过程进行处理
 		for _,v := range callResult[:len(callResult) - 1] {
 			var md coder.CalleeMd
 			var eface = v.Interface()
 			typ := checkIType(eface)
+			// 是否是map/*map或者struct/*struct类型的返回值？
+			var isMapOrStructT bool
+			if typ == coder.Map || typ == coder.Struct {
+				isMapOrStructT = true
+			}
 			// 返回值的类型为指针的情况，为其设置参数类型和正确的附加类型
 			if typ == coder.Pointer {
-				md.ArgType = coder.Pointer
-				md.AppendType = checkIType(v.Elem().Interface())
+				md.ArgType = checkIType(v.Elem().Interface())
+				if md.ArgType == coder.Map || md.ArgType == coder.Struct {
+					isMapOrStructT = true
+				}
 			} else {
 				md.ArgType = typ
+			}
+			// Map/Struct不需要Any包装器
+			if isMapOrStructT {
+				bytes, err := json.Marshal(eface)
+				if err != nil {
+					HandleError(*rep,*ErrServer,c,"")
+					return
+				}
+				md.Rep = bytes
+				rep.Response = append(rep.Response,md)
+				continue
 			}
 			any := coder.AnyArgs{
 				Any: eface,
@@ -124,14 +144,12 @@ func (s *Server) Bind(addr string) error {
 		}
 		switch i := callResult[len(callResult) - 1].Interface();i.(type) {
 		case *coder.Error:
-			any := coder.AnyArgs{Any: i}
-			errBytes, err := json.Marshal(&any)
+			errBytes, err := json.Marshal(i)
 			if err != nil {
 				HandleError(*rep,*ErrServer,c,err.Error())
 				return
 			}
-			errMd.ArgType = coder.Pointer
-			errMd.AppendType = coder.Struct
+			errMd.ArgType = coder.Struct
 			errMd.Rep = errBytes
 		case error:
 			any := coder.AnyArgs{

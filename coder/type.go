@@ -15,6 +15,7 @@ const (
 	Struct
 	Map
 	Pointer // 表示一个指针或者暗含一个指针
+	Interface
 )
 
 // AnyArgs 用于所有的参数传递

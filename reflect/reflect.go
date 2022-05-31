@@ -48,6 +48,9 @@ func FuncInputTypeList(value reflect.Value) []interface{} {
 	typ := value.Type()
 	typs := make([]interface{},typ.NumIn())
 	for k := range typs {
+		if typ.Kind() == reflect.Interface {
+			typs[k] = value.Interface()
+		}
 		typs[k] = typeToEfaceNew(typ.In(k))
 	}
 	return typs
@@ -58,6 +61,9 @@ func FuncOutputTypeList(value reflect.Value) []interface{} {
 	typ := value.Type()
 	typs := make([]interface{},typ.NumOut())
 	for k := range typs {
+		if typ.Kind() == reflect.Interface {
+			typs[k] = value.Interface()
+		}
 		typs[k] = typeToEfaceNew(typ.Out(k))
 	}
 	return typs

@@ -54,7 +54,6 @@ func checkCoderType(callerMd coder.CallerMd,structPtr interface{}) (interface{},
 		anyData := reflect.ValueOf(anyStruct).Elem().FieldByName("Any").Interface()
 		return anyData,nil
 	case coder.Map:
-		// go里面map本来就是指针类型，不用项struct那样做处理
 		val := lreflect.ToTypePtr(structPtr)
 		err := json.Unmarshal(callerMd.Req, val)
 		return structPtr,err
@@ -91,6 +90,8 @@ func checkIType(i interface{}) coder.Type {
 		return coder.Struct
 	case reflect.Ptr:
 		return coder.Pointer
+	case reflect.Interface:
+		return coder.Interface
 	default:
 		panic("the type error")
 	}
