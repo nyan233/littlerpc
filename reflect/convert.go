@@ -24,3 +24,12 @@ func ToTypePtr(v interface{}) interface{} {
 	}
 	return typeToEfaceNoNew(reflect.PtrTo(val.Type()),v)
 }
+
+// ToValueTypeEface 如果reflect.Value为nil则返回可以和nil比较的interface{}
+func ToValueTypeEface(val reflect.Value) interface{} {
+	eface := (*[2]uintptr)(unsafe.Pointer(&val))
+	if eface[0] == 0 && eface[1] == 0 {
+		return nil
+	}
+	return val.Interface()
+}

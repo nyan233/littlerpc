@@ -92,13 +92,14 @@ func (s *Server) Bind(addr string) error {
 			callArgs = append(callArgs,reflect.ValueOf(callArg))
 		}
 		callResult := method.Call(callArgs)
-		// 过程定义的返回值中没有error则不是一个正确的过程
+		// 函数在没有返回error则填充nil
 		if len(callResult) == 0 {
-			panic("the process return value len == 0")
+			callResult = append(callResult,reflect.ValueOf(nil))
 		}
 		// Multi Return Value
 		// 服务器返回的参数中不区分是是否是指针类型
 		// 客户端在处理返回值的类型时需要自己根据注册的过程进行处理
+		handleResult:
 		for _,v := range callResult[:len(callResult) - 1] {
 			var md coder.CalleeMd
 			var eface = v.Interface()
@@ -142,7 +143,8 @@ func (s *Server) Bind(addr string) error {
 		errMd := coder.CalleeMd{
 			ArgType: coder.Struct,
 		}
-		switch i := callResult[len(callResult) - 1].Interface();i.(type) {
+
+		switch i := lreflect.ToValueTypeEface(callResult[len(callResult) - 1]);i.(type) {
 		case *coder.Error:
 			errBytes, err := json.Marshal(i)
 			if err != nil {
@@ -173,8 +175,11 @@ func (s *Server) Bind(addr string) error {
 			}
 			errMd.Rep = anyBytes
 		default:
-			// 最后一个返回值不是error/*coder.Error类型则视为声明的过程格式不正确
-			panic("the last return value type is not error/*code.Error")
+			// 现在允许最后一个返回值不是*code.Error/error，这种情况被视为没有错误
+			callResult = append(callResult,reflect.ValueOf(nil))
+			// 如果最后返回的不是*code.Error/error会导致遗漏处理一些返回值
+			// 这个时候需要重新检查
+			goto handleResult
 		}
 		rep.Response = append(rep.Response,errMd)
 		repBytes, err := json.Marshal(rep)
