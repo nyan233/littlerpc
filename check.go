@@ -1,7 +1,6 @@
 package littlerpc
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"github.com/nyan233/littlerpc/coder"
@@ -46,20 +45,14 @@ func checkCoderType(callerMd coder.CallerMd,structPtr interface{}) (interface{},
 		return tmp.Any,err
 	case coder.Array:
 		// 处理数组的附加类型
-		var tmp coder.AnyArgs
-		err := json.Unmarshal(callerMd.Req, &tmp)
-		if err == nil {
-			// []byte类型会被encoding/json编码为base64字符串，所以需要做特殊处理
-			if callerMd.AppendType == coder.Byte {
-				return base64.StdEncoding.DecodeString(tmp.Any.(string))
-			}
-			arrayType, err := mappingArrayNoPtrType(callerMd.AppendType,tmp.Any)
-			if err != nil {
-				return nil, err
-			}
-			tmp.Any = arrayType
+		mppType := checkCoderBaseType(callerMd.AppendType)
+		anyStruct := lreflect.CreateAnyStruct(mppType)
+		err := json.Unmarshal(callerMd.Req, anyStruct)
+		if err != nil {
+			return nil,err
 		}
-		return tmp.Any,nil
+		anyData := reflect.ValueOf(anyStruct).Elem().FieldByName("Any").Interface()
+		return anyData,nil
 	case coder.Map:
 		// go里面map本来就是指针类型，不用项struct那样做处理
 		val := lreflect.ToTypePtr(structPtr)
@@ -100,5 +93,28 @@ func checkIType(i interface{}) coder.Type {
 		return coder.Pointer
 	default:
 		panic("the type error")
+	}
+}
+
+func checkCoderBaseType(typ coder.Type) interface{} {
+	switch typ {
+	case coder.Byte:
+		return interface{}(*new(byte))
+	case coder.Long:
+		return interface{}(*new(int32))
+	case coder.Integer:
+		return interface{}(*new(int64))
+	case coder.ULong:
+		return interface{}(*new(uint32))
+	case coder.UInteger:
+		return interface{}(*new(uint64))
+	case coder.Float:
+		return interface{}(*new(float32))
+	case coder.Double:
+		return interface{}(*new(float64))
+	case coder.String:
+		return interface{}(*new(string))
+	default:
+		return nil
 	}
 }
