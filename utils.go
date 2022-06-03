@@ -3,14 +3,14 @@ package littlerpc
 import (
 	"encoding/json"
 	"errors"
-	"github.com/lesismal/nbio"
+	"github.com/lesismal/nbio/nbhttp/websocket"
 	"github.com/nyan233/littlerpc/coder"
 	"runtime"
 	"strconv"
 )
 
 
-func HandleError(sp coder.RStackFrame,errNo coder.Error,conn *nbio.Conn,appendInfo string,more ...interface{}) {
+func HandleError(sp coder.RStackFrame,errNo coder.Error,conn *websocket.Conn,appendInfo string, more ...interface{}) {
 	md := coder.CalleeMd{
 		ArgType:    coder.Struct,
 		Rep:        nil,
@@ -28,7 +28,7 @@ func HandleError(sp coder.RStackFrame,errNo coder.Error,conn *nbio.Conn,appendIn
 		if err != nil {
 			panic(errors.New("encoding/json marshal failed"))
 		}
-		conn.Write(errNoBytes)
+		conn.WriteMessage(websocket.TextMessage,errNoBytes)
 		break
 	case ErrMethodNoRegister.Info:
 		_, file, line, _ := runtime.Caller(2)
@@ -42,7 +42,7 @@ func HandleError(sp coder.RStackFrame,errNo coder.Error,conn *nbio.Conn,appendIn
 		if err != nil {
 			panic(errors.New("encoding/json marshal failed"))
 		}
-		conn.Write(errNoBytes)
+		conn.WriteMessage(websocket.TextMessage,errNoBytes)
 		break
 	case ErrServer.Info:
 		errNo.Info += appendInfo
@@ -57,7 +57,7 @@ func HandleError(sp coder.RStackFrame,errNo coder.Error,conn *nbio.Conn,appendIn
 		if err != nil {
 			panic(errors.New("encoding/json marshal failed"))
 		}
-		conn.Write(errNoBytes)
+		conn.WriteMessage(websocket.TextMessage,errNoBytes)
 	case Nil.Info:
 		err := md.EncodeResponse(errNo)
 		if err != nil {
@@ -68,7 +68,7 @@ func HandleError(sp coder.RStackFrame,errNo coder.Error,conn *nbio.Conn,appendIn
 		if err != nil {
 			panic(errors.New("encoding/json marshal failed"))
 		}
-		conn.Write(errNoBytes)
+		conn.WriteMessage(websocket.TextMessage,errNoBytes)
 	}
 }
 

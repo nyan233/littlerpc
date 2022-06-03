@@ -4,6 +4,7 @@ type Type uint8
 
 const (
 	String   Type = (iota + 1) << 1
+	Boolean
 	Byte          // 1B
 	Long          // 4B
 	Integer       // 8B

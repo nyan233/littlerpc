@@ -53,6 +53,8 @@ func mappingArrayNoPtrType(typ coder.Type,value interface{}) (interface{},error)
 		return interface{}(*new([]uint32)),nil
 	case coder.UInteger:
 		return interface{}(*new([]uint64)),nil
+	case coder.Boolean:
+		return interface{}(*new([]bool)),nil
 	default:
 		return nil,errors.New("not support other type")
 	}
@@ -74,6 +76,8 @@ func mappingReflectNoPtrType(typ coder.Type,value interface{}) (interface{},erro
 		return reflect.ValueOf(value).Convert(reflect.TypeOf(uint32(0))).Interface(),nil
 	case coder.UInteger:
 		return reflect.ValueOf(value).Convert(reflect.TypeOf(uint64(0))).Interface(),nil
+	case coder.Boolean:
+		return reflect.ValueOf(value).Convert(reflect.TypeOf(*new(bool))).Interface(),nil
 	default:
 		return nil,errors.New("not support other type")
 	}
@@ -95,6 +99,8 @@ func mappingReflectPtrType(typ coder.Type) (interface{},error) {
 		return reflect.ValueOf(new(uint32)).Interface(),nil
 	case coder.UInteger:
 		return reflect.ValueOf(new(uint64)).Interface(),nil
+	case coder.Boolean:
+		return reflect.ValueOf(new(bool)).Interface(),nil
 	default:
 		return nil,errors.New("not support other type")
 	}

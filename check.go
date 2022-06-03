@@ -36,7 +36,7 @@ func checkCoderType(callerMd coder.CallerMd,structPtr interface{}) (interface{},
 		var tmp coder.AnyArgs
 		err := json.Unmarshal(callerMd.Req,&tmp)
 		return tmp.Any,err
-	case coder.Integer, coder.Long, coder.Float, coder.Double:
+	case coder.Integer, coder.Long, coder.Float, coder.Double,coder.Boolean:
 		var tmp coder.AnyArgs
 		err := json.Unmarshal(callerMd.Req,&tmp)
 		if err == nil {
@@ -80,6 +80,8 @@ func checkIType(i interface{}) coder.Type {
 		return coder.Float
 	case float64:
 		return coder.Double
+	case bool:
+		return coder.Boolean
 	}
 	switch reflect.TypeOf(i).Kind() {
 	case reflect.Slice,reflect.Array:
@@ -115,6 +117,8 @@ func checkCoderBaseType(typ coder.Type) interface{} {
 		return interface{}(*new(float64))
 	case coder.String:
 		return interface{}(*new(string))
+	case coder.Boolean:
+		return interface{}(*new(bool))
 	default:
 		return nil
 	}

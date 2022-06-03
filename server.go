@@ -3,8 +3,10 @@ package littlerpc
 import (
 	"encoding/json"
 	"errors"
-	"github.com/lesismal/nbio"
+	"github.com/lesismal/nbio/nbhttp"
+	"github.com/lesismal/nbio/nbhttp/websocket"
 	"github.com/nyan233/littlerpc/coder"
+	"github.com/nyan233/littlerpc/internal/transport"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"github.com/zbh255/bilog"
 	"reflect"
@@ -20,16 +22,38 @@ type ElemMata struct {
 type Server struct {
 	elem ElemMata
 	// Server Engine
-	sEng   *nbio.Engine
+	server *transport.WebSocketTransServer
+	// logger
 	logger bilog.Logger
 }
 
-func NewServer(logger bilog.Logger) *Server {
-	return &Server{
-		elem:   ElemMata{},
-		sEng:   nil,
-		logger: logger,
+func NewServer(opts ...serverOption) *Server {
+	server := &Server{}
+	sc := &ServerConfig{}
+	WithDefaultServer()(sc)
+	for _, v := range opts {
+		v(sc)
 	}
+	if sc.Logger != nil {
+		server.logger = sc.Logger
+	} else {
+		server.logger = logger
+	}
+	wsConf := nbhttp.Config{
+		NPoller:        runtime.NumCPU() * 2,
+		ReadBufferSize: 4096 * 8,
+	}
+	if sc.TlsConfig == nil {
+		wsConf.Addrs = sc.Address
+	} else {
+		wsConf.AddrsTLS = sc.Address
+	}
+	server.server = transport.NewWebSocketServer(sc.TlsConfig, wsConf)
+	server.server.SetOnMessage(server.onMessage)
+	server.server.SetOnClose(server.onClose)
+	server.server.SetOnErr(server.onErr)
+	server.server.SetOnOpen(server.onOpen)
+	return server
 }
 
 func (s *Server) Elem(i interface{}) error {
@@ -51,143 +75,157 @@ func (s *Server) Elem(i interface{}) error {
 	return nil
 }
 
-func (s *Server) Bind(addr string) error {
-	config := nbio.Config{
-		Name:           "LittleRpc",
-		Network:        "tcp",
-		Addrs:          []string{addr},
-		NPoller:        runtime.NumCPU() * 2,
-		ReadBufferSize: 4096,
-		LockListener:   false,
-		LockPoller:     true,
+func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType, data []byte) {
+	callerMd := &coder.RStackFrame{}
+	var rep = &coder.RStackFrame{}
+	err := json.Unmarshal(data, callerMd)
+	if err != nil {
+		HandleError(*rep, *ErrJsonUnMarshal, c, "")
+		return
 	}
-	g := nbio.NewEngine(config)
-	g.OnData(func(c *nbio.Conn, data []byte) {
-		callerMd := &coder.RStackFrame{}
-		var rep = &coder.RStackFrame{}
-		err := json.Unmarshal(data, callerMd)
+	// 序列化完之后才确定调用名
+	rep.MethodName = callerMd.MethodName
+	method, ok := s.elem.methods[callerMd.MethodName]
+	if !ok {
+		HandleError(*rep, *ErrMethodNoRegister, c, "")
+		return
+	}
+	callArgs := []reflect.Value{
+		// receiver
+		s.elem.data,
+	}
+	inputTypeList := lreflect.FuncInputTypeList(method)
+	for k, v := range callerMd.Request {
+		// 排除receiver
+		index := k + 1
+		callArg, err := checkCoderType(v, inputTypeList[index])
 		if err != nil {
-			HandleError(*rep,*ErrJsonUnMarshal,c,"")
+			HandleError(*rep, *ErrServer, c, err.Error())
 			return
 		}
-		// 序列化完之后才确定调用名
-		rep.MethodName = callerMd.MethodName
-		method,ok := s.elem.methods[callerMd.MethodName]
-		if !ok {
-			HandleError(*rep,*ErrMethodNoRegister,c,"")
-			return
+		// 针对变长的类型做处理
+		// uint/int在32位机和64位机上是不同长度的
+		switch inputTypeList[index].(type) {
+		case int:
+			callArg = fixIntAdaptType(callArg)
+		case uint:
+			callArg = fixIntAdaptType(callArg)
 		}
-		callArgs := []reflect.Value{
-			// receiver
-			s.elem.data,
+		callArgs = append(callArgs, reflect.ValueOf(callArg))
+	}
+	callResult := method.Call(callArgs)
+	// 函数在没有返回error则填充nil
+	if len(callResult) == 0 {
+		callResult = append(callResult, reflect.ValueOf(nil))
+	}
+	// Multi Return Value
+	// 服务器返回的参数中不区分是是否是指针类型
+	// 客户端在处理返回值的类型时需要自己根据注册的过程进行处理
+handleResult:
+	for _, v := range callResult[:len(callResult)-1] {
+		var md coder.CalleeMd
+		var eface = v.Interface()
+		typ := checkIType(eface)
+		// 是否是map/*map或者struct/*struct类型的返回值？
+		var isMapOrStructT bool
+		if typ == coder.Map || typ == coder.Struct {
+			isMapOrStructT = true
 		}
-		inputTypeList := lreflect.FuncInputTypeList(method)
-		for k,v := range callerMd.Request {
-			// 排除receiver
-			callArg,err := checkCoderType(v,inputTypeList[k + 1])
-			if err != nil {
-				HandleError(*rep,*ErrServer,c,err.Error())
-				return
-			}
-			callArgs = append(callArgs,reflect.ValueOf(callArg))
-		}
-		callResult := method.Call(callArgs)
-		// 函数在没有返回error则填充nil
-		if len(callResult) == 0 {
-			callResult = append(callResult,reflect.ValueOf(nil))
-		}
-		// Multi Return Value
-		// 服务器返回的参数中不区分是是否是指针类型
-		// 客户端在处理返回值的类型时需要自己根据注册的过程进行处理
-		handleResult:
-		for _,v := range callResult[:len(callResult) - 1] {
-			var md coder.CalleeMd
-			var eface = v.Interface()
-			typ := checkIType(eface)
-			// 是否是map/*map或者struct/*struct类型的返回值？
-			var isMapOrStructT bool
-			if typ == coder.Map || typ == coder.Struct {
+		// 返回值的类型为指针的情况，为其设置参数类型和正确的附加类型
+		if typ == coder.Pointer {
+			md.ArgType = checkIType(v.Elem().Interface())
+			if md.ArgType == coder.Map || md.ArgType == coder.Struct {
 				isMapOrStructT = true
 			}
-			// 返回值的类型为指针的情况，为其设置参数类型和正确的附加类型
-			if typ == coder.Pointer {
-				md.ArgType = checkIType(v.Elem().Interface())
-				if md.ArgType == coder.Map || md.ArgType == coder.Struct {
-					isMapOrStructT = true
-				}
-			} else {
-				md.ArgType = typ
-			}
-			// Map/Struct不需要Any包装器
-			if isMapOrStructT {
-				bytes, err := json.Marshal(eface)
-				if err != nil {
-					HandleError(*rep,*ErrServer,c,"")
-					return
-				}
-				md.Rep = bytes
-				rep.Response = append(rep.Response,md)
-				continue
-			}
-			any := coder.AnyArgs{
-				Any: eface,
-			}
-			anyBytes, err := json.Marshal(&any)
-			if err != nil {
-				HandleError(*rep,*ErrServer,c,"")
-				return
-			}
-			md.Rep = anyBytes
-			rep.Response = append(rep.Response,md)
+		} else {
+			md.ArgType = typ
 		}
-		errMd := coder.CalleeMd{
-			ArgType: coder.Struct,
+		// Map/Struct不需要Any包装器
+		if isMapOrStructT {
+			bytes, err := json.Marshal(eface)
+			if err != nil {
+				HandleError(*rep, *ErrServer, c, "")
+				return
+			}
+			md.Rep = bytes
+			rep.Response = append(rep.Response, md)
+			continue
 		}
-
-		switch i := lreflect.ToValueTypeEface(callResult[len(callResult) - 1]);i.(type) {
-		case *coder.Error:
-			errBytes, err := json.Marshal(i)
-			if err != nil {
-				HandleError(*rep,*ErrServer,c,err.Error())
-				return
-			}
-			errMd.ArgType = coder.Struct
-			errMd.Rep = errBytes
-		case error:
-			any := coder.AnyArgs{
-				Any: i.(error).Error(),
-			}
-			anyBytes, err := json.Marshal(&any)
-			if err != nil {
-				return
-			}
-			errMd.ArgType = coder.String
-			errMd.Rep = anyBytes
-		case nil:
-			any := coder.AnyArgs{
-				Any: 0,
-			}
-			errMd.ArgType = coder.Integer
-			anyBytes,err := json.Marshal(&any)
-			if err != nil {
-				HandleError(*rep,*ErrServer,c,err.Error())
-				return
-			}
-			errMd.Rep = anyBytes
-		default:
-			// 现在允许最后一个返回值不是*code.Error/error，这种情况被视为没有错误
-			callResult = append(callResult,reflect.ValueOf(nil))
-			// 如果最后返回的不是*code.Error/error会导致遗漏处理一些返回值
-			// 这个时候需要重新检查
-			goto handleResult
+		any := coder.AnyArgs{
+			Any: eface,
 		}
-		rep.Response = append(rep.Response,errMd)
-		repBytes, err := json.Marshal(rep)
+		anyBytes, err := json.Marshal(&any)
 		if err != nil {
-			HandleError(*rep,*ErrServer,c,err.Error())
+			HandleError(*rep, *ErrServer, c, "")
+			return
 		}
-		c.Write(repBytes)
-	})
-	s.sEng = g
-	return g.Start()
+		md.Rep = anyBytes
+		rep.Response = append(rep.Response, md)
+	}
+	errMd := coder.CalleeMd{
+		ArgType: coder.Struct,
+	}
+
+	switch i := lreflect.ToValueTypeEface(callResult[len(callResult)-1]); i.(type) {
+	case *coder.Error:
+		errBytes, err := json.Marshal(i)
+		if err != nil {
+			HandleError(*rep, *ErrServer, c, err.Error())
+			return
+		}
+		errMd.ArgType = coder.Struct
+		errMd.Rep = errBytes
+	case error:
+		any := coder.AnyArgs{
+			Any: i.(error).Error(),
+		}
+		anyBytes, err := json.Marshal(&any)
+		if err != nil {
+			return
+		}
+		errMd.ArgType = coder.String
+		errMd.Rep = anyBytes
+	case nil:
+		any := coder.AnyArgs{
+			Any: 0,
+		}
+		errMd.ArgType = coder.Integer
+		anyBytes, err := json.Marshal(&any)
+		if err != nil {
+			HandleError(*rep, *ErrServer, c, err.Error())
+			return
+		}
+		errMd.Rep = anyBytes
+	default:
+		// 现在允许最后一个返回值不是*code.Error/error，这种情况被视为没有错误
+		callResult = append(callResult, reflect.ValueOf(nil))
+		// 如果最后没有返回*code.Error/error会导致遗漏处理一些返回值
+		// 这个时候需要重新检查
+		goto handleResult
+	}
+	rep.Response = append(rep.Response, errMd)
+	repBytes, err := json.Marshal(rep)
+	if err != nil {
+		HandleError(*rep, *ErrServer, c, err.Error())
+	}
+	err = c.WriteMessage(websocket.TextMessage,repBytes)
+	if err != nil {
+		s.logger.ErrorFromErr(err)
+	}
+}
+
+func (s *Server) onClose(conn *websocket.Conn, err error) {
+
+}
+
+func (s *Server) onOpen(conn *websocket.Conn) {
+
+}
+
+func (s *Server) onErr(err error) {
+
+}
+
+func (s *Server) Start() error {
+	return s.server.Start()
 }

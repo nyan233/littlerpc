@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/nyan233/littlerpc/coder"
+	"github.com/nyan233/littlerpc/internal/transport"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"github.com/zbh255/bilog"
-	"net"
 	"reflect"
 )
 
@@ -14,24 +14,22 @@ type Client struct {
 	elem ElemMata
 	logger bilog.Logger
 	// client Engine
-	conn net.Conn
+	conn *transport.WebSocketTransClient
 }
 
-func NewClient(logger bilog.Logger) *Client {
+func NewClient(opts ...clientOption) *Client {
+	config := &ClientConfig{}
+	WithDefaultClient()(config)
+	for _,v := range opts {
+		v(config)
+	}
+	conn := transport.NewWebSocketTransClient(config.TlsConfig,config.ServerAddr)
 	return &Client{
-		logger: logger,
-		conn:   nil,
+		logger: config.Logger,
+		conn:   conn,
 	}
 }
 
-func (c *Client) Dial(addr string) error {
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		return err
-	}
-	c.conn = conn
-	return err
-}
 
 func (c *Client) BindFunc(i interface{}) error {
 	if i == nil {
@@ -95,31 +93,19 @@ func (c *Client) Call(methodName string,args ...interface{}) (rep []interface{},
 	if err != nil {
 		panic(err)
 	}
-	writeN,err := c.conn.Write(requestBytes)
+	err = c.conn.WriteTextMessage(requestBytes)
 	if err != nil {
 		return nil,err
 	}
-	if writeN != len(requestBytes) {
-		return nil,errors.New("write bytes not equal")
-	}
 	// 接收服务器返回的调用结果并序列化
-	buffer := make([]byte,256)
-	read := 0
-	for {
-		readN,err := c.conn.Read(buffer[read:])
+	msgTyp,buffer,err := c.conn.RecvMessage()
+	// ping-pong message
+	if msgTyp == transport.PingMessage {
+		err := c.conn.WritePongMessage([]byte("hello world"))
 		if err != nil {
-			return nil,err
-		}
-		read += readN
-		// 未读完
-		if read == len(buffer) {
-			buffer = append(buffer,[]byte{0,0,0,0}...)
-			buffer = buffer[:cap(buffer)]
-		} else {
-			break
+			return nil, err
 		}
 	}
-	buffer = buffer[:read]
 	sp.Request = nil
 	err = json.Unmarshal(buffer, sp)
 	if err != nil {
