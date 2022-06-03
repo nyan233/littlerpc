@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"github.com/nyan233/littlerpc"
-	"github.com/zbh255/bilog"
-	"os"
 )
 
 type Publisher struct {
@@ -28,7 +26,13 @@ type PublisherProxy struct {
 }
 
 func NewPublisherProxy(client *littlerpc.Client) *PublisherProxy {
-	return &PublisherProxy{client}
+	proxy := &PublisherProxy{}
+	err := client.BindFunc(proxy)
+	if err != nil {
+		panic(err)
+	}
+	proxy.Client = client
+	return proxy
 }
 
 func (p *PublisherProxy) Init(sc map[string]string) {
@@ -46,19 +50,13 @@ func (p *PublisherProxy) Sub(key string) string {
 
 
 func main() {
-	logger := bilog.NewLogger(os.Stdout,bilog.PANIC)
-	server := littlerpc.NewServer(logger)
+	server := littlerpc.NewServer(littlerpc.WithAddressServer(":1234"))
 	_ = server.Elem(&Publisher{})
-	err := server.Bind(":1234")
+	err := server.Start()
 	if err != nil {
 		panic(err)
 	}
-	client := littlerpc.NewClient(logger)
-	_ = client.BindFunc(&Publisher{})
-	err = client.Dial(":1234")
-	if err != nil {
-		panic(err)
-	}
+	client := littlerpc.NewClient(littlerpc.WithAddressClient(":1234"))
 	proxyObj := NewPublisherProxy(client)
 	proxyObj.Init(map[string]string{
 		"Tony":"hello world",

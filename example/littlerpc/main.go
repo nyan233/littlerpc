@@ -6,13 +6,12 @@ import (
 	"github.com/nyan233/littlerpc"
 	"github.com/zbh255/bilog"
 	"os"
-	"sync/atomic"
 )
 
 var logger = bilog.NewLogger(os.Stdout,bilog.PANIC)
 
 type Hello struct {
-	count int64
+
 }
 
 type UserJson struct {
@@ -20,11 +19,11 @@ type UserJson struct {
 	Id int64
 }
 
-func (h *Hello) Hello(str string,count int64, p []byte) (*int64,error) {
-	atomic.AddInt64(&h.count, count)
+func (h *Hello) Hello(str string,count int, p []byte,hh bool) (*int64,error) {
+	fmt.Println(count)
 	fmt.Println(str)
 	fmt.Println(string(p))
-	fmt.Println(count)
+	fmt.Println(hh)
 	var v int64 =  1024 * 1024 * 1024
 	return &v,errors.New("我没有错！")
 }
@@ -56,7 +55,7 @@ func Client() {
 	if err != nil {
 		panic(err)
 	}
-	rValue, err := c.Call("Hello", "Hello LittleRpc ->",1 << 20,[]byte("Calling Function Hello.Hello"))
+	rValue, err := c.Call("Hello", "Hello LittleRpc ->",int64(100),[]byte("Calling Function Hello.Hello"),true)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
