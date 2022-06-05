@@ -11,8 +11,10 @@ import (
 )
 
 type Client struct {
-	elem ElemMata
+	elem   ElemMata
 	logger bilog.Logger
+	// 错误处理回调函数
+	onErr func(err error)
 	// client Engine
 	conn *transport.WebSocketTransClient
 }
@@ -20,16 +22,16 @@ type Client struct {
 func NewClient(opts ...clientOption) *Client {
 	config := &ClientConfig{}
 	WithDefaultClient()(config)
-	for _,v := range opts {
+	for _, v := range opts {
 		v(config)
 	}
-	conn := transport.NewWebSocketTransClient(config.TlsConfig,config.ServerAddr)
-	return &Client{
-		logger: config.Logger,
-		conn:   conn,
-	}
+	conn := transport.NewWebSocketTransClient(config.TlsConfig, config.ServerAddr)
+	client := &Client{}
+	client.logger = config.Logger
+	client.conn = conn
+	client.onErr = client.defaultOnErr
+	return client
 }
-
 
 func (c *Client) BindFunc(i interface{}) error {
 	if i == nil {
@@ -50,16 +52,20 @@ func (c *Client) BindFunc(i interface{}) error {
 	return nil
 }
 
-func (c *Client) Call(methodName string,args ...interface{}) (rep []interface{},err error) {
+func (c *Client) defaultOnErr(err error) {
+	c.logger.ErrorFromErr(err)
+}
+
+func (c *Client) Call(methodName string, args ...interface{}) (rep []interface{}) {
 	sp := &coder.RStackFrame{}
 	sp.MethodName = methodName
-	method,ok := c.elem.methods[methodName]
+	method, ok := c.elem.methods[methodName]
 	if !ok {
 		panic("the method no register or is private method")
 	}
-	for _,v := range args {
+	for _, v := range args {
 		var md coder.CallerMd
-		md.ArgType =  checkIType(v)
+		md.ArgType = checkIType(v)
 		// 参数不能为指针类型
 		if md.ArgType == coder.Pointer {
 			panic("args type is pointer")
@@ -71,49 +77,52 @@ func (c *Client) Call(methodName string,args ...interface{}) (rep []interface{},
 		// 将参数json序列化到any包装器中
 		// Map/Struct类型不需要any包装器，直接序列化即可
 		if md.ArgType == coder.Struct || md.ArgType == coder.Map {
-			bytes,err := json.Marshal(v)
+			bytes, err := json.Marshal(v)
 			if err != nil {
-				panic(err)
+				c.onErr(err)
+				return
 			}
 			md.Req = bytes
-			sp.Request = append(sp.Request,md)
+			sp.Request = append(sp.Request, md)
 			continue
 		}
 		any := coder.AnyArgs{
 			Any: v,
 		}
-		anyBytes,err := json.Marshal(&any)
+		anyBytes, err := json.Marshal(&any)
 		if err != nil {
 			panic(err)
 		}
 		md.Req = anyBytes
-		sp.Request = append(sp.Request,md)
+		sp.Request = append(sp.Request, md)
 	}
-	requestBytes,err := json.Marshal(sp)
+	requestBytes, err := json.Marshal(sp)
 	if err != nil {
 		panic(err)
 	}
 	err = c.conn.WriteTextMessage(requestBytes)
 	if err != nil {
-		return nil,err
+		c.onErr(err)
+		return
 	}
 	// 接收服务器返回的调用结果并序列化
-	msgTyp,buffer,err := c.conn.RecvMessage()
+	msgTyp, buffer, err := c.conn.RecvMessage()
 	// ping-pong message
 	if msgTyp == transport.PingMessage {
 		err := c.conn.WritePongMessage([]byte("hello world"))
 		if err != nil {
-			return nil, err
+			c.onErr(err)
 		}
 	}
 	sp.Request = nil
 	err = json.Unmarshal(buffer, sp)
 	if err != nil {
-		return nil, err
+		c.onErr(err)
+		return
 	}
 	// 处理服务端传回的参数
 	outputTypeList := lreflect.FuncOutputTypeList(method)
-	for k,v := range sp.Response[:len(sp.Response) - 1] {
+	for k, v := range sp.Response[:len(sp.Response)-1] {
 		eface := outputTypeList[k]
 		md := coder.CallerMd{
 			ArgType:    v.ArgType,
@@ -142,22 +151,24 @@ func (c *Client) Call(methodName string,args ...interface{}) (rep []interface{},
 			}
 			returnV, err := checkCoderType(md, eface)
 			if err != nil {
-				return nil, err
+				c.onErr(err)
+				return
 			}
 			if isPtr {
 				returnV = lreflect.ToTypePtr(returnV)
 			}
-			rep = append(rep,returnV)
+			rep = append(rep, returnV)
 			continue
 		}
-		returnV, err := checkCoderType(md,eface)
+		returnV, err := checkCoderType(md, eface)
 		if err != nil {
-			return nil, err
+			c.onErr(err)
+			return
 		}
-		rep = append(rep,returnV)
+		rep = append(rep, returnV)
 	}
 	// 单独处理返回的错误类型
-	errMd := sp.Response[len(sp.Response) - 1]
+	errMd := sp.Response[len(sp.Response)-1]
 	// 处理最后返回的Error
 	// 返回的数据的类型不可能是指针类型，需要客户端自己去处理
 	switch errMd.ArgType {
@@ -167,17 +178,16 @@ func (c *Client) Call(methodName string,args ...interface{}) (rep []interface{},
 		if ierr != nil {
 			panic(err)
 		}
-		err = errPtr
+		rep = append(rep, errPtr)
 	case coder.String:
 		var tmp coder.AnyArgs
 		err := json.Unmarshal(errMd.Rep, &tmp)
 		if err != nil {
 			panic(err)
 		}
-		err = errors.New(tmp.Any.(string))
+		rep = append(rep, errors.New(tmp.Any.(string)))
 	case coder.Integer:
-		err = nil
+		rep = append(rep, error(nil))
 	}
 	return
 }
-

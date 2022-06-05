@@ -39,3 +39,9 @@ func WithCustomLoggerClient(logger bilog.Logger) clientOption {
 		config.Logger = logger
 	}
 }
+
+func WithCallOnErr(fn func(err error)) clientOption {
+	return func(config *ClientConfig) {
+		config.CallOnErr = fn
+	}
+}

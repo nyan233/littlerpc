@@ -13,4 +13,6 @@ type ClientConfig struct {
 	Logger            bilog.Logger
 	ClientPPTimeout   time.Duration
 	ClientConnTimeout time.Duration
+	// 客户端Call错误处理的回调函数
+	CallOnErr func(err error)
 }
