@@ -85,7 +85,6 @@ func (proxy HelloTestProxy) ModifyUser(uid int, user User) bool {
 }
 
 
-
 func TestNoTlsConnect(t *testing.T) {
 	server := NewServer(WithAddressServer(":1234"))
 	h := &HelloTest{}
@@ -134,10 +133,10 @@ func TestNoTlsConnect(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if h.count != int64(addV * nGoroutine) {
+	if atomic.LoadInt64(&h.count) != int64(addV * nGoroutine) {
 		t.Fatal("h.count no correct")
 	}
-	if errCount != int64(nGoroutine) {
+	if atomic.LoadInt64(&errCount) != int64(nGoroutine) {
 		t.Fatal("errCount size not correct")
 	}
 }
