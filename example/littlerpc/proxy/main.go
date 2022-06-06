@@ -3,67 +3,52 @@ package main
 import (
 	"fmt"
 	"github.com/nyan233/littlerpc"
+	"io/ioutil"
+	"os"
 )
 
-type Publisher struct {
-	subChan map[string]string
+type FileServer struct {
+	fileMap map[string][]byte
 }
 
-func (p *Publisher) Init(sc map[string]string) {
-	p.subChan = sc
+func NewFileServer() *FileServer {
+	return &FileServer{fileMap: make(map[string][]byte)}
 }
 
-func (p *Publisher) Release(key string,value string) {
-	p.subChan[key] = value
+func (fs *FileServer) SendFile(path string, data []byte) {
+	fs.fileMap[path] = data
 }
 
-func (p *Publisher) Sub(key string) string {
-	return p.subChan[key]
+func (fs *FileServer) GetFile(path string) ([]byte,bool) {
+	bytes,ok := fs.fileMap[path]
+	return bytes,ok
 }
 
-type PublisherProxy struct {
-	*littlerpc.Client
-}
-
-func NewPublisherProxy(client *littlerpc.Client) *PublisherProxy {
-	proxy := &PublisherProxy{}
-	err := client.BindFunc(proxy)
+func (fs *FileServer) OpenSysFile(path string) ([]byte,error) {
+	file, err := os.Open(path)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	proxy.Client = client
-	return proxy
+	return ioutil.ReadAll(file)
 }
-
-func (p *PublisherProxy) Init(sc map[string]string) {
-	_, _ = p.Call("Init", sc)
-}
-
-func (p *PublisherProxy) Release(key string,value string) {
-	_, _ = p.Call("Release", key, value)
-}
-
-func (p *PublisherProxy) Sub(key string) string {
-	call, _ := p.Call("Sub", key)
-	return call[0].(string)
-}
-
 
 func main() {
 	server := littlerpc.NewServer(littlerpc.WithAddressServer(":1234"))
-	_ = server.Elem(&Publisher{})
+	_ = server.Elem(NewFileServer())
 	err := server.Start()
 	if err != nil {
 		panic(err)
 	}
 	client := littlerpc.NewClient(littlerpc.WithAddressClient(":1234"))
-	proxyObj := NewPublisherProxy(client)
-	proxyObj.Init(map[string]string{
-		"Tony":"hello world",
-		"Jeni":"hello tony",
-	})
-	proxyObj.Release("Jenkins","hello tony and jeni")
-	fmt.Println(proxyObj.Sub("Jenkins"))
-	fmt.Println(proxyObj.Sub("Tony"))
-	fmt.Println(proxyObj.Sub("Jeni"))
+	proxy := NewFileServerProxy(client)
+	fileBytes, err := proxy.OpenSysFile("./main.go")
+	if err != nil {
+		panic(err)
+	}
+	proxy.SendFile("main.go",fileBytes)
+	fileBytes,ok := proxy.GetFile("main.go")
+	if !ok {
+		panic("no such file")
+	}
+	fmt.Println(string(fileBytes))
 }
