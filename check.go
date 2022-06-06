@@ -37,16 +37,12 @@ func checkCoderType(callerMd coder.CallerMd,structPtr interface{}) (interface{},
 		err := json.Unmarshal(callerMd.Req,&tmp)
 		return tmp.Any,err
 	case coder.Integer, coder.Long, coder.Float, coder.Double,coder.Boolean:
-		var tmp coder.AnyArgs
-		err := json.Unmarshal(callerMd.Req,&tmp)
-		if err == nil {
-			tmp.Any = fixJsonType(tmp.Any,callerMd.ArgType)
-		}
-		return tmp.Any,err
+		val := lreflect.CreateAnyStructOnType(structPtr)
+		err := json.Unmarshal(callerMd.Req,val)
+		return reflect.ValueOf(val).Elem().FieldByName("Any").Interface(),err
 	case coder.Array:
 		// 处理数组的附加类型
-		mppType := checkCoderBaseType(callerMd.AppendType)
-		anyStruct := lreflect.CreateAnyStruct(mppType)
+		anyStruct := lreflect.CreateAnyStructOnType(structPtr)
 		err := json.Unmarshal(callerMd.Req, anyStruct)
 		if err != nil {
 			return nil,err

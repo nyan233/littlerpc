@@ -56,7 +56,7 @@ func (c *Client) defaultOnErr(err error) {
 	c.logger.ErrorFromErr(err)
 }
 
-func (c *Client) Call(methodName string, args ...interface{}) (rep []interface{}) {
+func (c *Client) Call(methodName string, args ...interface{}) (rep []interface{},uErr error) {
 	sp := &coder.RStackFrame{}
 	sp.MethodName = methodName
 	method, ok := c.elem.methods[methodName]
@@ -178,16 +178,21 @@ func (c *Client) Call(methodName string, args ...interface{}) (rep []interface{}
 		if ierr != nil {
 			panic(err)
 		}
-		rep = append(rep, errPtr)
+		uErr = errPtr
 	case coder.String:
 		var tmp coder.AnyArgs
 		err := json.Unmarshal(errMd.Rep, &tmp)
 		if err != nil {
 			panic(err)
 		}
-		rep = append(rep, errors.New(tmp.Any.(string)))
+		uErr = errors.New(tmp.Any.(string))
 	case coder.Integer:
-		rep = append(rep, error(nil))
+		uErr = error(nil)
+	}
+	// 检查错误是Server的异常还是远程过程正常返回的error
+	if errMd.AppendType == coder.ServerError {
+		c.onErr(uErr)
+		uErr = nil
 	}
 	return
 }
