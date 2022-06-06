@@ -10,7 +10,7 @@ jobs:
   mutli-system-test:
     strategy:
       matrix:
-        os: [ubuntu-latest,macos-latest,windows-latest]
+        os: [macos-latest,windows-latest]
         go_version: ["1.17"]
     runs-on: ${{matrix.os}}
     steps:
