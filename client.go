@@ -29,7 +29,11 @@ func NewClient(opts ...clientOption) *Client {
 	client := &Client{}
 	client.logger = config.Logger
 	client.conn = conn
-	client.onErr = client.defaultOnErr
+	if config.CallOnErr != nil {
+		client.onErr = config.CallOnErr
+	} else {
+		client.onErr = client.defaultOnErr
+	}
 	return client
 }
 

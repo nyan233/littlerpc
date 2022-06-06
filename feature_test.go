@@ -99,14 +99,16 @@ func TestNoTlsConnect(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	nGoroutine := 1
+	nGoroutine := 100
+	// 统计触发错误的次数
+	var errCount int64
 	addV := 65536
 	wg.Add(nGoroutine)
 	for i := 0; i < nGoroutine; i++ {
 		j := i
 		go func() {
 			client := NewClient(WithCallOnErr(func(err error) {
-				panic(err)
+				atomic.AddInt64(&errCount,1)
 			}),WithAddressClient(":1234"))
 			proxy := NewHelloTestProxy(client)
 			proxy.Add(int64(addV))
@@ -127,12 +129,15 @@ func TestNoTlsConnect(t *testing.T) {
 			})
 			proxy.DeleteUser(j + 100)
 			// 构造一次错误的请求
-			_, err = proxy.Call("DeleteUser", "string")
+			_, _ = proxy.Call("DeleteUser", "string")
 			wg.Done()
 		}()
 	}
 	wg.Wait()
 	if h.count != int64(addV * nGoroutine) {
 		t.Fatal("h.count no correct")
+	}
+	if errCount != int64(nGoroutine) {
+		t.Fatal("errCount size not correct")
 	}
 }
