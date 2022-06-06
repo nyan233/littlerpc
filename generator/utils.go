@@ -23,7 +23,7 @@ func handleAstType(expr ast.Expr,file *os.File) string {
 		ident := expr.(*ast.Ident)
 		pos := fileSet.Position(ident.Pos())
 		buf := []byte{0}
-		_, err := file.ReadAt(buf, int64(pos.Offset) - 1)
+		_, err := file.ReadAt(buf, int64(pos.Offset))
 		if err != nil {
 			panic(err)
 		}
@@ -40,9 +40,9 @@ func handleAstType(expr ast.Expr,file *os.File) string {
 			panic(err)
 		}
 		if buf[0] == '*' {
-			return "*" + s.X.(*ast.Ident).Name
+			return "*" + handleAstType(s.X,file)
 		}
-		return s.X.(*ast.Ident).Name
+		return handleAstType(s.X,file)
 	case *ast.ArrayType:
 		at := expr.(*ast.ArrayType)
 		pos := fileSet.Position(at.Pos())
@@ -55,6 +55,9 @@ func handleAstType(expr ast.Expr,file *os.File) string {
 			return "*[]" + handleAstType(at.Elt,file)
 		}
 		return "[]" + handleAstType(at.Elt,file)
+	case *ast.SelectorExpr:
+		se := expr.(*ast.SelectorExpr)
+		return handleAstType(se.X,file) + "." + handleAstType(se.Sel,file)
 	default:
 		panic("type is no supported")
 	}

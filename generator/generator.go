@@ -44,7 +44,7 @@ func genCode() {
 		panic(err)
 	}
 	// 等文件集解析完再打开文件
-	file, err := os.OpenFile(*dir + "/" + *outName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0755)
+	file, err := os.OpenFile(*dir+"/"+*outName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0755)
 	if err != nil {
 		panic(err)
 	}
@@ -56,11 +56,11 @@ func genCode() {
 	var fileBuffer bytes.Buffer
 	fileBuffer.Grow(512)
 	for k, v := range pkgDir.Files {
-		rawFile, err := os.Open(path.Dir(*dir)+ "/" + k)
+		rawFile, err := os.Open(path.Dir(*dir) + "/" + k)
 		if err != nil {
 			panic(err)
 		}
-		tmp := getAllFunc(v, rawFile,recvName + "Proxy",func(recvT string) bool {
+		tmp := getAllFunc(v, rawFile, recvName+"Proxy", func(recvT string) bool {
 			if recvT == recvName {
 				return true
 			}
@@ -68,16 +68,16 @@ func genCode() {
 		})
 		funcStrs = append(funcStrs, tmp...)
 	}
-	fileBuffer.WriteString(createBeforeCode(pkgName,recvName + "Proxy"))
-	for _,v := range funcStrs {
+	fileBuffer.WriteString(createBeforeCode(pkgName, recvName+"Proxy"))
+	for _, v := range funcStrs {
 		fileBuffer.WriteString("\n")
 		fileBuffer.WriteString(v)
 	}
-	if string(fileBuffer.Bytes()[fileBuffer.Len() - 4:]) == "}\n}\n" {
+	if string(fileBuffer.Bytes()[fileBuffer.Len()-4:]) == "}\n}\n" {
 		fmt.Println("double }")
 	}
 	fmtBytes, err := format.Source(fileBuffer.Bytes())
-	if string(fmtBytes[len(fmtBytes) - 4:]) == "}\n}\n" {
+	if string(fmtBytes[len(fmtBytes)-4:]) == "}\n}\n" {
 		fmt.Println("double }")
 	}
 	writeN, err := file.Write(fmtBytes)
@@ -89,7 +89,7 @@ func genCode() {
 	}
 }
 
-func getAllFunc(file *ast.File, rawFile *os.File,proxyRecvName string,filter func(recvT string) bool) []string {
+func getAllFunc(file *ast.File, rawFile *os.File, proxyRecvName string, filter func(recvT string) bool) []string {
 	funcStrs := make([]string, 0)
 	for _, v := range file.Decls {
 		funcDecl, ok := v.(*ast.FuncDecl)
@@ -100,14 +100,21 @@ func getAllFunc(file *ast.File, rawFile *os.File,proxyRecvName string,filter fun
 			continue
 		}
 		var receiver *ast.Ident
-		for _,v := range funcDecl.Recv.List {
+		for _, v := range funcDecl.Recv.List {
 			// 目前只支持生成底层类型是struct的代理对象
-			sExp := v.Type.(*ast.StarExpr)
-			ident,ok := sExp.X.(*ast.Ident)
+			sExp, ok := v.Type.(*ast.StarExpr)
+			if !ok {
+				continue
+			}
+			ident, ok := sExp.X.(*ast.Ident)
 			if !ok {
 				continue
 			}
 			receiver = ident
+		}
+		// 无接收器的函数不是正确的声明
+		if receiver == nil {
+			continue
 		}
 		if !filter(receiver.Name) {
 			continue
@@ -117,7 +124,7 @@ func getAllFunc(file *ast.File, rawFile *os.File,proxyRecvName string,filter fun
 		// funcStr
 		sb.WriteString("func(proxy ")
 		// 判断是否指针
-		if handleAstType(receiver,rawFile)[0] == '*' {
+		if handleAstType(receiver, rawFile)[0] == '*' {
 			sb.WriteByte('*')
 		}
 		sb.WriteString(proxyRecvName)
@@ -138,17 +145,20 @@ func getAllFunc(file *ast.File, rawFile *os.File,proxyRecvName string,filter fun
 
 				// 类型肯定只有一个，不可能多个参数多个类型
 				sb.WriteString(" ")
-				sb.WriteString(handleAstType(pv.Type,rawFile))
+				sb.WriteString(handleAstType(pv.Type, rawFile))
 				sb.WriteString(",")
 			}
 		}
 		// 处理参数列表的结束符
 		sb.WriteString(") ")
 		// result types
-		rTypes := make([]string, 0, len(funcDecl.Type.Results.List))
+		rTypes := make([]string, 0, 4)
+		if funcDecl.Type.Results == nil {
+			goto handleBody
+		}
 		// 开始根据返回值类型注入littlerpc client的代码
 		for _, rv := range funcDecl.Type.Results.List {
-			rTypes = append(rTypes, handleAstType(rv.Type,rawFile))
+			rTypes = append(rTypes, handleAstType(rv.Type, rawFile))
 		}
 		// 返回值列表
 		if len(rTypes) > 1 {
@@ -163,9 +173,23 @@ func getAllFunc(file *ast.File, rawFile *os.File,proxyRecvName string,filter fun
 		if len(rTypes) > 1 {
 			sb.WriteByte(')')
 		}
+	handleBody:
 		// inject call
 		sb.WriteString(" {\n\t")
-		sb.WriteString("inter := proxy.Call(")
+		// 无返回值的情况下不需要inter
+		if funcDecl.Type.Results == nil {
+			sb.WriteString("_,_ = proxy.Call(")
+		} else {
+			// 没有返回error/*coder.Error的情况
+			if s := rTypes[len(rTypes)-1]; !(s == "error" || s == "*coder.Error") {
+				sb.WriteString("inter,_ := proxy.Call(")
+			} else if len(rTypes) == 1 && (s == "error" || s == "*coder.Error") {
+				// 只返回error/*coder.Error时的情况
+				sb.WriteString("_,err := proxy.Call(")
+			} else {
+				sb.WriteString("inter,err := proxy.Call(")
+			}
+		}
 		sb.WriteString(fmt.Sprintf("\"%s\",", funcDecl.Name.Name))
 		for _, v := range params {
 			sb.WriteString(v)
@@ -174,10 +198,24 @@ func getAllFunc(file *ast.File, rawFile *os.File,proxyRecvName string,filter fun
 		sb.WriteString(")\n\t")
 		// inject function body
 		for k, v := range rTypes {
+			// 返回值最后一个是error/*coder.Error则不用输出类型断言的代码
+			if k == len(rTypes)-1 && (v == "error" || v == "*coder.Error") {
+				break
+			}
 			sb.WriteString(fmt.Sprintf("r%d := inter[%d].(%s)\n\t", k, k, v))
 		}
 		sb.WriteString("return ")
-		for k := range rTypes {
+		for k, v := range rTypes {
+			// 返回值最后一个是error/*coder.Error
+			if k == len(rTypes)-1 {
+				if v == "*coder.Error" {
+					sb.WriteString("err.(*coder.Error)")
+					break
+				} else if v == "error" {
+					sb.WriteString("err")
+					break
+				}
+			}
 			sb.WriteString("r")
 			sb.WriteString(strconv.Itoa(k))
 			if k < len(rTypes)-1 {
@@ -191,19 +229,19 @@ func getAllFunc(file *ast.File, rawFile *os.File,proxyRecvName string,filter fun
 }
 
 // 在这里生成包注释、导入、工厂函数
-func createBeforeCode(pkgName string,typeName string) string {
+func createBeforeCode(pkgName string, typeName string) string {
 	// 生成包注释
-	comment := fmt.Sprintf("/*\n\t%-12s : littlerpc-generator","@Generator")
-	comment += fmt.Sprintf("\n\t%-12s : %s","@CreateTime",time.Now().String())
-	comment += fmt.Sprintf("\n\t%-12s : littlerpc-generator\n*/\n","@Author")
+	comment := fmt.Sprintf("/*\n\t%-12s : littlerpc-generator", "@Generator")
+	comment += fmt.Sprintf("\n\t%-12s : %s", "@CreateTime", time.Now().String())
+	comment += fmt.Sprintf("\n\t%-12s : littlerpc-generator\n*/\n", "@Author")
 	// 生成包名和导入文件
 	pkgInfo := "package " + pkgName + "\n"
 	pkgInfo += "import (\n\t"
 	pkgInfo += "\"github.com/nyan233/littlerpc\"\n)\n"
 	// 生成类型名和工厂函数
-	typeInfo := fmt.Sprintf("type %s struct {\n\t*littlerpc.Client\n}\n",typeName)
-	typeInfo += fmt.Sprintf("func New%s(client *littlerpc.Client) *%s {",typeName,typeName)
-	typeInfo += fmt.Sprintf("\n\tproxy := &%s{}\n\terr := client.BindFunc(proxy)\n\t",typeName)
+	typeInfo := fmt.Sprintf("type %s struct {\n\t*littlerpc.Client\n}\n", typeName)
+	typeInfo += fmt.Sprintf("func New%s(client *littlerpc.Client) *%s {", typeName, typeName)
+	typeInfo += fmt.Sprintf("\n\tproxy := &%s{}\n\terr := client.BindFunc(proxy)\n\t", typeName)
 	typeInfo += "if err != nil {\n\tpanic(err)\n\t}\n\tproxy.Client = client\n\treturn proxy\n}\n"
 	return comment + pkgInfo + typeInfo
 }
