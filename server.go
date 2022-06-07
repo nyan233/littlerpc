@@ -137,31 +137,16 @@ handleResult:
 		var md coder.CalleeMd
 		var eface = v.Interface()
 		typ := checkIType(eface)
-		// 是否是map/*map或者struct/*struct类型的返回值？
-		var isMapOrStructT bool
-		if typ == coder.Map || typ == coder.Struct {
-			isMapOrStructT = true
-		}
 		// 返回值的类型为指针的情况，为其设置参数类型和正确的附加类型
 		if typ == coder.Pointer {
 			md.ArgType = checkIType(v.Elem().Interface())
 			if md.ArgType == coder.Map || md.ArgType == coder.Struct {
-				isMapOrStructT = true
+				_ = true
 			}
 		} else {
 			md.ArgType = typ
 		}
-		// Map/Struct不需要Any包装器
-		if isMapOrStructT {
-			bytes, err := json.Marshal(eface)
-			if err != nil {
-				HandleError(*rep, *ErrServer, c, "")
-				return
-			}
-			md.Rep = bytes
-			rep.Response = append(rep.Response, md)
-			continue
-		}
+		// Map/Struct也需要Any包装器
 		any := coder.AnyArgs{
 			Any: eface,
 		}
@@ -245,4 +230,8 @@ func (s *Server) onErr(err error) {
 
 func (s *Server) Start() error {
 	return s.server.Start()
+}
+
+func (s *Server) Stop() error {
+	return s.server.Stop()
 }

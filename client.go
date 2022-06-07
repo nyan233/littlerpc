@@ -79,17 +79,7 @@ func (c *Client) Call(methodName string, args ...interface{}) (rep []interface{}
 			md.AppendType = checkIType(lreflect.IdentArrayOrSliceType(v))
 		}
 		// 将参数json序列化到any包装器中
-		// Map/Struct类型不需要any包装器，直接序列化即可
-		if md.ArgType == coder.Struct || md.ArgType == coder.Map {
-			bytes, err := json.Marshal(v)
-			if err != nil {
-				c.onErr(err)
-				return
-			}
-			md.Req = bytes
-			sp.Request = append(sp.Request, md)
-			continue
-		}
+		// Map/Struct类型也需要any包装器
 		any := coder.AnyArgs{
 			Any: v,
 		}
@@ -133,37 +123,6 @@ func (c *Client) Call(methodName string, args ...interface{}) (rep []interface{}
 			AppendType: v.AppendType,
 			Req:        v.Rep,
 		}
-		// 是否是Map/Struct
-		var isMapOrStruct bool
-		// 判断返回值是否是Ptr类型
-		typ := checkIType(eface)
-		if typ == coder.Map || typ == coder.Struct {
-			isMapOrStruct = true
-		} else if typ == coder.Pointer {
-			md.ArgType = typ
-			md.AppendType = checkIType(reflect.ValueOf(eface).Elem().Interface())
-			if md.AppendType == coder.Map || md.AppendType == coder.Struct {
-				isMapOrStruct = true
-			}
-		}
-		if isMapOrStruct {
-			// 返回值是Map/Struct类型的指针？
-			isPtr := false
-			if md.ArgType == coder.Pointer {
-				md.ArgType = md.AppendType
-				isPtr = true
-			}
-			returnV, err := checkCoderType(md, eface)
-			if err != nil {
-				c.onErr(err)
-				return
-			}
-			if isPtr {
-				returnV = lreflect.ToTypePtr(returnV)
-			}
-			rep = append(rep, returnV)
-			continue
-		}
 		returnV, err := checkCoderType(md, eface)
 		if err != nil {
 			c.onErr(err)
@@ -199,4 +158,8 @@ func (c *Client) Call(methodName string, args ...interface{}) (rep []interface{}
 		uErr = nil
 	}
 	return
+}
+
+func (c *Client) Close() error {
+	return c.conn.Close()
 }

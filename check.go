@@ -37,26 +37,25 @@ func checkCoderType(callerMd coder.CallerMd,structPtr interface{}) (interface{},
 		err := json.Unmarshal(callerMd.Req,&tmp)
 		return tmp.Any,err
 	case coder.Integer, coder.Long, coder.Float, coder.Double,coder.Boolean:
+		// encoding/json在解析number的时候需要精确的类型信息
+		// 否则在不设置Encoder的情况下会把number解释float64
 		val := lreflect.CreateAnyStructOnType(structPtr)
 		err := json.Unmarshal(callerMd.Req,val)
-		return reflect.ValueOf(val).Elem().FieldByName("Any").Interface(),err
-	case coder.Array:
-		// 处理数组的附加类型
-		anyStruct := lreflect.CreateAnyStructOnType(structPtr)
-		err := json.Unmarshal(callerMd.Req, anyStruct)
 		if err != nil {
 			return nil,err
 		}
-		anyData := reflect.ValueOf(anyStruct).Elem().FieldByName("Any").Interface()
-		return anyData,nil
-	case coder.Map:
-		val := lreflect.ToTypePtr(structPtr)
-		err := json.Unmarshal(callerMd.Req, val)
-		return structPtr,err
-	case coder.Struct:
-		val := lreflect.ToTypePtr(structPtr)
-		err := json.Unmarshal(callerMd.Req, val)
-		return structPtr, err
+		return reflect.ValueOf(val).Elem().FieldByName("Any").Interface(),err
+	case coder.Array,coder.Struct,coder.Map:
+		// 处理数组/结构体/散列表的附加类型
+		// 因为encoding/json使用反射获取结构体对应字段的类型信息
+		// 而运行时对其重新赋值并不会影响type中每个字段的类型，所以需要重新创建
+		// 以提供精确的类型信息
+		val := lreflect.CreateAnyStructOnType(structPtr)
+		err := json.Unmarshal(callerMd.Req,val)
+		if err != nil {
+			return nil,err
+		}
+		return reflect.ValueOf(val).Elem().FieldByName("Any").Interface(),err
 	default:
 		return nil,errors.New("type is not found")
 	}
