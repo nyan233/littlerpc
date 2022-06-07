@@ -29,6 +29,10 @@ func NewWebSocketTransClient(tlsC *tls.Config,addr string) *WebSocketTransClient
 	return &WebSocketTransClient{conn: conn}
 }
 
+func (c *WebSocketTransClient) Close() error {
+	return c.conn.Close()
+}
+
 func (c *WebSocketTransClient) WriteTextMessage(p []byte) error {
 	return c.conn.WriteMessage(websocket.TextMessage,p)
 }

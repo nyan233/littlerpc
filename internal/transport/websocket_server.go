@@ -16,9 +16,9 @@ const (
 // WebSocketTransServer 不设置错误处理回调函数则采用默认回调
 // 默认函数中遇到错误就会panic，所以不期望panic的话一定要设置错误处理回调
 type WebSocketTransServer struct {
+	started int32
+	closed int32
 	server *nbhttp.Server
-	// 是否已经启动
-	started int64
 	onMsg   func(conn *websocket.Conn, messageType websocket.MessageType, bytes []byte)
 	onClose func(conn *websocket.Conn, err error)
 	onOpen  func(conn *websocket.Conn)
@@ -47,13 +47,13 @@ func (server *WebSocketTransServer) SetOnOpen(onOpen func(conn *websocket.Conn))
 	server.onOpen = onOpen
 }
 
-func (server WebSocketTransServer) SetOnErr(onErr func(err error)) {
+func (server *WebSocketTransServer) SetOnErr(onErr func(err error)) {
 	server.onErr = onErr
 }
 
 func (server *WebSocketTransServer) Start() error {
-	if !atomic.CompareAndSwapInt64(&server.started,0,1) {
-		return errors.New("server is started")
+	if !atomic.CompareAndSwapInt32(&server.started,0,1) {
+		return errors.New("server already started")
 	}
 	mux := &http.ServeMux{}
 	mux.HandleFunc(wsUrl, func(writer http.ResponseWriter, request *http.Request) {
@@ -71,4 +71,12 @@ func (server *WebSocketTransServer) Start() error {
 	})
 	server.server.Handler = mux
 	return server.server.Start()
+}
+
+func (server *WebSocketTransServer) Stop() error {
+	if !atomic.CompareAndSwapInt32(&server.closed,0,1) {
+		return errors.New("server already closed")
+	}
+	server.server.Stop()
+	return nil
 }

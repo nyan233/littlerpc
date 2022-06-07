@@ -97,6 +97,8 @@ func TestNoTlsConnect(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	defer server.Stop()
+
 	var wg sync.WaitGroup
 	nGoroutine := 100
 	// 统计触发错误的次数
@@ -109,6 +111,7 @@ func TestNoTlsConnect(t *testing.T) {
 			client := NewClient(WithCallOnErr(func(err error) {
 				atomic.AddInt64(&errCount,1)
 			}),WithAddressClient(":1234"))
+			defer client.Close()
 			proxy := NewHelloTestProxy(client)
 			proxy.Add(int64(addV))
 			proxy.CreateUser(User{
