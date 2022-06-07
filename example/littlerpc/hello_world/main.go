@@ -5,19 +5,18 @@ import (
 	"github.com/nyan233/littlerpc"
 )
 
-
-type Hello struct {}
+type Hello struct{}
 
 type UserJson struct {
 	Name string
-	Id int64
+	Id   int64
 }
 
-func (h *Hello) Hello(name string,id int64) (*UserJson,error) {
+func (h *Hello) Hello(name string, id int64) (*UserJson, error) {
 	return &UserJson{
 		Name: name,
 		Id:   id,
-	},nil
+	}, nil
 }
 
 func Server() {
@@ -35,7 +34,7 @@ func Server() {
 func Client() {
 	c := littlerpc.NewClient(littlerpc.WithAddressClient(":1234"))
 	c.BindFunc(&Hello{})
-	rep,err := c.Call("Hello","Tony",1 << 20)
+	rep, err := c.Call("Hello", "Tony", 1<<20)
 	if err != nil {
 		panic(err)
 	}

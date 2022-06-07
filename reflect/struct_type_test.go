@@ -8,15 +8,14 @@ import (
 
 func TestCreateSliceType(t *testing.T) {
 	val := CreateAnyStructOnElemType(new(string))
-	_ = val.(*struct{
+	_ = val.(*struct {
 		Any []*string
 	})
 	val = CreateAnyStructOnType(*new([]string))
-	_ = val.(*struct{
+	_ = val.(*struct {
 		Any []string
 	})
 }
-
 
 func BenchmarkCrateAndJsonUnmarshal(b *testing.B) {
 	type Any struct {
@@ -29,7 +28,7 @@ func BenchmarkCrateAndJsonUnmarshal(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			val := CreateAnyStructOnType(*new(int64))
 			_ = json.Unmarshal([]byte(JsonData), val)
-			_ = ComposeStructAnyEface(val,typ)
+			_ = ComposeStructAnyEface(val, typ)
 		}
 	})
 	b.Run("Reflect-Create", func(b *testing.B) {

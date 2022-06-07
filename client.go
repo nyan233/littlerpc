@@ -60,7 +60,7 @@ func (c *Client) defaultOnErr(err error) {
 	c.logger.ErrorFromErr(err)
 }
 
-func (c *Client) Call(methodName string, args ...interface{}) (rep []interface{},uErr error) {
+func (c *Client) Call(methodName string, args ...interface{}) (rep []interface{}, uErr error) {
 	sp := &coder.RStackFrame{}
 	sp.MethodName = methodName
 	method, ok := c.elem.methods[methodName]

@@ -9,8 +9,8 @@ import (
 //
 //}
 
-func fixJsonType(i interface{},typ coder.Type) interface{} {
-	eType, err := mappingReflectNoPtrType(typ,i)
+func fixJsonType(i interface{}, typ coder.Type) interface{} {
+	eType, err := mappingReflectNoPtrType(typ, i)
 	if err != nil {
 		return nil
 	}

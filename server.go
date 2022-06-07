@@ -110,16 +110,16 @@ func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType,
 	}
 	// 验证客户端传来的栈帧中每个参数的类型是否与服务器需要的一致？
 	// receiver(接收器)参与验证
-	ok,noMatch := checkInputTypeList(callArgs,inputTypeList)
+	ok, noMatch := checkInputTypeList(callArgs, inputTypeList)
 	if !ok {
 		if noMatch != nil {
-			HandleError(*rep,*ErrCallArgsType,c,
-				fmt.Sprintf("pass value type is %s but call arg type is %s",noMatch[1],noMatch[0]),
+			HandleError(*rep, *ErrCallArgsType, c,
+				fmt.Sprintf("pass value type is %s but call arg type is %s", noMatch[1], noMatch[0]),
 			)
 		} else {
-			HandleError(*rep,*ErrCallArgsType,c,
+			HandleError(*rep, *ErrCallArgsType, c,
 				fmt.Sprintf("pass arg list length no equal of call arg list : len(callArgs) == %d : len(inputTypeList) == %d",
-					len(callArgs) - 1,len(inputTypeList) - 1),
+					len(callArgs)-1, len(inputTypeList)-1),
 			)
 		}
 		return
@@ -200,7 +200,7 @@ handleResult:
 		if len(callResult) == 2 {
 			goto handleResult
 		}
-		callResult = callResult[len(callResult) - 2:]
+		callResult = callResult[len(callResult)-2:]
 		// 如果最后没有返回*code.Error/error会导致遗漏处理一些返回值
 		// 这个时候需要重新检查
 		goto handleResult
@@ -210,7 +210,7 @@ handleResult:
 	if err != nil {
 		HandleError(*rep, *ErrServer, c, err.Error())
 	}
-	err = c.WriteMessage(websocket.TextMessage,repBytes)
+	err = c.WriteMessage(websocket.TextMessage, repBytes)
 	if err != nil {
 		s.logger.ErrorFromErr(err)
 	}

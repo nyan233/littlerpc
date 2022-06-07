@@ -8,9 +8,9 @@ import (
 	"net/rpc"
 )
 
-type Hello struct {}
+type Hello struct{}
 
-func (receiver *Hello) Hello(str string,rep *int) error {
+func (receiver *Hello) Hello(str string, rep *int) error {
 	*rep = 4
 	fmt.Println(str)
 	return errors.New("my is error")
@@ -23,22 +23,22 @@ func Server() {
 		panic(err)
 	}
 	rpc.HandleHTTP()
-	listener, err := net.Listen("tcp",":1234")
+	listener, err := net.Listen("tcp", ":1234")
 	if err != nil {
 		panic(err)
 	}
-	go http.Serve(listener,nil)
+	go http.Serve(listener, nil)
 }
 
 func Client() {
-	client, err := rpc.DialHTTP("tcp",":1234")
+	client, err := rpc.DialHTTP("tcp", ":1234")
 	if err != nil {
 		panic(err)
 	}
 	var rep int
 	err = client.Call("Hello.Hello", "Hello Word!", &rep)
 	fmt.Println(rep)
-	fmt.Printf("%v",err)
+	fmt.Printf("%v", err)
 }
 
 func main() {

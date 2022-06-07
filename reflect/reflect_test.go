@@ -11,8 +11,8 @@ type testStruct struct {
 }
 
 func TestFuncReflect(t *testing.T) {
-	testFunc := func(i1 []int,i2 *testStruct) (*int,*testStruct){
-		return nil,nil
+	testFunc := func(i1 []int, i2 *testStruct) (*int, *testStruct) {
+		return nil, nil
 	}
 	// 测试函数的参数列表
 	typs := FuncInputTypeList(reflect.ValueOf(testFunc))
@@ -35,7 +35,7 @@ func TestTypeTo(t *testing.T) {
 	_ = eface.(map[string]int)
 
 	// Type No New
-	eface = typeToEfaceNoNew(reflect.TypeOf(*new(int)),10)
+	eface = typeToEfaceNoNew(reflect.TypeOf(*new(int)), 10)
 	if eface != 10 {
 		panic("typeToEfaceNoNew return value failed")
 	}
@@ -49,7 +49,7 @@ func TestReflectConv(t *testing.T) {
 	i := typeToEfaceNew(reflect.TypeOf(new(int64)))
 	_ = i.(*int64)
 	v, _ := ToTypePtr(map[string]int{"hello": 1111})
-	v = createMapPtr(map[int]int{1:1})
+	v = createMapPtr(map[int]int{1: 1})
 	mapV := v.(*map[int]int)
 	(*mapV)[1] = 2
 }

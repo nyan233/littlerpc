@@ -12,12 +12,12 @@ import (
 
 func HandleError(sp coder.RStackFrame, errNo coder.Error, conn *websocket.Conn, appendInfo string, more ...interface{}) {
 	md := coder.CalleeMd{
-		ArgType: coder.Struct,
+		ArgType:    coder.Struct,
 		AppendType: coder.ServerError,
-		Rep:     nil,
+		Rep:        nil,
 	}
 	switch errNo.Info {
-	case ErrJsonUnMarshal.Info,ErrMethodNoRegister.Info,ErrCallArgsType.Info:
+	case ErrJsonUnMarshal.Info, ErrMethodNoRegister.Info, ErrCallArgsType.Info:
 		errNo.Trace += appendInfo
 		err := md.EncodeResponse(errNo)
 		if err != nil {

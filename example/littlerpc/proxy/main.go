@@ -19,12 +19,12 @@ func (fs *FileServer) SendFile(path string, data []byte) {
 	fs.fileMap[path] = data
 }
 
-func (fs *FileServer) GetFile(path string) ([]byte,bool) {
-	bytes,ok := fs.fileMap[path]
-	return bytes,ok
+func (fs *FileServer) GetFile(path string) ([]byte, bool) {
+	bytes, ok := fs.fileMap[path]
+	return bytes, ok
 }
 
-func (fs *FileServer) OpenSysFile(path string) ([]byte,error) {
+func (fs *FileServer) OpenSysFile(path string) ([]byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -45,8 +45,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	proxy.SendFile("main.go",fileBytes)
-	fileBytes,ok := proxy.GetFile("main.go")
+	proxy.SendFile("main.go", fileBytes)
+	fileBytes, ok := proxy.GetFile("main.go")
 	if !ok {
 		panic("no such file")
 	}

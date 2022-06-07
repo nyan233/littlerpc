@@ -6,4 +6,4 @@ func (p *Test) MapCallTest(m1, m2 map[string]map[string]byte) (*Test, map[string
 	return nil, nil
 }
 
-func (p *Test) CallSlice(s1 []*Test,s2 []map[string]int) bool{return false}
+func (p *Test) CallSlice(s1 []*Test, s2 []map[string]int) bool { return false }

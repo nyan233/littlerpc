@@ -24,19 +24,19 @@ func NewFileServerProxy(client *littlerpc.Client) *FileServerProxy {
 }
 
 func (proxy *FileServerProxy) SendFile(path string, data []byte) {
-	_,_ = proxy.Call("SendFile", path, data)
+	_, _ = proxy.Call("SendFile", path, data)
 	return
 }
 
 func (proxy *FileServerProxy) GetFile(path string) ([]byte, bool) {
-	inter,_ := proxy.Call("GetFile", path)
+	inter, _ := proxy.Call("GetFile", path)
 	r0 := inter[0].([]byte)
 	r1 := inter[1].(bool)
 	return r0, r1
 }
 
 func (proxy *FileServerProxy) OpenSysFile(path string) ([]byte, error) {
-	inter,err := proxy.Call("OpenSysFile", path)
+	inter, err := proxy.Call("OpenSysFile", path)
 	r0 := inter[0].([]byte)
-	return r0,err
+	return r0, err
 }

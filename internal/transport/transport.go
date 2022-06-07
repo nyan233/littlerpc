@@ -7,8 +7,8 @@ import (
 
 const (
 	httpDataType = "application/json"
-	httpPing = "application/ping"
-	httpPong = "application/pong"
+	httpPing     = "application/ping"
+	httpPong     = "application/pong"
 )
 
 const (
@@ -18,8 +18,8 @@ const (
 
 // Transport 抽象了不同的通信协议
 type Transport interface {
-	SendData(p []byte) (n int,err error)
-	RecvData(p []byte) (n int,err error)
+	SendData(p []byte) (n int, err error)
+	RecvData(p []byte) (n int, err error)
 }
 
 var (

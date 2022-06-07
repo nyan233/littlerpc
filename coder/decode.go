@@ -7,11 +7,11 @@ type CalleeMd struct {
 	ArgType Type
 	// 附加类型
 	AppendType Type
-	Rep []byte
+	Rep        []byte
 }
 
 func (c *CalleeMd) EncodeResponse(i interface{}) error {
-	rep,err := json.Marshal(i)
+	rep, err := json.Marshal(i)
 	if err != nil {
 		return err
 	}

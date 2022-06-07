@@ -6,7 +6,7 @@ import (
 )
 
 type Eface struct {
-	typ unsafe.Pointer
+	typ  unsafe.Pointer
 	data unsafe.Pointer
 }
 
@@ -15,11 +15,10 @@ type Iface struct {
 	data unsafe.Pointer
 }
 
-
 // FuncInputTypeList 返回函数的输入参数类型列表，空接口切片表示
 func FuncInputTypeList(value reflect.Value) []interface{} {
 	typ := value.Type()
-	typs := make([]interface{},typ.NumIn())
+	typs := make([]interface{}, typ.NumIn())
 	for k := range typs {
 		if typ.Kind() == reflect.Interface {
 			typs[k] = value.Interface()
@@ -32,7 +31,7 @@ func FuncInputTypeList(value reflect.Value) []interface{} {
 // FuncOutputTypeList 返回函数的返回值类型列表，空接口切片表示
 func FuncOutputTypeList(value reflect.Value) []interface{} {
 	typ := value.Type()
-	typs := make([]interface{},typ.NumOut())
+	typs := make([]interface{}, typ.NumOut())
 	for k := range typs {
 		if typ.Kind() == reflect.Interface {
 			typs[k] = value.Interface()
@@ -61,7 +60,7 @@ func typeToEfaceNew(typ reflect.Type) interface{} {
 
 // 将reflect.Type中携带的类型信息转换为efce的类型信息
 // 不会会重新创建数据
-func typeToEfaceNoNew(typ reflect.Type,val interface{}) interface{} {
+func typeToEfaceNoNew(typ reflect.Type, val interface{}) interface{} {
 	iface := (*[2]unsafe.Pointer)(unsafe.Pointer(&typ))
 	// Map/Chan 的eface data指针是双重指针，要做特殊处理
 	if typ.Kind() == reflect.Map {

@@ -10,19 +10,19 @@ type WebSocketTransClient struct {
 	conn *websocket.Conn
 }
 
-func NewWebSocketTransClient(tlsC *tls.Config,addr string) *WebSocketTransClient {
+func NewWebSocketTransClient(tlsC *tls.Config, addr string) *WebSocketTransClient {
 	dialer := websocket.Dialer{
 		TLSClientConfig: tlsC,
 	}
 	u := url.URL{
 		Scheme: "wss",
-		Host: addr,
-		Path: wsUrl,
+		Host:   addr,
+		Path:   wsUrl,
 	}
 	if tlsC == nil {
 		u.Scheme = "ws"
 	}
-	conn,_, err := dialer.Dial(u.String(),nil)
+	conn, _, err := dialer.Dial(u.String(), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -34,13 +34,13 @@ func (c *WebSocketTransClient) Close() error {
 }
 
 func (c *WebSocketTransClient) WriteTextMessage(p []byte) error {
-	return c.conn.WriteMessage(websocket.TextMessage,p)
+	return c.conn.WriteMessage(websocket.TextMessage, p)
 }
 
-func (c *WebSocketTransClient) RecvMessage() (int,[]byte,error) {
+func (c *WebSocketTransClient) RecvMessage() (int, []byte, error) {
 	return c.conn.ReadMessage()
 }
 
 func (c *WebSocketTransClient) WritePongMessage(p []byte) error {
-	return c.conn.WriteMessage(PongMessage,p)
+	return c.conn.WriteMessage(PongMessage, p)
 }

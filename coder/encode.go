@@ -13,10 +13,10 @@ type CallerMd struct {
 }
 
 func (c *CallerMd) EncodeRequest(i interface{}) error {
-	req,err := json.Marshal(i)
+	req, err := json.Marshal(i)
 	if err != nil {
 		return err
 	}
-	c.Req= req
+	c.Req = req
 	return nil
 }

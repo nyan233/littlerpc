@@ -5,7 +5,7 @@ import (
 	"github.com/nyan233/littlerpc/coder"
 )
 
-type Test struct {}
+type Test struct{}
 
 func (p *Test) Foo(s1 string) int {
 	return 1 << 20

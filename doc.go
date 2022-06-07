@@ -6,6 +6,6 @@ import "unsafe"
 // func (r receiver) MethodName(arg1 Type, arg2 Type ...) (rep Type/*Type ..., err error/*coder.Error) {}
 
 type eface struct {
-	typ unsafe.Pointer
+	typ  unsafe.Pointer
 	data unsafe.Pointer
 }

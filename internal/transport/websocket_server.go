@@ -17,8 +17,8 @@ const (
 // 默认函数中遇到错误就会panic，所以不期望panic的话一定要设置错误处理回调
 type WebSocketTransServer struct {
 	started int32
-	closed int32
-	server *nbhttp.Server
+	closed  int32
+	server  *nbhttp.Server
 	onMsg   func(conn *websocket.Conn, messageType websocket.MessageType, bytes []byte)
 	onClose func(conn *websocket.Conn, err error)
 	onOpen  func(conn *websocket.Conn)
@@ -52,7 +52,7 @@ func (server *WebSocketTransServer) SetOnErr(onErr func(err error)) {
 }
 
 func (server *WebSocketTransServer) Start() error {
-	if !atomic.CompareAndSwapInt32(&server.started,0,1) {
+	if !atomic.CompareAndSwapInt32(&server.started, 0, 1) {
 		return errors.New("server already started")
 	}
 	mux := &http.ServeMux{}
@@ -74,7 +74,7 @@ func (server *WebSocketTransServer) Start() error {
 }
 
 func (server *WebSocketTransServer) Stop() error {
-	if !atomic.CompareAndSwapInt32(&server.closed,0,1) {
+	if !atomic.CompareAndSwapInt32(&server.closed, 0, 1) {
 		return errors.New("server already closed")
 	}
 	server.server.Stop()

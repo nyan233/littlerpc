@@ -18,27 +18,27 @@ type HelloTest struct {
 }
 
 func (t *HelloTest) Add(i int64) {
-	atomic.AddInt64(&t.count,i)
+	atomic.AddInt64(&t.count, i)
 }
 
 func (t *HelloTest) CreateUser(user User) {
-	t.userMap.Store(user.Id,user)
+	t.userMap.Store(user.Id, user)
 }
 
 func (t *HelloTest) DeleteUser(uid int) {
 	t.userMap.Delete(uid)
 }
 
-func (t *HelloTest) SelectUser(uid int) (User,bool) {
-	u,ok := t.userMap.Load(uid)
+func (t *HelloTest) SelectUser(uid int) (User, bool) {
+	u, ok := t.userMap.Load(uid)
 	if ok {
-		return u.(User),ok
+		return u.(User), ok
 	}
-	return User{},false
+	return User{}, false
 }
 
-func (t *HelloTest) ModifyUser(uid int,user User) bool {
-	_,ok := t.userMap.LoadOrStore(uid,user)
+func (t *HelloTest) ModifyUser(uid int, user User) bool {
+	_, ok := t.userMap.LoadOrStore(uid, user)
 	return ok
 }
 
@@ -84,7 +84,6 @@ func (proxy HelloTestProxy) ModifyUser(uid int, user User) bool {
 	return r0
 }
 
-
 func TestNoTlsConnect(t *testing.T) {
 	server := NewServer(WithAddressServer(":1234"))
 	h := &HelloTest{}
@@ -109,8 +108,8 @@ func TestNoTlsConnect(t *testing.T) {
 		j := i
 		go func() {
 			client := NewClient(WithCallOnErr(func(err error) {
-				atomic.AddInt64(&errCount,1)
-			}),WithAddressClient(":1234"))
+				atomic.AddInt64(&errCount, 1)
+			}), WithAddressClient(":1234"))
 			defer client.Close()
 			proxy := NewHelloTestProxy(client)
 			proxy.Add(int64(addV))
@@ -118,14 +117,14 @@ func TestNoTlsConnect(t *testing.T) {
 				Id:   j + 100,
 				Name: "Jeni",
 			})
-			user,ok := proxy.SelectUser(j + 100)
+			user, ok := proxy.SelectUser(j + 100)
 			if !ok {
 				panic("the no value")
 			}
 			if user.Name != "Jeni" {
 				panic("the no value")
 			}
-			proxy.ModifyUser(j + 100,User{
+			proxy.ModifyUser(j+100, User{
 				Id:   j + 100,
 				Name: "Tony",
 			})
@@ -136,7 +135,7 @@ func TestNoTlsConnect(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if atomic.LoadInt64(&h.count) != int64(addV * nGoroutine) {
+	if atomic.LoadInt64(&h.count) != int64(addV*nGoroutine) {
 		t.Fatal("h.count no correct")
 	}
 	if atomic.LoadInt64(&errCount) != int64(nGoroutine) {

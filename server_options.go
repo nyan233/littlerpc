@@ -30,7 +30,7 @@ func WithDefaultServer() serverOption {
 
 func WithAddressServer(adds ...string) serverOption {
 	return func(config *ServerConfig) {
-		config.Address = append(config.Address,adds...)
+		config.Address = append(config.Address, adds...)
 	}
 }
 
