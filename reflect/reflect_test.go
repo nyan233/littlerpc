@@ -41,10 +41,14 @@ func TestTypeTo(t *testing.T) {
 	}
 }
 
+func TestConcurrentTypeTo(t *testing.T) {
+
+}
+
 func TestReflectConv(t *testing.T) {
 	i := typeToEfaceNew(reflect.TypeOf(new(int64)))
 	_ = i.(*int64)
-	v := ToTypePtr(map[string]int{"hello":1111})
+	v, _ := ToTypePtr(map[string]int{"hello": 1111})
 	v = createMapPtr(map[int]int{1:1})
 	mapV := v.(*map[int]int)
 	(*mapV)[1] = 2

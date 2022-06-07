@@ -6,7 +6,7 @@ import (
 )
 
 func TestConvert(t *testing.T) {
-	nTyp := ToTypePtr(*new(int))
+	nTyp, _ := ToTypePtr(*new(int))
 	_ = nTyp.(*int)
 	efceT := interface{}(10)
 	val := ToValueTypeEface(reflect.ValueOf(efceT))
