@@ -41,8 +41,8 @@ func Client() {
 	}
 	user := rep[0].(*UserJson)
 	fmt.Println(user)
-	if rep[1] != nil {
-		panic(rep[1].(error))
+	if err != nil {
+		panic(err)
 	}
 }
 
