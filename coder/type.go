@@ -15,7 +15,7 @@ const (
 	Array            // 在go里表示数组和切片
 	Struct           // 用于表示class/struct
 	Map              // 通用的Map类型
-	Pointer          // 表示一个指针或者暗含一个指针
+	Pointer          // 表示一个指针或者暗含一个指针,这个值不允许传输时使用，只能用于类型验证
 	Interface        // 通用的接口类型
 	ServerError      // 用于附加类型，用于区别是正常返回的错误还是Server遇到比如解析Json失败传回的错误
 )

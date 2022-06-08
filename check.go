@@ -6,32 +6,11 @@ import (
 	"github.com/nyan233/littlerpc/coder"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"reflect"
-	"unsafe"
 )
 
 // structPtr中必须是指针变量
 func checkCoderType(callerMd coder.CallerMd, structPtr interface{}) (interface{}, error) {
 	switch callerMd.ArgType {
-	// 处理额外的指针类型
-	case coder.Pointer:
-		var any coder.AnyArgs
-		err := json.Unmarshal(callerMd.Req, &any)
-		if err != nil {
-			return nil, err
-		}
-		// encoding/json默认识别的类型可能有误，需要修复类型
-		any.Any = fixJsonType(any.Any, callerMd.AppendType)
-		typEface, err := mappingReflectPtrType(callerMd.AppendType)
-		// 简单基础类型如int这类的和map等复杂类型处理的逻辑不一样
-		if err == nil {
-			// 替换类型信息
-			return *(*interface{})(unsafe.Pointer(&eface{
-				typ:  (*eface)(unsafe.Pointer(&typEface)).typ,
-				data: (*eface)(unsafe.Pointer(&any.Any)).data,
-			})), nil
-		}
-		// 复杂类型直接使用encoding/json生成的类型信息
-		return any.Any, nil
 	case coder.String:
 		var tmp coder.AnyArgs
 		err := json.Unmarshal(callerMd.Req, &tmp)
