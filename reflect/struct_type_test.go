@@ -2,18 +2,27 @@ package reflect
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"testing"
 )
 
 func TestCreateSliceType(t *testing.T) {
-	val := CreateAnyStructOnElemType(new(string))
-	_ = val.(*struct {
-		Any []*string
+	getTypeInfo(func(k int, v interface{}) {
+		t.Run(fmt.Sprintf("CreateNoSliceType-%s",reflect.TypeOf(v).Kind()), func(t *testing.T) {
+			for i := 0; i < 10; i++ {
+				val := CreateAnyStructOnType(v)
+				ComposeStructAnyEface(val,reflect.TypeOf(v))
+			}
+		})
 	})
-	val = CreateAnyStructOnType(*new([]string))
-	_ = val.(*struct {
-		Any []string
+	getTypeInfo(func(k int, v interface{}) {
+		t.Run(fmt.Sprintf("CreateSliceType-%s",reflect.TypeOf(v).Kind()), func(t *testing.T) {
+			for i := 0; i < 10; i++ {
+				val := CreateAnyStructOnElemType(v)
+				ComposeStructAnyEface(val,reflect.TypeOf(v))
+			}
+		})
 	})
 }
 
