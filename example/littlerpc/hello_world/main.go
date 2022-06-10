@@ -34,7 +34,7 @@ func Server() {
 func Client() {
 	c := littlerpc.NewClient(littlerpc.WithAddressClient(":1234"))
 	c.BindFunc(&Hello{})
-	rep, err := c.Call("Hello", "Tony", 1<<20)
+	rep, err := c.Call("Hello.Hello", "Tony", 1<<20)
 	if err != nil {
 		panic(err)
 	}
