@@ -102,10 +102,10 @@ func (s *Server) handleResult(c *websocket.Conn,callResult []reflect.Value,rep *
 
 // 从客户端传来的数据中序列化对应过程需要的调用参数
 // ok指示数据是否合法
-func (s *Server) getCallArgsFromClient(c *websocket.Conn,method reflect.Value,callerMd,rep *coder.RStackFrame) (callArgs []reflect.Value,ok bool){
+func (s *Server) getCallArgsFromClient(c *websocket.Conn,receiver,method reflect.Value,callerMd,rep *coder.RStackFrame) (callArgs []reflect.Value,ok bool){
 	callArgs = []reflect.Value{
 		// receiver
-		s.elem.data,
+		receiver,
 	}
 	inputTypeList := lreflect.FuncInputTypeList(method)
 	for k, v := range callerMd.Request {

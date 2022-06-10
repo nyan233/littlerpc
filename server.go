@@ -11,16 +11,23 @@ import (
 	"github.com/zbh255/bilog"
 	"reflect"
 	"runtime"
+	"strings"
+	"sync"
 )
 
-type ElemMata struct {
+type ElemMeta struct {
+	// instance type
 	typ     reflect.Type
+	// instance pointer
 	data    reflect.Value
+	// instance method collection
 	methods map[string]reflect.Value
 }
 
 type Server struct {
-	elem ElemMata
+	// 存储绑定的实例的集合
+	// Map[TypeName]:[ElemMeta]
+	elems sync.Map
 	// Server Engine
 	server *transport.WebSocketTransServer
 	// 任务池
@@ -64,9 +71,18 @@ func (s *Server) Elem(i interface{}) error {
 	if i == nil {
 		return errors.New("register elem is nil")
 	}
-	elemD := ElemMata{}
+	elemD := ElemMeta{}
 	elemD.typ = reflect.TypeOf(i)
 	elemD.data = reflect.ValueOf(i)
+	// 检查类型的名字是否正确，因为类型名要作为key
+	name := reflect.Indirect(reflect.ValueOf(i)).Type().Name()
+	if name == "" {
+		return errors.New("the typ name is not defined")
+	}
+	// 检查是否有与该类型绑定的方法
+	if elemD.typ.NumMethod() == 0 {
+		return errors.New("no bind receiver method")
+	}
 	// init map
 	elemD.methods = make(map[string]reflect.Value, elemD.typ.NumMethod())
 	for i := 0; i < elemD.typ.NumMethod(); i++ {
@@ -75,7 +91,7 @@ func (s *Server) Elem(i interface{}) error {
 			elemD.methods[method.Name] = method.Func
 		}
 	}
-	s.elem = elemD
+	s.elems.Store(name,elemD)
 	return nil
 }
 
@@ -91,14 +107,26 @@ func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType,
 		return
 	}
 	// 序列化完之后才确定调用名
-	rep.MethodName = callerMd.MethodName
-	method, ok := s.elem.methods[callerMd.MethodName]
+	// MethodName : Hello.Hello : receiver:methodName
+	methodData := strings.SplitN(callerMd.MethodName,".",2)
+	// 方法名和类型名不能为空
+	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
+		HandleError(*rep,*ErrMethodNoRegister,c,callerMd.MethodName)
+		return
+	}
+	eTmp, ok := s.elems.Load(methodData[0])
+	if !ok {
+		HandleError(*rep,*ErrElemTypeNoRegister,c,methodData[0])
+		return
+	}
+	elemData := eTmp.(ElemMeta)
+	method, ok := elemData.methods[methodData[1]]
 	if !ok {
 		HandleError(*rep, *ErrMethodNoRegister, c, "")
 		return
 	}
 	// 从客户端校验并获得合法的调用参数
-	callArgs,ok := s.getCallArgsFromClient(c,method,callerMd,rep)
+	callArgs,ok := s.getCallArgsFromClient(c,elemData.data,method,callerMd,rep)
 	// 参数校验为不合法
 	if !ok {
 		return

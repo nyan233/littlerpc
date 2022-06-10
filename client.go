@@ -8,10 +8,11 @@ import (
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"github.com/zbh255/bilog"
 	"reflect"
+	"strings"
 )
 
 type Client struct {
-	elem   ElemMata
+	elem   ElemMeta
 	logger bilog.Logger
 	// 错误处理回调函数
 	onErr func(err error)
@@ -41,7 +42,7 @@ func (c *Client) BindFunc(i interface{}) error {
 	if i == nil {
 		return errors.New("register elem is nil")
 	}
-	elemD := ElemMata{}
+	elemD := ElemMeta{}
 	elemD.typ = reflect.TypeOf(i)
 	elemD.data = reflect.ValueOf(i)
 	// init map
@@ -60,10 +61,14 @@ func (c *Client) defaultOnErr(err error) {
 	c.logger.ErrorFromErr(err)
 }
 
-func (c *Client) Call(methodName string, args ...interface{}) (rep []interface{}, uErr error) {
+func (c *Client) Call(processName string, args ...interface{}) (rep []interface{}, uErr error) {
+	methodData := strings.SplitN(processName,".",2)
+	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
+		panic("the illegal type name and method name")
+	}
 	sp := &coder.RStackFrame{}
-	sp.MethodName = methodName
-	method, ok := c.elem.methods[methodName]
+	sp.MethodName = processName
+	method, ok := c.elem.methods[methodData[1]]
 	if !ok {
 		panic("the method no register or is private method")
 	}
