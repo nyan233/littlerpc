@@ -18,7 +18,7 @@ func WithDefaultClient() clientOption {
 		config.KeepAlive = false
 		config.ClientConnTimeout = 90 * time.Second
 		config.ClientPPTimeout = 5 * time.Second
-		config.Logger = logger
+		config.Logger = Logger
 	}
 }
 

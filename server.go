@@ -46,7 +46,7 @@ func NewServer(opts ...serverOption) *Server {
 	if sc.Logger != nil {
 		server.logger = sc.Logger
 	} else {
-		server.logger = logger
+		server.logger = Logger
 	}
 	wsConf := nbhttp.Config{
 		NPoller:        runtime.NumCPU() * 2,

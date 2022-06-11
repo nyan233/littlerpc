@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-var logger bilog.Logger = bilog.NewLogger(os.Stdout, bilog.PANIC, bilog.WithTimes(),
+var Logger bilog.Logger = bilog.NewLogger(os.Stdout, bilog.PANIC, bilog.WithTimes(),
 	bilog.WithCaller(), bilog.WithLowBuffer(0), bilog.WithTopBuffer(0))
 
 var noCallerLogger bilog.Logger = bilog.NewLogger(os.Stdout, bilog.PANIC, bilog.WithDefault())
