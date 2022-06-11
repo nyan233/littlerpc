@@ -1,6 +1,6 @@
 /*
 	@Generator   : littlerpc-generator
-	@CreateTime  : 2022-06-05 23:14:33.184555 +0800 CST m=+0.000872869
+	@CreateTime  : 2022-06-10 16:40:12.356408 +0800 CST m=+0.002272427
 	@Author      : littlerpc-generator
 */
 package main
@@ -23,20 +23,20 @@ func NewFileServerProxy(client *littlerpc.Client) *FileServerProxy {
 	return proxy
 }
 
-func (proxy *FileServerProxy) SendFile(path string, data []byte) {
-	_, _ = proxy.Call("SendFile", path, data)
+func (proxy FileServerProxy) SendFile(path string, data []byte) {
+	_, _ = proxy.Call("FileServer.SendFile", path, data)
 	return
 }
 
-func (proxy *FileServerProxy) GetFile(path string) ([]byte, bool) {
-	inter, _ := proxy.Call("GetFile", path)
+func (proxy FileServerProxy) GetFile(path string) ([]byte, bool) {
+	inter, _ := proxy.Call("FileServer.GetFile", path)
 	r0 := inter[0].([]byte)
 	r1 := inter[1].(bool)
 	return r0, r1
 }
 
-func (proxy *FileServerProxy) OpenSysFile(path string) ([]byte, error) {
-	inter, err := proxy.Call("OpenSysFile", path)
+func (proxy FileServerProxy) OpenSysFile(path string) ([]byte, error) {
+	inter, err := proxy.Call("FileServer.OpenSysFile", path)
 	r0 := inter[0].([]byte)
 	return r0, err
 }

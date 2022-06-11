@@ -57,29 +57,29 @@ func NewHelloTestProxy(client *Client) *HelloTestProxy {
 }
 
 func (proxy HelloTestProxy) Add(i int64) {
-	_, _ = proxy.Call("Add", i)
+	_, _ = proxy.Call("HelloTest.Add", i)
 	return
 }
 
 func (proxy HelloTestProxy) CreateUser(user User) {
-	_, _ = proxy.Call("CreateUser", user)
+	_, _ = proxy.Call("HelloTest.CreateUser", user)
 	return
 }
 
 func (proxy HelloTestProxy) DeleteUser(uid int) {
-	_, _ = proxy.Call("DeleteUser", uid)
+	_, _ = proxy.Call("HelloTest.DeleteUser", uid)
 	return
 }
 
 func (proxy HelloTestProxy) SelectUser(uid int) (User, bool) {
-	inter, _ := proxy.Call("SelectUser", uid)
+	inter, _ := proxy.Call("HelloTest.SelectUser", uid)
 	r0 := inter[0].(User)
 	r1 := inter[1].(bool)
 	return r0, r1
 }
 
 func (proxy HelloTestProxy) ModifyUser(uid int, user User) bool {
-	inter, _ := proxy.Call("ModifyUser", uid, user)
+	inter, _ := proxy.Call("HelloTest.ModifyUser", uid, user)
 	r0 := inter[0].(bool)
 	return r0
 }
@@ -130,7 +130,7 @@ func TestNoTlsConnect(t *testing.T) {
 			})
 			proxy.DeleteUser(j + 100)
 			// 构造一次错误的请求
-			_, _ = proxy.Call("DeleteUser", "string")
+			_, _ = proxy.Call("HelloTest.DeleteUser", "string")
 			wg.Done()
 		}()
 	}
@@ -141,4 +141,8 @@ func TestNoTlsConnect(t *testing.T) {
 	if atomic.LoadInt64(&errCount) != int64(nGoroutine) {
 		t.Fatal("errCount size not correct")
 	}
+}
+
+func TestTlsConnect(t *testing.T) {
+
 }

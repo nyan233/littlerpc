@@ -25,6 +25,6 @@ func main() {
 	clientInfo := new(Hello)
 	client := littlerpc.NewClient(littlerpc.WithAddressClient(":1234"))
 	_ = client.BindFunc(clientInfo)
-	rep, _ := client.Call("Hello", "hello world!")
+	rep, _ := client.Call("Hello.Hello", "hello world!")
 	fmt.Println(rep[0])
 }
