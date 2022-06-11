@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/nyan233/littlerpc/coder"
 	lreflect "github.com/nyan233/littlerpc/reflect"
+	"math"
 	"reflect"
 )
 
@@ -41,6 +42,9 @@ func checkCoderType(callerMd coder.CallerMd, structPtr interface{}) (interface{}
 }
 
 func checkIType(i interface{}) coder.Type {
+	if i == nil {
+		return coder.Type(math.MaxUint8)
+	}
 	switch i.(type) {
 	case int, int8, int16, int32, int64:
 		return coder.Integer
