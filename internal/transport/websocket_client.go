@@ -38,6 +38,10 @@ func (c *WebSocketTransClient) WriteTextMessage(p []byte) error {
 	return c.conn.WriteMessage(websocket.TextMessage, p)
 }
 
+func (c *WebSocketTransClient) WriteBinaryMessage(p []byte) error {
+	return c.conn.WriteMessage(websocket.BinaryMessage,p)
+}
+
 func (c *WebSocketTransClient) RecvMessage() (int, []byte, error) {
 	return c.conn.ReadMessage()
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/nyan233/littlerpc/internal/transport"
+	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"github.com/zbh255/bilog"
@@ -28,6 +29,8 @@ type Client struct {
 	conn *transport.WebSocketTransClient
 	// 简单的内存池
 	memPool sync.Pool
+	// 编码器
+	encoder packet.Encoder
 }
 
 func ClientOpenBalance(scheme,url string,updateT time.Duration) bool {
@@ -80,6 +83,8 @@ func NewClient(opts ...clientOption) *Client {
 			return &tmp
 		},
 	}
+	// encoder
+	client.encoder = config.Encoder
 	return client
 }
 
@@ -157,10 +162,19 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	defer c.memPool.Put(memBuffer)
 	// write header
 	*memBuffer = append(*memBuffer,writeHeader(msg.Header)...)
+	requestBytes, err = c.encoder.EnPacket(requestBytes)
+	if err != nil {
+		c.onErr(err)
+		return
+	}
 	// write body
 	*memBuffer = append(*memBuffer,requestBytes...)
 	// write data
-	err = c.conn.WriteTextMessage(*memBuffer)
+	if c.encoder.Scheme() == "text" {
+		err = c.conn.WriteTextMessage(*memBuffer)
+	} else {
+		err = c.conn.WriteBinaryMessage(*memBuffer)
+	}
 	if err != nil {
 		c.onErr(err)
 		return
@@ -172,7 +186,12 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	// TODO : Client Handle Ping&Pong
 	_ = header
 	msg.Body.Frame = nil
-	err = json.Unmarshal(buffer[headerLen:], &msg.Body)
+	buffer,err = c.encoder.UnPacket(buffer[headerLen:])
+	if err != nil {
+		c.onErr(err)
+		return
+	}
+	err = json.Unmarshal(buffer, &msg.Body)
 	if err != nil {
 		c.onErr(err)
 		return

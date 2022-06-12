@@ -2,6 +2,7 @@ package littlerpc
 
 import (
 	"crypto/tls"
+	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/zbh255/bilog"
 	"time"
 )
@@ -16,4 +17,6 @@ type ClientConfig struct {
 	ClientConnTimeout  time.Duration
 	// 客户端Call错误处理的回调函数
 	CallOnErr func(err error)
+	// 编码器
+	Encoder packet.Encoder
 }

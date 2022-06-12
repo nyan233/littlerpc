@@ -7,6 +7,7 @@ import (
 	"github.com/lesismal/nbio/nbhttp/websocket"
 	"github.com/nyan233/littlerpc/internal/pool"
 	"github.com/nyan233/littlerpc/internal/transport"
+	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
 	"reflect"
@@ -39,6 +40,8 @@ type Server struct {
 	bufferPool sync.Pool
 	// logger
 	logger bilog.Logger
+	// 数据编码器
+	encoder packet.Encoder
 }
 
 func NewServer(opts ...serverOption) *Server {
@@ -75,6 +78,8 @@ func NewServer(opts ...serverOption) *Server {
 	}
 	// New TaskPool
 	server.taskPool = pool.NewTaskPool(pool.MaxTaskPoolSize, runtime.NumCPU()*4)
+	// encoder
+	server.encoder = sc.Encoder
 	return server
 }
 
@@ -136,8 +141,14 @@ func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType,
 		bodyBytes = bodyBytes[:cap(bodyBytes)]
 	}
 	bodyBytes = bodyBytes[:start]
+	// 调用编码器解包
+	bodyBytes, err := s.encoder.UnPacket(bodyBytes)
+	if err != nil {
+		HandleError(protocol.Message{Header: header, Body: protocol.Body{}}, *ErrServer, c, "")
+		return
+	}
 	frames := &protocol.Body{}
-	err := json.Unmarshal(bodyBytes,frames)
+	err = json.Unmarshal(bodyBytes,frames)
 	if err != nil {
 		HandleError(protocol.Message{Header: header, Body: *frames}, *ErrJsonUnMarshal, c, "")
 		return

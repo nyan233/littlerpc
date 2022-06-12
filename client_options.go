@@ -2,6 +2,7 @@ package littlerpc
 
 import (
 	"crypto/tls"
+	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/zbh255/bilog"
 	"time"
 )
@@ -19,6 +20,7 @@ func WithDefaultClient() clientOption {
 		config.ClientConnTimeout = 90 * time.Second
 		config.ClientPPTimeout = 5 * time.Second
 		config.Logger = Logger
+		config.Encoder = packet.GetEncoder("text")
 	}
 }
 
@@ -55,5 +57,11 @@ func WithCustomLoggerClient(logger bilog.Logger) clientOption {
 func WithCallOnErr(fn func(err error)) clientOption {
 	return func(config *ClientConfig) {
 		config.CallOnErr = fn
+	}
+}
+
+func WithClientEncoder(scheme string) clientOption {
+	return func(config *ClientConfig) {
+		config.Encoder = packet.GetEncoder(scheme)
 	}
 }

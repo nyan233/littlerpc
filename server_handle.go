@@ -74,7 +74,12 @@ func (s *Server) handleErrAndRepResult(c *websocket.Conn,callResult []reflect.Va
 		HandleError(*rep, *ErrServer, c, err.Error())
 		return
 	}
-	buf.Buf = append(buf.Buf,repBytes...)
+	bytes, err := s.encoder.EnPacket(repBytes)
+	if err != nil {
+		HandleError(*rep, *ErrServer, c, err.Error())
+		return
+	}
+	buf.Buf = append(buf.Buf,bytes...)
 	// write data
 	err = c.WriteMessage(websocket.TextMessage, buf.Buf)
 	if err != nil {

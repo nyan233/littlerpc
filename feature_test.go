@@ -86,7 +86,7 @@ func (proxy HelloTestProxy) ModifyUser(uid int, user User) bool {
 }
 
 func TestNoTlsConnect(t *testing.T) {
-	server := NewServer(WithAddressServer(":1234"))
+	server := NewServer(WithAddressServer(":1234"),WithServerEncoder("gzip"))
 	h := &HelloTest{}
 	err := server.Elem(h)
 	if err != nil {
@@ -110,7 +110,7 @@ func TestNoTlsConnect(t *testing.T) {
 		go func() {
 			client := NewClient(WithCallOnErr(func(err error) {
 				atomic.AddInt64(&errCount, 1)
-			}), WithAddressClient(":1234"))
+			}), WithAddressClient(":1234"),WithClientEncoder("gzip"))
 			defer client.Close()
 			proxy := NewHelloTestProxy(client)
 			proxy.Add(int64(addV))
