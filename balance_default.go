@@ -12,7 +12,7 @@ type roundRobbin struct {
 }
 
 func (r *roundRobbin) Scheme() string {
-	return "roundRobbin"
+	return "roundRobin"
 }
 
 func (r *roundRobbin) Target(addrs []string) string {

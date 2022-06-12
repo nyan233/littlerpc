@@ -4,48 +4,49 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/lesismal/nbio/nbhttp/websocket"
-	"github.com/nyan233/littlerpc/coder"
+	"github.com/nyan233/littlerpc/internal/transport"
+	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"reflect"
 )
 
 // try 指示是否需要重入处理结果的逻辑
 // cr2 表示内部append过的callResult，以使更改调用者可见
-func (s *Server) handleErrAndRepResult(c *websocket.Conn,callResult []reflect.Value,rep *coder.RStackFrame) (cr2 []reflect.Value,try bool){
-	errMd := coder.CalleeMd{
-		ArgType: coder.Struct,
+func (s *Server) handleErrAndRepResult(c *websocket.Conn,callResult []reflect.Value,rep *protocol.Message) (cr2 []reflect.Value,try bool){
+	errMd := protocol.FrameMd{
+		ArgType: protocol.Struct,
 	}
 
 	switch i := lreflect.ToValueTypeEface(callResult[len(callResult)-1]); i.(type) {
-	case *coder.Error:
+	case *protocol.Error:
 		errBytes, err := json.Marshal(i)
 		if err != nil {
 			HandleError(*rep, *ErrServer, c, err.Error())
 			return
 		}
-		errMd.ArgType = coder.Struct
-		errMd.Rep = errBytes
+		errMd.ArgType = protocol.Struct
+		errMd.Data = errBytes
 	case error:
-		any := coder.AnyArgs{
+		any := protocol.AnyArgs{
 			Any: i.(error).Error(),
 		}
 		anyBytes, err := json.Marshal(&any)
 		if err != nil {
 			return
 		}
-		errMd.ArgType = coder.String
-		errMd.Rep = anyBytes
+		errMd.ArgType = protocol.String
+		errMd.Data = anyBytes
 	case nil:
-		any := coder.AnyArgs{
+		any := protocol.AnyArgs{
 			Any: 0,
 		}
-		errMd.ArgType = coder.Integer
+		errMd.ArgType = protocol.Integer
 		anyBytes, err := json.Marshal(&any)
 		if err != nil {
 			HandleError(*rep, *ErrServer, c, err.Error())
 			return
 		}
-		errMd.Rep = anyBytes
+		errMd.Data = anyBytes
 	default:
 		// 现在允许最后一个返回值不是*code.Error/error，这种情况被视为没有错误
 		callResult = append(callResult, reflect.ValueOf(nil))
@@ -59,35 +60,47 @@ func (s *Server) handleErrAndRepResult(c *websocket.Conn,callResult []reflect.Va
 		// 这个时候需要重新检查
 		return callResult,true
 	}
-	rep.Response = append(rep.Response, errMd)
-	repBytes, err := json.Marshal(rep)
+	// TODO : implement text encoding and gzip encoding
+	rep.Header.Encoding = protocol.DefaultEncodingType
+	rep.Body.Frame = append(rep.Body.Frame, errMd)
+	// write header
+	buf := s.bufferPool.Get().(*transport.BufferPool)
+	defer s.bufferPool.Put(buf)
+	buf.Buf = buf.Buf[:0]
+	buf.Buf = append(buf.Buf,writeHeader(rep.Header)...)
+	// write body
+	repBytes, err := json.Marshal(rep.Body)
 	if err != nil {
 		HandleError(*rep, *ErrServer, c, err.Error())
+		return
 	}
-	err = c.WriteMessage(websocket.TextMessage, repBytes)
+	buf.Buf = append(buf.Buf,repBytes...)
+	// write data
+	err = c.WriteMessage(websocket.TextMessage, buf.Buf)
 	if err != nil {
 		s.logger.ErrorFromErr(err)
+		return nil,false
 	}
 	return callResult,false
 }
 
 // 将用户过程的返回结果集序列化为可传输的json数据
-func (s *Server) handleResult(c *websocket.Conn,callResult []reflect.Value,rep *coder.RStackFrame) {
+func (s *Server) handleResult(c *websocket.Conn,callResult []reflect.Value,rep *protocol.Message) {
 	for _, v := range callResult[:len(callResult)-1] {
-		var md coder.CalleeMd
+		var md protocol.FrameMd
 		var eface = v.Interface()
 		typ := checkIType(eface)
 		// 返回值的类型为指针的情况，为其设置参数类型和正确的附加类型
-		if typ == coder.Pointer {
+		if typ == protocol.Pointer {
 			md.ArgType = checkIType(v.Elem().Interface())
-			if md.ArgType == coder.Map || md.ArgType == coder.Struct {
+			if md.ArgType == protocol.Map || md.ArgType == protocol.Struct {
 				_ = true
 			}
 		} else {
 			md.ArgType = typ
 		}
 		// Map/Struct也需要Any包装器
-		any := coder.AnyArgs{
+		any := protocol.AnyArgs{
 			Any: eface,
 		}
 		anyBytes, err := json.Marshal(&any)
@@ -95,20 +108,20 @@ func (s *Server) handleResult(c *websocket.Conn,callResult []reflect.Value,rep *
 			HandleError(*rep, *ErrServer, c, "")
 			return
 		}
-		md.Rep = anyBytes
-		rep.Response = append(rep.Response, md)
+		md.Data = anyBytes
+		rep.Body.Frame = append(rep.Body.Frame, md)
 	}
 }
 
 // 从客户端传来的数据中序列化对应过程需要的调用参数
 // ok指示数据是否合法
-func (s *Server) getCallArgsFromClient(c *websocket.Conn,receiver,method reflect.Value,callerMd,rep *coder.RStackFrame) (callArgs []reflect.Value,ok bool){
+func (s *Server) getCallArgsFromClient(c *websocket.Conn,receiver,method reflect.Value,callerMd,rep *protocol.Message) (callArgs []reflect.Value,ok bool){
 	callArgs = []reflect.Value{
 		// receiver
 		receiver,
 	}
 	inputTypeList := lreflect.FuncInputTypeList(method)
-	for k, v := range callerMd.Request {
+	for k, v := range callerMd.Body.Frame {
 		// 排除receiver
 		index := k + 1
 		callArg, err := checkCoderType(v, inputTypeList[index])

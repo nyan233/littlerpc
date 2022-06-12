@@ -25,3 +25,8 @@ type Transport interface {
 var (
 	ErrPingAndPong = errors.New("ping and pong server response is error")
 )
+
+
+type BufferPool struct {
+	Buf []byte
+}

@@ -33,7 +33,7 @@ func TestHashBalance(t *testing.T) {
 }
 
 func TestRoundRobin(t *testing.T) {
-	tmp,_ := balancerCollection.Load("roundRobbin")
+	tmp,_ := balancerCollection.Load("roundRobin")
 	roundRobbin := tmp.(*roundRobbin)
 	var wg sync.WaitGroup
 	nGoroutine := 100

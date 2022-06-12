@@ -29,6 +29,7 @@ func NewWebSocketServer(tlsC *tls.Config, nConfig nbhttp.Config) *WebSocketTrans
 	nConfig.TLSConfig = tlsC
 	nConfig.Name = "LittleRpc-Server-WebSocket"
 	nConfig.Network = "tcp"
+	nConfig.ReleaseWebsocketPayload = true
 	server := nbhttp.NewServer(nConfig)
 	return &WebSocketTransServer{server: server, onErr: func(err error) {
 		panic(err)

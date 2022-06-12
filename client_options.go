@@ -22,6 +22,18 @@ func WithDefaultClient() clientOption {
 	}
 }
 
+func WithResolver(bScheme string) clientOption {
+	return func(config *ClientConfig) {
+		config.BalanceScheme = bScheme
+	}
+}
+
+func WithBalance(scheme string) clientOption {
+	return func(config *ClientConfig) {
+		config.BalanceScheme = scheme
+	}
+}
+
 func WithTlsClient(tlsC *tls.Config) clientOption {
 	return func(config *ClientConfig) {
 		config.TlsConfig = tlsC

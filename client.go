@@ -3,12 +3,20 @@ package littlerpc
 import (
 	"encoding/json"
 	"errors"
-	"github.com/nyan233/littlerpc/coder"
 	"github.com/nyan233/littlerpc/internal/transport"
+	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"github.com/zbh255/bilog"
+	"math/rand"
 	"reflect"
 	"strings"
+	"sync"
+	"time"
+)
+
+var (
+	addrCollection []string
+	mu sync.Mutex
 )
 
 type Client struct {
@@ -18,6 +26,22 @@ type Client struct {
 	onErr func(err error)
 	// client Engine
 	conn *transport.WebSocketTransClient
+	// 简单的内存池
+	memPool sync.Pool
+}
+
+func ClientOpenBalance(scheme,url string,updateT time.Duration) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	tmp,ok := resolverCollection.Load(scheme)
+	if !ok {
+		return false
+	}
+	rb := tmp.(ResolverBuilder)
+	rb.SetOpen(true)
+	rb.SetUpdateTime(updateT)
+	addrCollection = rb.Instance().Parse(url)
+	return true
 }
 
 func NewClient(opts ...clientOption) *Client {
@@ -26,14 +50,35 @@ func NewClient(opts ...clientOption) *Client {
 	for _, v := range opts {
 		v(config)
 	}
-	conn := transport.NewWebSocketTransClient(config.TlsConfig, config.ServerAddr)
 	client := &Client{}
 	client.logger = config.Logger
-	client.conn = conn
 	if config.CallOnErr != nil {
 		client.onErr = config.CallOnErr
 	} else {
 		client.onErr = client.defaultOnErr
+	}
+	// TODO 配置解析器和负载均衡器
+	if config.BalanceScheme != "" {
+		mu.Lock()
+		bTmp,ok := balancerCollection.Load(config.BalanceScheme)
+		if !ok {
+			panic("no balancer scheme")
+		}
+		balancer := bTmp.(Balancer)
+		addr := balancer.Target(addrCollection)
+		mu.Unlock()
+		conn := transport.NewWebSocketTransClient(config.TlsConfig, addr)
+		client.conn = conn
+	} else {
+		conn := transport.NewWebSocketTransClient(config.TlsConfig, config.ServerAddr)
+		client.conn = conn
+	}
+	// init pool
+	client.memPool = sync.Pool{
+		New: func() interface{} {
+			tmp := make([]byte,4096)
+			return &tmp
+		},
 	}
 	return client
 }
@@ -42,6 +87,8 @@ func (c *Client) BindFunc(i interface{}) error {
 	if i == nil {
 		return errors.New("register elem is nil")
 	}
+	// init message id in rand
+	rand.Seed(time.Now().UnixNano())
 	elemD := ElemMeta{}
 	elemD.typ = reflect.TypeOf(i)
 	elemD.data = reflect.ValueOf(i)
@@ -66,67 +113,78 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
 		panic("the illegal type name and method name")
 	}
-	sp := &coder.RStackFrame{}
-	sp.MethodName = processName
+	msg := &protocol.Message{}
+	msg.Header.MethodName = processName
 	method, ok := c.elem.methods[methodData[1]]
 	if !ok {
 		panic("the method no register or is private method")
 	}
 	for _, v := range args {
-		var md coder.CallerMd
+		var md protocol.FrameMd
 		md.ArgType = checkIType(v)
 		// 参数不能为指针类型
-		if md.ArgType == coder.Pointer {
+		if md.ArgType == protocol.Pointer {
 			panic("args type is pointer")
 		}
 		// 参数为数组类型则保证额外的类型
-		if md.ArgType == coder.Array {
+		if md.ArgType == protocol.Array {
 			md.AppendType = checkIType(lreflect.IdentArrayOrSliceType(v))
 		}
 		// 将参数json序列化到any包装器中
 		// Map/Struct类型也需要any包装器
-		any := coder.AnyArgs{
+		any := protocol.AnyArgs{
 			Any: v,
 		}
 		anyBytes, err := json.Marshal(&any)
 		if err != nil {
 			panic(err)
 		}
-		md.Req = anyBytes
-		sp.Request = append(sp.Request, md)
+		md.Data = anyBytes
+		msg.Body.Frame = append(msg.Body.Frame, md)
 	}
-	requestBytes, err := json.Marshal(sp)
+	// init header
+	msg.Header.MsgId = rand.Uint64()
+	msg.Header.MsgType = protocol.MessageCall
+	msg.Header.Timestamp = uint64(time.Now().Unix())
+	msg.Header.Encoding = protocol.DefaultEncodingType
+	msg.Header.CodecType = protocol.DefaultCodecType
+	requestBytes, err := json.Marshal(msg.Body)
 	if err != nil {
 		panic(err)
 	}
-	err = c.conn.WriteTextMessage(requestBytes)
+	memBuffer := c.memPool.Get().(*[]byte)
+	*memBuffer = (*memBuffer)[:0]
+	defer c.memPool.Put(memBuffer)
+	// write header
+	*memBuffer = append(*memBuffer,writeHeader(msg.Header)...)
+	// write body
+	*memBuffer = append(*memBuffer,requestBytes...)
+	// write data
+	err = c.conn.WriteTextMessage(*memBuffer)
 	if err != nil {
 		c.onErr(err)
 		return
 	}
 	// 接收服务器返回的调用结果并序列化
-	msgTyp, buffer, err := c.conn.RecvMessage()
-	// ping-pong message
-	if msgTyp == transport.PingMessage {
-		err := c.conn.WritePongMessage([]byte("hello world"))
-		if err != nil {
-			c.onErr(err)
-		}
-	}
-	sp.Request = nil
-	err = json.Unmarshal(buffer, sp)
+	_, buffer, err := c.conn.RecvMessage()
+	// read header
+	header,headerLen := readHeader(buffer)
+	// TODO : Client Handle Ping&Pong
+	_ = header
+	msg.Body.Frame = nil
+	err = json.Unmarshal(buffer[headerLen:], &msg.Body)
 	if err != nil {
 		c.onErr(err)
 		return
 	}
 	// 处理服务端传回的参数
 	outputTypeList := lreflect.FuncOutputTypeList(method)
-	for k, v := range sp.Response[:len(sp.Response)-1] {
+	for k, v := range msg.Body.Frame[:len(msg.Body.Frame)-1] {
 		eface := outputTypeList[k]
-		md := coder.CallerMd{
+		md := protocol.FrameMd{
 			ArgType:    v.ArgType,
 			AppendType: v.AppendType,
-			Req:        v.Rep,
+			Data:        v.Data,
 		}
 		returnV, err := checkCoderType(md, eface)
 		if err != nil {
@@ -136,29 +194,29 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 		rep = append(rep, returnV)
 	}
 	// 单独处理返回的错误类型
-	errMd := sp.Response[len(sp.Response)-1]
+	errMd := msg.Body.Frame[len(msg.Body.Frame)-1]
 	// 处理最后返回的Error
 	// 返回的数据的类型不可能是指针类型，需要客户端自己去处理
 	switch errMd.ArgType {
-	case coder.Struct:
-		errPtr := &coder.Error{}
-		ierr := json.Unmarshal(errMd.Rep, errPtr)
+	case protocol.Struct:
+		errPtr := &protocol.Error{}
+		ierr := json.Unmarshal(errMd.Data, errPtr)
 		if ierr != nil {
 			panic(err)
 		}
 		uErr = errPtr
-	case coder.String:
-		var tmp coder.AnyArgs
-		err := json.Unmarshal(errMd.Rep, &tmp)
+	case protocol.String:
+		var tmp protocol.AnyArgs
+		err := json.Unmarshal(errMd.Data, &tmp)
 		if err != nil {
 			panic(err)
 		}
 		uErr = errors.New(tmp.Any.(string))
-	case coder.Integer:
+	case protocol.Integer:
 		uErr = error(nil)
 	}
 	// 检查错误是Server的异常还是远程过程正常返回的error
-	if errMd.AppendType == coder.ServerError {
+	if errMd.AppendType == protocol.ServerError {
 		c.onErr(uErr)
 		uErr = nil
 	}

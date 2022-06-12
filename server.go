@@ -5,14 +5,17 @@ import (
 	"errors"
 	"github.com/lesismal/nbio/nbhttp"
 	"github.com/lesismal/nbio/nbhttp/websocket"
-	"github.com/nyan233/littlerpc/coder"
 	"github.com/nyan233/littlerpc/internal/pool"
 	"github.com/nyan233/littlerpc/internal/transport"
+	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 )
 
 type ElemMeta struct {
@@ -32,6 +35,8 @@ type Server struct {
 	server *transport.WebSocketTransServer
 	// 任务池
 	taskPool *pool.TaskPool
+	// 简单的缓冲内存池
+	bufferPool sync.Pool
 	// logger
 	logger bilog.Logger
 }
@@ -62,6 +67,12 @@ func NewServer(opts ...serverOption) *Server {
 	server.server.SetOnClose(server.onClose)
 	server.server.SetOnErr(server.onErr)
 	server.server.SetOnOpen(server.onOpen)
+	// New Buffer Pool
+	server.bufferPool = sync.Pool{
+		New: func() interface{} {
+			return &transport.BufferPool{Buf: make([]byte,0,4096)}
+		},
+	}
 	// New TaskPool
 	server.taskPool = pool.NewTaskPool(pool.MaxTaskPoolSize, runtime.NumCPU()*4)
 	return server
@@ -98,48 +109,74 @@ func (s *Server) Elem(i interface{}) error {
 func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType, data []byte) {
 	// TODO : Handle Ping-Pong Message
 	// TODO : Handle Control Header
-	// TODO : Read All Messages Data
-	callerMd := &coder.RStackFrame{}
-	var rep = &coder.RStackFrame{}
-	err := json.Unmarshal(data, callerMd)
-	if err != nil {
-		HandleError(*rep, *ErrJsonUnMarshal, c, "")
+	header,headerLen := readHeader(data)
+	if headerLen == 0 {
+		HandleError(protocol.Message{Header: header,Body: protocol.Body{}},*ErrMessageFormat,c,"")
 		return
 	}
+	// TODO : Read All Messages Data
+	bodyBytes := make([]byte,4096)
+	copy(bodyBytes,data[headerLen:])
+	start := len(data) - headerLen
+	for len(data) > 4096{
+		readN, err := c.Read(bodyBytes[start:])
+		if errors.Is(err,syscall.EAGAIN) {
+			break
+		}
+		start += readN
+		if err != nil {
+			HandleError(protocol.Message{Header: header,Body: protocol.Body{}},*ErrBodyRead,c,strconv.Itoa(start))
+			return
+		}
+		if start != len(bodyBytes) {
+			break
+		}
+		// grow
+		bodyBytes = append(bodyBytes,[]byte{0,0,0,0}...)
+		bodyBytes = bodyBytes[:cap(bodyBytes)]
+	}
+	bodyBytes = bodyBytes[:start]
+	frames := &protocol.Body{}
+	err := json.Unmarshal(bodyBytes,frames)
+	if err != nil {
+		HandleError(protocol.Message{Header: header, Body: *frames}, *ErrJsonUnMarshal, c, "")
+		return
+	}
+	msg := protocol.Message{Header: header,Body: *frames}
 	// 序列化完之后才确定调用名
 	// MethodName : Hello.Hello : receiver:methodName
-	methodData := strings.SplitN(callerMd.MethodName,".",2)
+	methodData := strings.SplitN(header.MethodName,".",2)
 	// 方法名和类型名不能为空
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
-		HandleError(*rep,*ErrMethodNoRegister,c,callerMd.MethodName)
+		HandleError(msg,*ErrMethodNoRegister,c,header.MethodName)
 		return
 	}
 	eTmp, ok := s.elems.Load(methodData[0])
 	if !ok {
-		HandleError(*rep,*ErrElemTypeNoRegister,c,methodData[0])
+		HandleError(msg,*ErrElemTypeNoRegister,c,methodData[0])
 		return
 	}
 	elemData := eTmp.(ElemMeta)
 	method, ok := elemData.methods[methodData[1]]
 	if !ok {
-		HandleError(*rep, *ErrMethodNoRegister, c, "")
+		HandleError(msg, *ErrMethodNoRegister, c, "")
 		return
 	}
 	// 从客户端校验并获得合法的调用参数
-	callArgs,ok := s.getCallArgsFromClient(c,elemData.data,method,callerMd,rep)
+	callArgs,ok := s.getCallArgsFromClient(c,elemData.data,method,&msg,&msg)
 	// 参数校验为不合法
 	if !ok {
 		return
 	}
 	// 向任务池提交调用用户过程的任务
 	s.taskPool.Push(func() {
-		s.callHandleUnit(c,method,callArgs,rep)
+		s.callHandleUnit(c,method,callArgs,&msg)
 	})
 }
 
 // 提供用于任务池的处理调用用户过程的单元
 // 因为用户过程可能会有阻塞操作
-func (s *Server) callHandleUnit(c *websocket.Conn,method reflect.Value,callArgs []reflect.Value,rep *coder.RStackFrame) {
+func (s *Server) callHandleUnit(c *websocket.Conn,method reflect.Value,callArgs []reflect.Value,rep *protocol.Message) {
 	callResult := method.Call(callArgs)
 	// 函数在没有返回error则填充nil
 	if len(callResult) == 0 {
@@ -148,6 +185,13 @@ func (s *Server) callHandleUnit(c *websocket.Conn,method reflect.Value,callArgs 
 	// Multi Return Value
 	// 服务器返回的参数中不区分是是否是指针类型
 	// 客户端在处理返回值的类型时需要自己根据注册的过程进行处理
+	rep.Header.MsgType = protocol.MessageReturn
+	rep.Header.Timestamp = uint64(time.Now().Unix())
+	rep.Header.CodecType = protocol.DefaultCodecType
+	// NOTE : 重新设置Body的长度，否则可能会被请求序列化的数据污染
+	// NOTE : 不能在handleResult()中重置，因为handleErrAndRepResult()可能会认为
+	// NOTE : 遗漏了一些数据，从而导致重入handleResult()，这时负责发送Body的函数可能只会看到长度为1的Body
+	rep.Body.Frame = rep.Body.Frame[:0]
 handleResult:
 	s.handleResult(c, callResult, rep)
 	// 处理用户过程返回的错误，如果用户过程没有返回错误则填充nil

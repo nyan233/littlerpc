@@ -1,6 +1,7 @@
 package littlerpc
 
 import (
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -145,4 +146,22 @@ func TestNoTlsConnect(t *testing.T) {
 
 func TestTlsConnect(t *testing.T) {
 
+}
+
+func TestBalance(t *testing.T) {
+	server := NewServer(WithAddressServer("127.0.0.1:9090","127.0.0.1:8080"))
+	err := server.Elem(new(HelloTest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = server.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Stop()
+	ClientOpenBalance("live","live://127.0.0.1:8080;127.0.0.1:9090",math.MaxInt64)
+	c1 := NewHelloTestProxy(NewClient(WithBalance("roundRobin")))
+	c2 := NewHelloTestProxy(NewClient(WithBalance("roundRobin")))
+	c1.Add(1024)
+	c2.Add(1023)
 }
