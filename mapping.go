@@ -2,37 +2,37 @@ package littlerpc
 
 import (
 	"errors"
-	"github.com/nyan233/littlerpc/coder"
+	"github.com/nyan233/littlerpc/protocol"
 )
 
 // 处理coder声明的类型和go内置类型的映射的工具函数
 
-func mappingCoderPtrType(typ coder.Type) (interface{}, error) {
+func mappingCoderPtrType(typ protocol.Type) (interface{}, error) {
 	switch typ {
-	case coder.Long:
+	case protocol.Long:
 		return new(int32), nil
-	case coder.Integer:
+	case protocol.Integer:
 		return new(int64), nil
-	case coder.String:
+	case protocol.String:
 		return new(string), nil
-	case coder.Float:
+	case protocol.Float:
 		return new(float32), nil
-	case coder.Double:
+	case protocol.Double:
 		return new(float64), nil
-	case coder.ULong:
+	case protocol.ULong:
 		return new(uint32), nil
-	case coder.UInteger:
+	case protocol.UInteger:
 		return new(uint64), nil
-	case coder.Boolean:
+	case protocol.Boolean:
 		return new(bool), nil
-	case coder.Byte:
+	case protocol.Byte:
 		return new(byte),nil
-	case coder.Map:
+	case protocol.Map:
 		tmp := make(map[interface{}]interface{})
 		return &tmp,nil
-	case coder.Struct:
+	case protocol.Struct:
 		return &struct {}{},nil
-	case coder.Array:
+	case protocol.Array:
 		tmp := make([]byte,0)
 		return &tmp,nil
 	default:
@@ -40,32 +40,32 @@ func mappingCoderPtrType(typ coder.Type) (interface{}, error) {
 	}
 }
 
-func mappingCoderNoPtrType(typ coder.Type) (interface{},error) {
+func mappingCoderNoPtrType(typ protocol.Type) (interface{},error) {
 	switch typ {
-	case coder.Long:
+	case protocol.Long:
 		return *new(int32), nil
-	case coder.Integer:
+	case protocol.Integer:
 		return *new(int64), nil
-	case coder.String:
+	case protocol.String:
 		return *new(string), nil
-	case coder.Float:
+	case protocol.Float:
 		return *new(float32), nil
-	case coder.Double:
+	case protocol.Double:
 		return *new(float64), nil
-	case coder.ULong:
+	case protocol.ULong:
 		return *new(uint32), nil
-	case coder.UInteger:
+	case protocol.UInteger:
 		return *new(uint64), nil
-	case coder.Boolean:
+	case protocol.Boolean:
 		return *new(bool), nil
-	case coder.Byte:
+	case protocol.Byte:
 		return *new(byte),nil
-	case coder.Map:
+	case protocol.Map:
 		tmp := make(map[interface{}]interface{})
 		return tmp,nil
-	case coder.Struct:
+	case protocol.Struct:
 		return struct {}{},nil
-	case coder.Array:
+	case protocol.Array:
 		tmp := make([]byte,0)
 		return tmp,nil
 	default:

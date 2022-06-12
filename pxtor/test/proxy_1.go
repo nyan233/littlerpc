@@ -2,7 +2,7 @@ package test
 
 import (
 	"errors"
-	"github.com/nyan233/littlerpc/coder"
+	"github.com/nyan233/littlerpc/protocol"
 )
 
 type Test struct{}
@@ -21,6 +21,6 @@ func (p *Test) ErrHandler(s1 string) (err error) {
 	return errors.New(s1)
 }
 
-func (p *Test) ErrHandler2(s1 string) (err *coder.Error) {
+func (p *Test) ErrHandler2(s1 string) (err *protocol.Error) {
 	return nil
 }

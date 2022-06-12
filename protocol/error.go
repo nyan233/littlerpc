@@ -1,4 +1,4 @@
-package coder
+package protocol
 
 type Error struct {
 	Info  string

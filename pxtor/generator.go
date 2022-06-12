@@ -180,11 +180,11 @@ func getAllFunc(file *ast.File, rawFile *os.File, proxyRecvName string, filter f
 		if funcDecl.Type.Results == nil {
 			sb.WriteString("_,_ = proxy.Call(")
 		} else {
-			// 没有返回error/*coder.Error的情况
-			if s := rTypes[len(rTypes)-1]; !(s == "error" || s == "*coder.Error") {
+			// 没有返回error/*protocol.Error的情况
+			if s := rTypes[len(rTypes)-1]; !(s == "error" || s == "*protocol.Error") {
 				sb.WriteString("inter,_ := proxy.Call(")
-			} else if len(rTypes) == 1 && (s == "error" || s == "*coder.Error") {
-				// 只返回error/*coder.Error时的情况
+			} else if len(rTypes) == 1 && (s == "error" || s == "*protocol.Error") {
+				// 只返回error/*protocol.Error时的情况
 				sb.WriteString("_,err := proxy.Call(")
 			} else {
 				sb.WriteString("inter,err := proxy.Call(")
@@ -198,18 +198,18 @@ func getAllFunc(file *ast.File, rawFile *os.File, proxyRecvName string, filter f
 		sb.WriteString(")\n\t")
 		// inject function body
 		for k, v := range rTypes {
-			// 返回值最后一个是error/*coder.Error则不用输出类型断言的代码
-			if k == len(rTypes)-1 && (v == "error" || v == "*coder.Error") {
+			// 返回值最后一个是error/*protocol.Error则不用输出类型断言的代码
+			if k == len(rTypes)-1 && (v == "error" || v == "*protocol.Error") {
 				break
 			}
 			sb.WriteString(fmt.Sprintf("r%d := inter[%d].(%s)\n\t", k, k, v))
 		}
 		sb.WriteString("return ")
 		for k, v := range rTypes {
-			// 返回值最后一个是error/*coder.Error
+			// 返回值最后一个是error/*protocol.Error
 			if k == len(rTypes)-1 {
-				if v == "*coder.Error" {
-					sb.WriteString("err.(*coder.Error)")
+				if v == "*protocol.Error" {
+					sb.WriteString("err.(*protocol.Error)")
 					break
 				} else if v == "error" {
 					sb.WriteString("err")
