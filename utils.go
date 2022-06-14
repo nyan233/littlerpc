@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/lesismal/nbio/nbhttp/websocket"
+	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	"reflect"
 	"runtime"
@@ -14,31 +15,36 @@ import (
 	"time"
 )
 
-func HandleError(msg protocol.Message, errNo protocol.Error, conn *websocket.Conn, appendInfo string, more ...interface{}) {
+func HandleError(codec protocol.Codec,encoder packet.Encoder,msgId uint64, errNo protocol.Error, conn *websocket.Conn, appendInfo string) {
 	md := protocol.FrameMd{
 		ArgType:    protocol.Struct,
 		AppendType: protocol.ServerError,
 		Data:        nil,
 	}
-	sp := msg.Body
+	sp := protocol.Body{}
 	// write header
-	header := msg.Header
+	header := protocol.Header{}
 	header.Timestamp = uint64(time.Now().Unix())
 	header.MsgType = protocol.MessageReturn
-	header.CodecType = protocol.DefaultCodecType
-	header.Encoding = protocol.DefaultEncodingType
+	header.MsgId = msgId
+	header.CodecType = codec.Scheme()
+	header.Encoding = encoder.Scheme()
 	conn.WriteMessage(websocket.TextMessage,writeHeader(header))
 	switch errNo.Info {
 	case ErrJsonUnMarshal.Info, ErrMethodNoRegister.Info, ErrCallArgsType.Info:
 		errNo.Trace += appendInfo
-		err := md.Encode(errNo)
+		err := md.Encode(codec,errNo)
 		if err != nil {
 			panic(errors.New("encoding/json marshal failed"))
 		}
 		sp.Frame = append(sp.Frame, md)
-		errNoBytes, err := json.Marshal(&sp)
+		errNoBytes, err := codec.Marshal(&sp)
 		if err != nil {
-			panic(errors.New("encoding/json marshal failed"))
+			panic(errors.New(fmt.Sprintf("codec/%s marshal failed",codec.Scheme())))
+		}
+		errNoBytes, err = encoder.EnPacket(errNoBytes)
+		if err != nil {
+			panic(errors.New(fmt.Sprintf("encoding/%s enpacket failed",encoder.Scheme())))
 		}
 		conn.WriteMessage(websocket.TextMessage, errNoBytes)
 		break
@@ -46,25 +52,33 @@ func HandleError(msg protocol.Message, errNo protocol.Error, conn *websocket.Con
 		errNo.Info += appendInfo
 		_, file, line, _ := runtime.Caller(1)
 		errNo.Trace = file + ":" + strconv.Itoa(line)
-		err := md.Encode(errNo)
+		err := md.Encode(codec,errNo)
 		if err != nil {
 			panic(errors.New("encoding/json marshal failed"))
 		}
 		sp.Frame = append(sp.Frame, md)
-		errNoBytes, err := json.Marshal(&sp)
+		errNoBytes, err := codec.Marshal(&sp)
 		if err != nil {
-			panic(errors.New("encoding/json marshal failed"))
+			panic(errors.New(fmt.Sprintf("codec/%s marshal failed",codec.Scheme())))
+		}
+		errNoBytes, err = encoder.EnPacket(errNoBytes)
+		if err != nil {
+			panic(errors.New(fmt.Sprintf("encoding/%s enpacket failed",encoder.Scheme())))
 		}
 		conn.WriteMessage(websocket.TextMessage, errNoBytes)
 	case Nil.Info:
-		err := md.Encode(errNo)
+		err := md.Encode(codec,errNo)
 		if err != nil {
 			panic(errors.New("encoding/json marshal failed"))
 		}
 		sp.Frame = append(sp.Frame, md)
-		errNoBytes, err := json.Marshal(&sp)
+		errNoBytes, err := codec.Marshal(&sp)
 		if err != nil {
-			panic(errors.New("encoding/json marshal failed"))
+			panic(errors.New(fmt.Sprintf("codec/%s marshal failed",codec.Scheme())))
+		}
+		errNoBytes, err = encoder.EnPacket(errNoBytes)
+		if err != nil {
+			panic(errors.New(fmt.Sprintf("encoding/%s enpacket failed",encoder.Scheme())))
 		}
 		conn.WriteMessage(websocket.TextMessage, errNoBytes)
 	}

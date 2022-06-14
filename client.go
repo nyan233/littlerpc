@@ -1,10 +1,11 @@
 package littlerpc
 
 import (
-	"encoding/json"
 	"errors"
 	"github.com/nyan233/littlerpc/internal/transport"
+	"github.com/nyan233/littlerpc/middle/balance"
 	"github.com/nyan233/littlerpc/middle/packet"
+	"github.com/nyan233/littlerpc/middle/resolver"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"github.com/zbh255/bilog"
@@ -29,22 +30,27 @@ type Client struct {
 	conn *transport.WebSocketTransClient
 	// 简单的内存池
 	memPool sync.Pool
-	// 编码器
+	// 字节流编码器
 	encoder packet.Encoder
+	// 结构化数据编码器
+	codec protocol.Codec
 }
 
-func ClientOpenBalance(scheme,url string,updateT time.Duration) bool {
+func ClientOpenBalance(scheme,url string,updateT time.Duration) error {
 	mu.Lock()
 	defer mu.Unlock()
-	tmp,ok := resolverCollection.Load(scheme)
-	if !ok {
-		return false
+	rb := resolver.GetResolver(scheme)
+	if rb == nil {
+		return errors.New("no this resolver scheme")
 	}
-	rb := tmp.(ResolverBuilder)
 	rb.SetOpen(true)
 	rb.SetUpdateTime(updateT)
-	addrCollection = rb.Instance().Parse(url)
-	return true
+	addrC,err := rb.Instance().Parse(url)
+	if err != nil {
+		return err
+	}
+	addrCollection = addrC
+	return nil
 }
 
 func NewClient(opts ...clientOption) *Client {
@@ -63,11 +69,10 @@ func NewClient(opts ...clientOption) *Client {
 	// TODO 配置解析器和负载均衡器
 	if config.BalanceScheme != "" {
 		mu.Lock()
-		bTmp,ok := balancerCollection.Load(config.BalanceScheme)
-		if !ok {
+		balancer := balance.GetBalancer(config.BalanceScheme)
+		if balancer == nil {
 			panic("no balancer scheme")
 		}
-		balancer := bTmp.(Balancer)
 		addr := balancer.Target(addrCollection)
 		mu.Unlock()
 		conn := transport.NewWebSocketTransClient(config.TlsConfig, addr)
@@ -85,6 +90,8 @@ func NewClient(opts ...clientOption) *Client {
 	}
 	// encoder
 	client.encoder = config.Encoder
+	// codec
+	client.codec = config.Codec
 	return client
 }
 
@@ -140,7 +147,7 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 		any := protocol.AnyArgs{
 			Any: v,
 		}
-		anyBytes, err := json.Marshal(&any)
+		anyBytes, err := c.codec.Marshal(&any)
 		if err != nil {
 			panic(err)
 		}
@@ -151,9 +158,9 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	msg.Header.MsgId = rand.Uint64()
 	msg.Header.MsgType = protocol.MessageCall
 	msg.Header.Timestamp = uint64(time.Now().Unix())
-	msg.Header.Encoding = protocol.DefaultEncodingType
-	msg.Header.CodecType = protocol.DefaultCodecType
-	requestBytes, err := json.Marshal(msg.Body)
+	msg.Header.Encoding = c.encoder.Scheme()
+	msg.Header.CodecType = c.codec.Scheme()
+	requestBytes, err := c.codec.Marshal(msg.Body)
 	if err != nil {
 		panic(err)
 	}
@@ -191,7 +198,7 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 		c.onErr(err)
 		return
 	}
-	err = json.Unmarshal(buffer, &msg.Body)
+	err = c.codec.Unmarshal(buffer, &msg.Body)
 	if err != nil {
 		c.onErr(err)
 		return
@@ -205,7 +212,7 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 			AppendType: v.AppendType,
 			Data:        v.Data,
 		}
-		returnV, err := checkCoderType(md, eface)
+		returnV, err := checkCoderType(c.codec,md, eface)
 		if err != nil {
 			c.onErr(err)
 			return
@@ -219,14 +226,14 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	switch errMd.ArgType {
 	case protocol.Struct:
 		errPtr := &protocol.Error{}
-		ierr := json.Unmarshal(errMd.Data, errPtr)
+		ierr := c.codec.Unmarshal(errMd.Data, errPtr)
 		if ierr != nil {
 			panic(err)
 		}
 		uErr = errPtr
 	case protocol.String:
 		var tmp protocol.AnyArgs
-		err := json.Unmarshal(errMd.Data, &tmp)
+		err := c.codec.Unmarshal(errMd.Data, &tmp)
 		if err != nil {
 			panic(err)
 		}

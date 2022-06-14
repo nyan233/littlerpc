@@ -1,7 +1,6 @@
 package littlerpc
 
 import (
-	"encoding/json"
 	"errors"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
@@ -10,17 +9,17 @@ import (
 )
 
 // structPtr中必须是指针变量
-func checkCoderType(callerMd protocol.FrameMd, structPtr interface{}) (interface{}, error) {
+func checkCoderType(codec protocol.Codec,callerMd protocol.FrameMd, structPtr interface{}) (interface{}, error) {
 	switch callerMd.ArgType {
 	case protocol.String:
 		var tmp protocol.AnyArgs
-		err := json.Unmarshal(callerMd.Data, &tmp)
+		err := codec.Unmarshal(callerMd.Data, &tmp)
 		return tmp.Any, err
 	case protocol.Integer, protocol.Long, protocol.Float, protocol.Double, protocol.Boolean:
 		// encoding/json在解析number的时候需要精确的类型信息
 		// 否则在不设置Encoder的情况下会把number解释float64
 		val := lreflect.CreateAnyStructOnType(structPtr)
-		err := json.Unmarshal(callerMd.Data, val)
+		err := codec.Unmarshal(callerMd.Data, val)
 		if err != nil {
 			return nil, err
 		}
@@ -31,7 +30,7 @@ func checkCoderType(callerMd protocol.FrameMd, structPtr interface{}) (interface
 		// 而运行时对其重新赋值并不会影响type中每个字段的类型，所以需要重新创建
 		// 以提供精确的类型信息
 		val := lreflect.CreateAnyStructOnType(structPtr)
-		err := json.Unmarshal(callerMd.Data, val)
+		err := codec.Unmarshal(callerMd.Data, val)
 		if err != nil {
 			return nil, err
 		}

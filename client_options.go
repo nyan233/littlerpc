@@ -3,6 +3,7 @@ package littlerpc
 import (
 	"crypto/tls"
 	"github.com/nyan233/littlerpc/middle/packet"
+	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
 	"time"
 )
@@ -21,6 +22,7 @@ func WithDefaultClient() clientOption {
 		config.ClientPPTimeout = 5 * time.Second
 		config.Logger = Logger
 		config.Encoder = packet.GetEncoder("text")
+		config.Codec = protocol.GetCodec("json")
 	}
 }
 
@@ -63,5 +65,11 @@ func WithCallOnErr(fn func(err error)) clientOption {
 func WithClientEncoder(scheme string) clientOption {
 	return func(config *ClientConfig) {
 		config.Encoder = packet.GetEncoder(scheme)
+	}
+}
+
+func WithClientCodec(scheme string) clientOption {
+	return func(config *ClientConfig) {
+		config.Codec = protocol.GetCodec(scheme)
 	}
 }

@@ -1,10 +1,10 @@
 package littlerpc
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/lesismal/nbio/nbhttp/websocket"
 	"github.com/nyan233/littlerpc/internal/transport"
+	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"reflect"
@@ -12,16 +12,16 @@ import (
 
 // try 指示是否需要重入处理结果的逻辑
 // cr2 表示内部append过的callResult，以使更改调用者可见
-func (s *Server) handleErrAndRepResult(c *websocket.Conn,callResult []reflect.Value,rep *protocol.Message) (cr2 []reflect.Value,try bool){
+func (s *Server) handleErrAndRepResult(codec protocol.Codec,encoder packet.Encoder,msgId uint64,c *websocket.Conn,callResult []reflect.Value,rep *protocol.Message) (cr2 []reflect.Value,try bool){
 	errMd := protocol.FrameMd{
 		ArgType: protocol.Struct,
 	}
 
 	switch i := lreflect.ToValueTypeEface(callResult[len(callResult)-1]); i.(type) {
 	case *protocol.Error:
-		errBytes, err := json.Marshal(i)
+		errBytes, err := codec.Marshal(i)
 		if err != nil {
-			HandleError(*rep, *ErrServer, c, err.Error())
+			HandleError(codec,encoder,msgId,*ErrServer, c, err.Error())
 			return
 		}
 		errMd.ArgType = protocol.Struct
@@ -30,7 +30,7 @@ func (s *Server) handleErrAndRepResult(c *websocket.Conn,callResult []reflect.Va
 		any := protocol.AnyArgs{
 			Any: i.(error).Error(),
 		}
-		anyBytes, err := json.Marshal(&any)
+		anyBytes, err := codec.Marshal(&any)
 		if err != nil {
 			return
 		}
@@ -41,9 +41,9 @@ func (s *Server) handleErrAndRepResult(c *websocket.Conn,callResult []reflect.Va
 			Any: 0,
 		}
 		errMd.ArgType = protocol.Integer
-		anyBytes, err := json.Marshal(&any)
+		anyBytes, err := codec.Marshal(&any)
 		if err != nil {
-			HandleError(*rep, *ErrServer, c, err.Error())
+			HandleError(codec,encoder,msgId, *ErrServer, c, err.Error())
 			return
 		}
 		errMd.Data = anyBytes
@@ -69,14 +69,14 @@ func (s *Server) handleErrAndRepResult(c *websocket.Conn,callResult []reflect.Va
 	buf.Buf = buf.Buf[:0]
 	buf.Buf = append(buf.Buf,writeHeader(rep.Header)...)
 	// write body
-	repBytes, err := json.Marshal(rep.Body)
+	repBytes, err := codec.Marshal(rep.Body)
 	if err != nil {
-		HandleError(*rep, *ErrServer, c, err.Error())
+		HandleError(codec,encoder,msgId, *ErrServer, c, err.Error())
 		return
 	}
 	bytes, err := s.encoder.EnPacket(repBytes)
 	if err != nil {
-		HandleError(*rep, *ErrServer, c, err.Error())
+		HandleError(codec,encoder,msgId, *ErrServer, c, err.Error())
 		return
 	}
 	buf.Buf = append(buf.Buf,bytes...)
@@ -90,7 +90,7 @@ func (s *Server) handleErrAndRepResult(c *websocket.Conn,callResult []reflect.Va
 }
 
 // 将用户过程的返回结果集序列化为可传输的json数据
-func (s *Server) handleResult(c *websocket.Conn,callResult []reflect.Value,rep *protocol.Message) {
+func (s *Server) handleResult(codec protocol.Codec,encoder packet.Encoder,msgId uint64,c *websocket.Conn,callResult []reflect.Value,rep *protocol.Message) {
 	for _, v := range callResult[:len(callResult)-1] {
 		var md protocol.FrameMd
 		var eface = v.Interface()
@@ -108,9 +108,9 @@ func (s *Server) handleResult(c *websocket.Conn,callResult []reflect.Value,rep *
 		any := protocol.AnyArgs{
 			Any: eface,
 		}
-		anyBytes, err := json.Marshal(&any)
+		anyBytes, err := codec.Marshal(&any)
 		if err != nil {
-			HandleError(*rep, *ErrServer, c, "")
+			HandleError(codec,encoder,msgId, *ErrServer, c, "")
 			return
 		}
 		md.Data = anyBytes
@@ -120,7 +120,7 @@ func (s *Server) handleResult(c *websocket.Conn,callResult []reflect.Value,rep *
 
 // 从客户端传来的数据中序列化对应过程需要的调用参数
 // ok指示数据是否合法
-func (s *Server) getCallArgsFromClient(c *websocket.Conn,receiver,method reflect.Value,callerMd,rep *protocol.Message) (callArgs []reflect.Value,ok bool){
+func (s *Server) getCallArgsFromClient(codec protocol.Codec,encoder packet.Encoder,msgId uint64,c *websocket.Conn,receiver,method reflect.Value,callerMd,rep *protocol.Message) (callArgs []reflect.Value,ok bool){
 	callArgs = []reflect.Value{
 		// receiver
 		receiver,
@@ -129,9 +129,9 @@ func (s *Server) getCallArgsFromClient(c *websocket.Conn,receiver,method reflect
 	for k, v := range callerMd.Body.Frame {
 		// 排除receiver
 		index := k + 1
-		callArg, err := checkCoderType(v, inputTypeList[index])
+		callArg, err := checkCoderType(codec,v, inputTypeList[index])
 		if err != nil {
-			HandleError(*rep, *ErrServer, c, err.Error())
+			HandleError(codec,encoder,msgId, *ErrServer, c, err.Error())
 			return nil,false
 		}
 		// 可以根据获取的参数类别的每一个参数的类型信息得到
@@ -143,11 +143,11 @@ func (s *Server) getCallArgsFromClient(c *websocket.Conn,receiver,method reflect
 	ok, noMatch := checkInputTypeList(callArgs, inputTypeList)
 	if !ok {
 		if noMatch != nil {
-			HandleError(*rep, *ErrCallArgsType, c,
+			HandleError(codec,encoder,msgId, *ErrCallArgsType, c,
 				fmt.Sprintf("pass value type is %s but call arg type is %s", noMatch[1], noMatch[0]),
 			)
 		} else {
-			HandleError(*rep, *ErrCallArgsType, c,
+			HandleError(codec,encoder,msgId, *ErrCallArgsType, c,
 				fmt.Sprintf("pass arg list length no equal of call arg list : len(callArgs) == %d : len(inputTypeList) == %d",
 					len(callArgs)-1, len(inputTypeList)-1),
 			)

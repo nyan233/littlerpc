@@ -1,7 +1,6 @@
 package littlerpc
 
 import (
-	"encoding/json"
 	"errors"
 	"github.com/lesismal/nbio/nbhttp"
 	"github.com/lesismal/nbio/nbhttp/websocket"
@@ -115,8 +114,16 @@ func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType,
 	// TODO : Handle Ping-Pong Message
 	// TODO : Handle Control Header
 	header,headerLen := readHeader(data)
+	codec := protocol.GetCodec(header.CodecType)
+	encoder := packet.GetEncoder(header.Encoding)
 	if headerLen == 0 {
-		HandleError(protocol.Message{Header: header,Body: protocol.Body{}},*ErrMessageFormat,c,"")
+		if codec == nil {
+			codec = protocol.GetCodec("json")
+		}
+		if encoder == nil {
+			encoder = packet.GetEncoder("text")
+		}
+		HandleError(codec,encoder,header.MsgId,*ErrMessageFormat,c,"")
 		return
 	}
 	// TODO : Read All Messages Data
@@ -130,7 +137,7 @@ func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType,
 		}
 		start += readN
 		if err != nil {
-			HandleError(protocol.Message{Header: header,Body: protocol.Body{}},*ErrBodyRead,c,strconv.Itoa(start))
+			HandleError(codec,encoder,header.MsgId,*ErrBodyRead,c,strconv.Itoa(start))
 			return
 		}
 		if start != len(bodyBytes) {
@@ -144,13 +151,13 @@ func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType,
 	// 调用编码器解包
 	bodyBytes, err := s.encoder.UnPacket(bodyBytes)
 	if err != nil {
-		HandleError(protocol.Message{Header: header, Body: protocol.Body{}}, *ErrServer, c, "")
+		HandleError(codec,encoder,header.MsgId, *ErrServer, c, "")
 		return
 	}
 	frames := &protocol.Body{}
-	err = json.Unmarshal(bodyBytes,frames)
+	err = codec.Unmarshal(bodyBytes,frames)
 	if err != nil {
-		HandleError(protocol.Message{Header: header, Body: *frames}, *ErrJsonUnMarshal, c, "")
+		HandleError(codec,encoder,header.MsgId, *ErrJsonUnMarshal, c, "")
 		return
 	}
 	msg := protocol.Message{Header: header,Body: *frames}
@@ -159,35 +166,35 @@ func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType,
 	methodData := strings.SplitN(header.MethodName,".",2)
 	// 方法名和类型名不能为空
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
-		HandleError(msg,*ErrMethodNoRegister,c,header.MethodName)
+		HandleError(codec,encoder,header.MsgId,*ErrMethodNoRegister,c,header.MethodName)
 		return
 	}
 	eTmp, ok := s.elems.Load(methodData[0])
 	if !ok {
-		HandleError(msg,*ErrElemTypeNoRegister,c,methodData[0])
+		HandleError(codec,encoder,header.MsgId,*ErrElemTypeNoRegister,c,methodData[0])
 		return
 	}
 	elemData := eTmp.(ElemMeta)
 	method, ok := elemData.methods[methodData[1]]
 	if !ok {
-		HandleError(msg, *ErrMethodNoRegister, c, "")
+		HandleError(codec,encoder,header.MsgId, *ErrMethodNoRegister, c, "")
 		return
 	}
 	// 从客户端校验并获得合法的调用参数
-	callArgs,ok := s.getCallArgsFromClient(c,elemData.data,method,&msg,&msg)
+	callArgs,ok := s.getCallArgsFromClient(codec,encoder,header.MsgId,c,elemData.data,method,&msg,&msg)
 	// 参数校验为不合法
 	if !ok {
 		return
 	}
 	// 向任务池提交调用用户过程的任务
 	s.taskPool.Push(func() {
-		s.callHandleUnit(c,method,callArgs,&msg)
+		s.callHandleUnit(codec,encoder,header.MsgId,c,method,callArgs,&msg)
 	})
 }
 
 // 提供用于任务池的处理调用用户过程的单元
 // 因为用户过程可能会有阻塞操作
-func (s *Server) callHandleUnit(c *websocket.Conn,method reflect.Value,callArgs []reflect.Value,rep *protocol.Message) {
+func (s *Server) callHandleUnit(codec protocol.Codec,encoder packet.Encoder,msgId uint64,c *websocket.Conn,method reflect.Value,callArgs []reflect.Value,rep *protocol.Message) {
 	callResult := method.Call(callArgs)
 	// 函数在没有返回error则填充nil
 	if len(callResult) == 0 {
@@ -204,9 +211,9 @@ func (s *Server) callHandleUnit(c *websocket.Conn,method reflect.Value,callArgs 
 	// NOTE : 遗漏了一些数据，从而导致重入handleResult()，这时负责发送Body的函数可能只会看到长度为1的Body
 	rep.Body.Frame = rep.Body.Frame[:0]
 handleResult:
-	s.handleResult(c, callResult, rep)
+	s.handleResult(codec,encoder,msgId,c, callResult, rep)
 	// 处理用户过程返回的错误，如果用户过程没有返回错误则填充nil
-	tmpResult, try := s.handleErrAndRepResult(c, callResult, rep)
+	tmpResult, try := s.handleErrAndRepResult(codec,encoder,msgId,c, callResult, rep)
 	if try {
 		callResult = tmpResult
 		goto handleResult
