@@ -1,4 +1,4 @@
-package littlerpc
+package balance
 
 import (
 	"sync"

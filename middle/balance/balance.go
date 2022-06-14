@@ -1,4 +1,4 @@
-package littlerpc
+package balance
 
 import "sync"
 
@@ -18,6 +18,14 @@ type Balancer interface {
 
 func RegisterBalancer(balancer Balancer) {
 	balancerCollection.Store(balancer.Scheme(),balancer)
+}
+
+func GetBalancer(scheme string) Balancer {
+	b,ok := balancerCollection.Load(scheme)
+	if !ok {
+		return nil
+	}
+	return b.(Balancer)
 }
 
 func init() {

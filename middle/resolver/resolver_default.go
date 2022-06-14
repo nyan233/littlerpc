@@ -1,4 +1,4 @@
-package littlerpc
+package resolver
 
 import (
 	"io/ioutil"
@@ -51,9 +51,9 @@ func newLiveResolverBuilder() *liveResolverBuilder {
 }
 
 func (l *liveResolverBuilder) Instance() Resolver {
-	return resolverFn(func(addr string) []string {
+	return resolverFn(func(addr string) ([]string,error) {
 		tmp := strings.SplitN(addr,"://",2)
-		return strings.Split(tmp[1],";")
+		return strings.Split(tmp[1],";"),nil
 	})
 }
 
@@ -75,13 +75,13 @@ func newFileResolverBuilder() *fileResolverBuilder {
 }
 
 func (f *fileResolverBuilder) Instance() Resolver {
-	return resolverFn(func(addr string) []string {
+	return resolverFn(func(addr string) ([]string,error) {
 		tmp := strings.SplitN(addr,"://",2)
 		fileData, err := ioutil.ReadFile(tmp[1])
 		if err != nil {
-			Logger.PanicFromErr(err)
+			return nil,err
 		}
-		return strings.Split(string(fileData),"\n")
+		return strings.Split(string(fileData),"\n"),nil
 	})
 }
 
@@ -103,15 +103,15 @@ func newHttpResolverBuilder() *httpResolverBuilder {
 }
 
 func (h *httpResolverBuilder) Instance() Resolver {
-	return resolverFn(func(addr string) []string {
+	return resolverFn(func(addr string) ([]string,error) {
 		response, err := http.Get(addr)
 		if err != nil {
-			Logger.PanicFromErr(err)
+			return nil,err
 		}
 		bytes, err := ioutil.ReadAll(response.Body)
 		if err != nil {
-			Logger.PanicFromErr(err)
+			return nil,err
 		}
-		return strings.Split(string(bytes),"\n")
+		return strings.Split(string(bytes),"\n"),nil
 	})
 }
