@@ -23,6 +23,7 @@ const (
 // AnyArgs 用于所有的参数传递
 // Map等类型需要标注类型参数
 // TODO:这里的声明其实对String之外的类型只起到文档指示的作用，因为具体的类型信息需要反射生成，而不是使用interface{}
-type AnyArgs struct {
-	Any interface{}
-}
+// TODO:因为要实现通用的Codec，这个包装器已经没有用处，将在v0.30发布时完全剔除
+// type AnyArgs struct {
+// 	 Any interface{}
+// }

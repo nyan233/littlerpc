@@ -12,29 +12,25 @@ import (
 func checkCoderType(codec protocol.Codec,callerMd protocol.FrameMd, structPtr interface{}) (interface{}, error) {
 	switch callerMd.ArgType {
 	case protocol.String:
-		var tmp protocol.AnyArgs
-		err := codec.Unmarshal(callerMd.Data, &tmp)
-		return tmp.Any, err
+		ptr,_ := lreflect.ToTypePtr(structPtr)
+		err := codec.Unmarshal(callerMd.Data, ptr)
+		return structPtr, err
 	case protocol.Integer, protocol.Long, protocol.Float, protocol.Double, protocol.Boolean:
-		// encoding/json在解析number的时候需要精确的类型信息
-		// 否则在不设置Encoder的情况下会把number解释float64
-		val := lreflect.CreateAnyStructOnType(structPtr)
+		// 通用的Codec,不需要Any包装器
+		val,_ := lreflect.ToTypePtr(structPtr)
 		err := codec.Unmarshal(callerMd.Data, val)
 		if err != nil {
 			return nil, err
 		}
-		return reflect.ValueOf(val).Elem().FieldByName("Any").Interface(), err
+		return structPtr, err
 	case protocol.Array, protocol.Struct, protocol.Map:
-		// 处理数组/结构体/散列表的附加类型
-		// 因为encoding/json使用反射获取结构体对应字段的类型信息
-		// 而运行时对其重新赋值并不会影响type中每个字段的类型，所以需要重新创建
-		// 以提供精确的类型信息
-		val := lreflect.CreateAnyStructOnType(structPtr)
+		// 通用的Codec,不需要Any包装器
+		val,_ := lreflect.ToTypePtr(structPtr)
 		err := codec.Unmarshal(callerMd.Data, val)
 		if err != nil {
 			return nil, err
 		}
-		return reflect.ValueOf(val).Elem().FieldByName("Any").Interface(), err
+		return structPtr, err
 	default:
 		return nil, errors.New("type is not found")
 	}

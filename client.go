@@ -1,6 +1,7 @@
 package littlerpc
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/nyan233/littlerpc/internal/transport"
 	"github.com/nyan233/littlerpc/middle/balance"
@@ -134,24 +135,24 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	for _, v := range args {
 		var md protocol.FrameMd
 		md.ArgType = checkIType(v)
-		// 参数不能为指针类型
+		// 参数为指针类型则找出Elem的类型
 		if md.ArgType == protocol.Pointer {
-			panic("args type is pointer")
+			md.ArgType = checkIType(reflect.ValueOf(v).Elem().Interface())
+			// 不支持多重指针的数据结构
+			if md.ArgType == protocol.Pointer {
+				panic("multiple pointer no support")
+			}
 		}
 		// 参数为数组类型则保证额外的类型
 		if md.ArgType == protocol.Array {
 			md.AppendType = checkIType(lreflect.IdentArrayOrSliceType(v))
 		}
-		// 将参数json序列化到any包装器中
-		// Map/Struct类型也需要any包装器
-		any := protocol.AnyArgs{
-			Any: v,
-		}
-		anyBytes, err := c.codec.Marshal(&any)
+
+		argBytes, err := c.codec.Marshal(v)
 		if err != nil {
 			panic(err)
 		}
-		md.Data = anyBytes
+		md.Data = argBytes
 		msg.Body.Frame = append(msg.Body.Frame, md)
 	}
 	// init header
@@ -160,7 +161,8 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	msg.Header.Timestamp = uint64(time.Now().Unix())
 	msg.Header.Encoding = c.encoder.Scheme()
 	msg.Header.CodecType = c.codec.Scheme()
-	requestBytes, err := c.codec.Marshal(msg.Body)
+	// request body 暂时需要encoding/json来序列化
+	requestBytes, err := json.Marshal(msg.Body)
 	if err != nil {
 		panic(err)
 	}
@@ -186,7 +188,7 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 		c.onErr(err)
 		return
 	}
-	// 接收服务器返回的调用结果并序列化
+	// 接收服务器返回的调用结果并将header反序列化
 	_, buffer, err := c.conn.RecvMessage()
 	// read header
 	header,headerLen := readHeader(buffer)
@@ -198,7 +200,8 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 		c.onErr(err)
 		return
 	}
-	err = c.codec.Unmarshal(buffer, &msg.Body)
+	// response body 暂时需要encoding/json来反序列化
+	err = json.Unmarshal(buffer, &msg.Body)
 	if err != nil {
 		c.onErr(err)
 		return
@@ -225,6 +228,9 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	// 返回的数据的类型不可能是指针类型，需要客户端自己去处理
 	switch errMd.ArgType {
 	case protocol.Struct:
+		if c.codec.Scheme() != "json" {
+			break
+		}
 		errPtr := &protocol.Error{}
 		ierr := c.codec.Unmarshal(errMd.Data, errPtr)
 		if ierr != nil {
@@ -232,13 +238,19 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 		}
 		uErr = errPtr
 	case protocol.String:
-		var tmp protocol.AnyArgs
+		if c.codec.Scheme() != "json" {
+			break
+		}
+		var tmp = ""
 		err := c.codec.Unmarshal(errMd.Data, &tmp)
 		if err != nil {
 			panic(err)
 		}
-		uErr = errors.New(tmp.Any.(string))
+		uErr = errors.New(tmp)
 	case protocol.Integer:
+		if c.codec.Scheme() != "json" {
+			break
+		}
 		uErr = error(nil)
 	}
 	// 检查错误是Server的异常还是远程过程正常返回的error

@@ -1,6 +1,7 @@
 package littlerpc
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/lesismal/nbio/nbhttp"
 	"github.com/lesismal/nbio/nbhttp/websocket"
@@ -155,7 +156,8 @@ func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType,
 		return
 	}
 	frames := &protocol.Body{}
-	err = codec.Unmarshal(bodyBytes,frames)
+	// Request Body暂时需要encoding/json来序列化，因为元数据都是json格式的
+	err = json.Unmarshal(bodyBytes,frames)
 	if err != nil {
 		HandleError(codec,encoder,header.MsgId, *ErrJsonUnMarshal, c, "")
 		return
@@ -205,7 +207,8 @@ func (s *Server) callHandleUnit(codec protocol.Codec,encoder packet.Encoder,msgI
 	// 客户端在处理返回值的类型时需要自己根据注册的过程进行处理
 	rep.Header.MsgType = protocol.MessageReturn
 	rep.Header.Timestamp = uint64(time.Now().Unix())
-	rep.Header.CodecType = protocol.DefaultCodecType
+	rep.Header.CodecType = codec.Scheme()
+	rep.Header.Encoding = encoder.Scheme()
 	// NOTE : 重新设置Body的长度，否则可能会被请求序列化的数据污染
 	// NOTE : 不能在handleResult()中重置，因为handleErrAndRepResult()可能会认为
 	// NOTE : 遗漏了一些数据，从而导致重入handleResult()，这时负责发送Body的函数可能只会看到长度为1的Body

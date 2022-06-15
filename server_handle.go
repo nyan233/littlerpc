@@ -1,6 +1,7 @@
 package littlerpc
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/lesismal/nbio/nbhttp/websocket"
 	"github.com/nyan233/littlerpc/internal/transport"
@@ -19,6 +20,11 @@ func (s *Server) handleErrAndRepResult(codec protocol.Codec,encoder packet.Encod
 
 	switch i := lreflect.ToValueTypeEface(callResult[len(callResult)-1]); i.(type) {
 	case *protocol.Error:
+		// 非默认Codec不注入这些错误，因为像protobuf之类的可能有自己的
+		// 编码和Struct Tag规则，这些自动生成的error会导致错误
+		if codec.Scheme() != "json" {
+			break
+		}
 		errBytes, err := codec.Marshal(i)
 		if err != nil {
 			HandleError(codec,encoder,msgId,*ErrServer, c, err.Error())
@@ -27,26 +33,28 @@ func (s *Server) handleErrAndRepResult(codec protocol.Codec,encoder packet.Encod
 		errMd.ArgType = protocol.Struct
 		errMd.Data = errBytes
 	case error:
-		any := protocol.AnyArgs{
-			Any: i.(error).Error(),
+		if codec.Scheme() != "json" {
+			break
 		}
-		anyBytes, err := codec.Marshal(&any)
+		var str = i.(error).Error()
+		strBytes, err := codec.Marshal(&str)
 		if err != nil {
 			return
 		}
 		errMd.ArgType = protocol.String
-		errMd.Data = anyBytes
+		errMd.Data = strBytes
 	case nil:
-		any := protocol.AnyArgs{
-			Any: 0,
+		if codec.Scheme() != "json" {
+			break
 		}
+		var intNil int64
 		errMd.ArgType = protocol.Integer
-		anyBytes, err := codec.Marshal(&any)
+		bytes, err := codec.Marshal(&intNil)
 		if err != nil {
 			HandleError(codec,encoder,msgId, *ErrServer, c, err.Error())
 			return
 		}
-		errMd.Data = anyBytes
+		errMd.Data = bytes
 	default:
 		// 现在允许最后一个返回值不是*code.Error/error，这种情况被视为没有错误
 		callResult = append(callResult, reflect.ValueOf(nil))
@@ -61,7 +69,7 @@ func (s *Server) handleErrAndRepResult(codec protocol.Codec,encoder packet.Encod
 		return callResult,true
 	}
 	// TODO : implement text encoding and gzip encoding
-	rep.Header.Encoding = protocol.DefaultEncodingType
+	// rep Header已经被调用者提前设置好内容，所以这里发送消息的逻辑不用设置
 	rep.Body.Frame = append(rep.Body.Frame, errMd)
 	// write header
 	buf := s.bufferPool.Get().(*transport.BufferPool)
@@ -69,12 +77,14 @@ func (s *Server) handleErrAndRepResult(codec protocol.Codec,encoder packet.Encod
 	buf.Buf = buf.Buf[:0]
 	buf.Buf = append(buf.Buf,writeHeader(rep.Header)...)
 	// write body
-	repBytes, err := codec.Marshal(rep.Body)
+	// Rep Body中的每个Frame.Data已经由handleResult()调用对应的code序列化完成
+	// 所以这里不需要对每个栈帧数据进行序列化，只需要序列化元数据
+	jsonBytes, err := json.Marshal(rep.Body)
 	if err != nil {
 		HandleError(codec,encoder,msgId, *ErrServer, c, err.Error())
 		return
 	}
-	bytes, err := s.encoder.EnPacket(repBytes)
+	bytes, err := s.encoder.EnPacket(jsonBytes)
 	if err != nil {
 		HandleError(codec,encoder,msgId, *ErrServer, c, err.Error())
 		return
@@ -104,16 +114,13 @@ func (s *Server) handleResult(codec protocol.Codec,encoder packet.Encoder,msgId 
 		} else {
 			md.ArgType = typ
 		}
-		// Map/Struct也需要Any包装器
-		any := protocol.AnyArgs{
-			Any: eface,
-		}
-		anyBytes, err := codec.Marshal(&any)
+		// 可替换的Codec已经不需要Any包装器了
+		efaceBytes, err := codec.Marshal(eface)
 		if err != nil {
 			HandleError(codec,encoder,msgId, *ErrServer, c, "")
 			return
 		}
-		md.Data = anyBytes
+		md.Data = efaceBytes
 		rep.Body.Frame = append(rep.Body.Frame, md)
 	}
 }
