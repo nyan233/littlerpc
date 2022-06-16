@@ -19,37 +19,52 @@ type WebSocketTransServer struct {
 	started int32
 	closed  int32
 	server  *nbhttp.Server
-	onMsg   func(conn *websocket.Conn, messageType websocket.MessageType, bytes []byte)
-	onClose func(conn *websocket.Conn, err error)
-	onOpen  func(conn *websocket.Conn)
+	onMsg   func(conn interface{}, bytes []byte)
+	onClose func(conn interface{}, err error)
+	onOpen  func(conn interface{})
 	onErr   func(err error)
 }
 
-func NewWebSocketServer(tlsC *tls.Config, nConfig nbhttp.Config) *WebSocketTransServer {
+func NewWebSocketServer(tlsC *tls.Config, nConfig nbhttp.Config) ServerTransportBuilder {
 	nConfig.TLSConfig = tlsC
 	nConfig.Name = "LittleRpc-Server-WebSocket"
 	nConfig.Network = "tcp"
 	nConfig.ReleaseWebsocketPayload = true
-	server := nbhttp.NewServer(nConfig)
-	return &WebSocketTransServer{server: server, onErr: func(err error) {
+	server := &WebSocketTransServer{server: nbhttp.NewServer(nConfig)}
+	// set default function
+	server.onErr = func(err error) {
 		panic(err)
-	}}
+	}
+	server.onOpen = func(conn interface{}) {
+		return
+	}
+	server.onMsg = func(conn interface{}, bytes []byte) {
+		return
+	}
+	server.onClose = func(conn interface{}, err error) {
+		return
+	}
+	return server
 }
 
-func (server *WebSocketTransServer) SetOnMessage(onMsg func(conn *websocket.Conn, messageType websocket.MessageType, bytes []byte)) {
-	server.onMsg = onMsg
+func (server *WebSocketTransServer) Instance() ServerTransport {
+	return server
 }
 
-func (server *WebSocketTransServer) SetOnClose(onClose func(conn *websocket.Conn, err error)) {
-	server.onClose = onClose
+func (server *WebSocketTransServer) SetOnMessage(fn func(conn interface{}, data []byte)) {
+	server.onMsg = fn
 }
 
-func (server *WebSocketTransServer) SetOnOpen(onOpen func(conn *websocket.Conn)) {
-	server.onOpen = onOpen
+func (server *WebSocketTransServer) SetOnClose(fn func(conn interface{}, err error)) {
+	server.onClose = fn
 }
 
-func (server *WebSocketTransServer) SetOnErr(onErr func(err error)) {
-	server.onErr = onErr
+func (server *WebSocketTransServer) SetOnOpen(fn func(conn interface{})) {
+	server.onOpen = fn
+}
+
+func (server *WebSocketTransServer) SetOnErr(fn func(err error)) {
+	server.onErr = fn
 }
 
 func (server *WebSocketTransServer) Start() error {
@@ -59,9 +74,15 @@ func (server *WebSocketTransServer) Start() error {
 	mux := &http.ServeMux{}
 	mux.HandleFunc(wsUrl, func(writer http.ResponseWriter, request *http.Request) {
 		ws := websocket.NewUpgrader()
-		ws.OnMessage(server.onMsg)
-		ws.OnClose(server.onClose)
-		ws.OnOpen(server.onOpen)
+		ws.OnMessage(func(conn *websocket.Conn, messageType websocket.MessageType, bytes []byte) {
+			server.onMsg(conn,bytes)
+		})
+		ws.OnClose(func(conn *websocket.Conn, err error) {
+			server.onClose(conn,err)
+		})
+		ws.OnOpen(func(conn *websocket.Conn) {
+			server.onOpen(conn)
+		})
 		// 从Http升级到WebSocket
 		conn, err := ws.Upgrade(writer, request, nil)
 		if err != nil {

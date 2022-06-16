@@ -10,7 +10,7 @@ type WebSocketTransClient struct {
 	conn *websocket.Conn
 }
 
-func NewWebSocketTransClient(tlsC *tls.Config, addr string) *WebSocketTransClient {
+func NewWebSocketTransClient(tlsC *tls.Config, addr string) (*WebSocketTransClient,error) {
 	dialer := websocket.Dialer{
 		TLSClientConfig: tlsC,
 	}
@@ -24,28 +24,24 @@ func NewWebSocketTransClient(tlsC *tls.Config, addr string) *WebSocketTransClien
 	}
 	conn, _, err := dialer.Dial(u.String(), nil)
 	if err != nil {
-		panic(err)
+		return nil,err
 	}
-	return &WebSocketTransClient{conn: conn}
+	return &WebSocketTransClient{conn: conn},nil
 }
 
 func (c *WebSocketTransClient) Close() error {
 	return c.conn.Close()
 }
 
-
-func (c *WebSocketTransClient) WriteTextMessage(p []byte) error {
-	return c.conn.WriteMessage(websocket.TextMessage, p)
+func (c *WebSocketTransClient) SendData(p []byte) (n int, err error) {
+	err = c.conn.WriteMessage(websocket.BinaryMessage,p)
+	if err != nil {
+		return -1,err
+	}
+	return len(p),err
 }
 
-func (c *WebSocketTransClient) WriteBinaryMessage(p []byte) error {
-	return c.conn.WriteMessage(websocket.BinaryMessage,p)
-}
-
-func (c *WebSocketTransClient) RecvMessage() (int, []byte, error) {
-	return c.conn.ReadMessage()
-}
-
-func (c *WebSocketTransClient) WritePongMessage(p []byte) error {
-	return c.conn.WriteMessage(PongMessage, p)
+func (c *WebSocketTransClient) RecvData() (p []byte, err error) {
+	_,p,err = c.conn.ReadMessage()
+	return
 }
