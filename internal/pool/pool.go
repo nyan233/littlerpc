@@ -4,10 +4,13 @@ import (
 	"context"
 	"runtime"
 	"sync"
+	"time"
 )
 
 const (
 	MaxTaskPoolSize = 1024 * 1024 * 1024
+	MaxDelay = time.Nanosecond * 100000
+	MinDelay = time.Nanosecond * 10
 )
 
 type TaskPool struct {
@@ -40,14 +43,23 @@ func (p *TaskPool) start() {
 	for i := 0; i < p.size; i++ {
 		go func() {
 			defer p.wg.Done()
+			delay := MinDelay
 			for {
 				select {
 				case fn := <-p.tasks:
+					delay /= 2
+					if delay < MinDelay {
+						delay = MinDelay
+					}
 					fn()
 				case <-ctx.Done():
 					return
 				default:
-					runtime.Gosched()
+					delay *= 2
+					if delay > MaxDelay {
+						delay = MaxDelay
+					}
+					time.Sleep(delay)
 				}
 			}
 		}()
