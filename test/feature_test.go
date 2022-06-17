@@ -1,6 +1,8 @@
-package littlerpc
+package test
 
 import (
+	lclient "github.com/nyan233/littlerpc/impl/client"
+	lserver "github.com/nyan233/littlerpc/impl/server"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -44,10 +46,10 @@ func (t *HelloTest) ModifyUser(uid int, user User) bool {
 }
 
 type HelloTestProxy struct {
-	*Client
+	*lclient.Client
 }
 
-func NewHelloTestProxy(client *Client) *HelloTestProxy {
+func NewHelloTestProxy(client *lclient.Client) *HelloTestProxy {
 	proxy := &HelloTestProxy{}
 	err := client.BindFunc(proxy)
 	if err != nil {
@@ -86,7 +88,10 @@ func (proxy HelloTestProxy) ModifyUser(uid int, user User) bool {
 }
 
 func TestNoTlsConnect(t *testing.T) {
-	server := NewServer(WithAddressServer(":1234"),WithServerEncoder("gzip"))
+	server := lserver.NewServer(
+		lserver.WithAddressServer(":1234"),
+		lserver.WithServerEncoder("gzip"),
+		)
 	h := &HelloTest{}
 	err := server.Elem(h)
 	if err != nil {
@@ -108,9 +113,14 @@ func TestNoTlsConnect(t *testing.T) {
 	for i := 0; i < nGoroutine; i++ {
 		j := i
 		go func() {
-			client := NewClient(WithCallOnErr(func(err error) {
-				atomic.AddInt64(&errCount, 1)
-			}), WithAddressClient(":1234"),WithClientEncoder("gzip"))
+			client,err := lclient.NewClient(
+				lclient.WithCallOnErr(func(err error) {atomic.AddInt64(&errCount, 1)}),
+				lclient.WithAddressClient(":1234"),
+				lclient.WithClientEncoder("gzip"),
+				)
+			if err != nil {
+				t.Fatal(err)
+			}
 			defer client.Close()
 			proxy := NewHelloTestProxy(client)
 			proxy.Add(int64(addV))
@@ -149,7 +159,7 @@ func TestTlsConnect(t *testing.T) {
 }
 
 func TestBalance(t *testing.T) {
-	server := NewServer(WithAddressServer("127.0.0.1:9090","127.0.0.1:8080"))
+	server := lserver.NewServer(lserver.WithAddressServer("127.0.0.1:9090","127.0.0.1:8080"))
 	err := server.Elem(new(HelloTest))
 	if err != nil {
 		t.Fatal(err)
@@ -159,9 +169,20 @@ func TestBalance(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	ClientOpenBalance("live","live://127.0.0.1:8080;127.0.0.1:9090",math.MaxInt64)
-	c1 := NewHelloTestProxy(NewClient(WithBalance("roundRobin")))
-	c2 := NewHelloTestProxy(NewClient(WithBalance("roundRobin")))
-	c1.Add(1024)
-	c2.Add(1023)
+	err = lclient.ClientOpenBalance("live", "live://127.0.0.1:8080;127.0.0.1:9090", math.MaxInt64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c1,err := lclient.NewClient(lclient.WithBalance("roundRobin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p1 := NewHelloTestProxy(c1)
+	c2,err := lclient.NewClient(lclient.WithBalance("roundRobin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2 := NewHelloTestProxy(c2)
+	p1.Add(1024)
+	p2.Add(1023)
 }

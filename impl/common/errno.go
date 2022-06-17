@@ -1,4 +1,4 @@
-package littlerpc
+package common
 
 import (
 	"github.com/nyan233/littlerpc/protocol"

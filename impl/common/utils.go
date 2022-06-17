@@ -1,4 +1,4 @@
-package littlerpc
+package common
 
 import (
 	"bytes"
@@ -6,16 +6,15 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/lesismal/nbio/nbhttp/websocket"
+	"github.com/nyan233/littlerpc/impl/transport"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
-	"reflect"
 	"runtime"
 	"strconv"
 	"time"
 )
 
-func HandleError(codec protocol.Codec,encoder packet.Encoder,msgId uint64, errNo protocol.Error, conn *websocket.Conn, appendInfo string) {
+func HandleError(codec protocol.Codec,encoder packet.Encoder,msgId uint64, errNo protocol.Error, conn transport.ServerConnAdapter, appendInfo string) {
 	md := protocol.FrameMd{
 		ArgType:    protocol.Struct,
 		AppendType: protocol.ServerError,
@@ -29,7 +28,7 @@ func HandleError(codec protocol.Codec,encoder packet.Encoder,msgId uint64, errNo
 	header.MsgId = msgId
 	header.CodecType = codec.Scheme()
 	header.Encoding = encoder.Scheme()
-	conn.WriteMessage(websocket.TextMessage,writeHeader(header))
+	conn.Write(WriteHeader(header))
 	switch errNo.Info {
 	case ErrJsonUnMarshal.Info, ErrMethodNoRegister.Info, ErrCallArgsType.Info:
 		errNo.Trace += appendInfo
@@ -46,7 +45,7 @@ func HandleError(codec protocol.Codec,encoder packet.Encoder,msgId uint64, errNo
 		if err != nil {
 			panic(errors.New(fmt.Sprintf("encoding/%s enpacket failed",encoder.Scheme())))
 		}
-		conn.WriteMessage(websocket.TextMessage, errNoBytes)
+		conn.Write(errNoBytes)
 		break
 	case ErrServer.Info:
 		errNo.Info += appendInfo
@@ -65,7 +64,7 @@ func HandleError(codec protocol.Codec,encoder packet.Encoder,msgId uint64, errNo
 		if err != nil {
 			panic(errors.New(fmt.Sprintf("encoding/%s enpacket failed",encoder.Scheme())))
 		}
-		conn.WriteMessage(websocket.TextMessage, errNoBytes)
+		conn.Write(errNoBytes)
 	case Nil.Info:
 		err := md.Encode(codec,errNo)
 		if err != nil {
@@ -80,27 +79,12 @@ func HandleError(codec protocol.Codec,encoder packet.Encoder,msgId uint64, errNo
 		if err != nil {
 			panic(errors.New(fmt.Sprintf("encoding/%s enpacket failed",encoder.Scheme())))
 		}
-		conn.WriteMessage(websocket.TextMessage, errNoBytes)
+		conn.Write(errNoBytes)
 	}
 }
 
-// Little-RPC中定义了传入类型中不能为指针类型，所以Server根据这种方法就能快速判断
-// 序列化好的远程栈帧的每个帧的类型是否和需要调用的参数列表的每个参数的类型相同
-// 如果inputS有receiver的话，需要调用者对slice做Offset，比如[1:]
-func checkInputTypeList(callArgs []reflect.Value, inputS []interface{}) (bool, []string) {
-	if len(callArgs) != len(inputS) {
-		return false, nil
-	}
-	for k := range callArgs {
-		if !(callArgs[k].Type().Kind() == reflect.TypeOf(inputS[k]).Kind()) {
-			return false, []string{callArgs[k].Type().Kind().String(),
-				reflect.TypeOf(inputS[k]).Kind().String()}
-		}
-	}
-	return true, nil
-}
 
-func readHeader(data []byte) (protocol.Header,int) {
+func ReadHeader(data []byte) (protocol.Header,int) {
 	header := &protocol.Header{}
 	headerBytes := bytes.Split(data,[]byte{';'})
 	header.MsgType = string(headerBytes[0])
@@ -126,7 +110,7 @@ func readHeader(data []byte) (protocol.Header,int) {
 	return *header,headerLen + 6
 }
 
-func writeHeader(header protocol.Header) []byte {
+func WriteHeader(header protocol.Header) []byte {
 	buffer := make([]byte,0,128)
 	headerTmp := make([][]byte,0,16)
 	headerTmp = append(headerTmp,[]byte(header.MsgType))

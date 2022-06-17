@@ -1,4 +1,4 @@
-package littlerpc
+package internal
 
 import (
 	"errors"
@@ -7,7 +7,7 @@ import (
 
 // 处理coder声明的类型和go内置类型的映射的工具函数
 
-func mappingCoderPtrType(typ protocol.Type) (interface{}, error) {
+func MappingCoderPtrType(typ protocol.Type) (interface{}, error) {
 	switch typ {
 	case protocol.Long:
 		return new(int32), nil
@@ -40,7 +40,7 @@ func mappingCoderPtrType(typ protocol.Type) (interface{}, error) {
 	}
 }
 
-func mappingCoderNoPtrType(typ protocol.Type) (interface{},error) {
+func MappingCoderNoPtrType(typ protocol.Type) (interface{},error) {
 	switch typ {
 	case protocol.Long:
 		return *new(int32), nil

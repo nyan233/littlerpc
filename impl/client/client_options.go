@@ -1,75 +1,83 @@
-package littlerpc
+package client
 
 import (
 	"crypto/tls"
+	"github.com/nyan233/littlerpc/impl/common"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
 	"time"
 )
 
-type clientOption func(config *ClientConfig)
+type clientOption func(config *Config)
 
-func (opt clientOption) apply(config *ClientConfig) {
+func (opt clientOption) apply(config *Config) {
 	opt(config)
 }
 
 func WithDefaultClient() clientOption {
-	return func(config *ClientConfig) {
+	return func(config *Config) {
 		config.TlsConfig = nil
 		config.KeepAlive = false
 		config.ClientConnTimeout = 90 * time.Second
 		config.ClientPPTimeout = 5 * time.Second
-		config.Logger = Logger
+		config.Logger = common.Logger
 		config.Encoder = packet.GetEncoder("text")
 		config.Codec = protocol.GetCodec("json")
+		config.NetWork = "tcp"
 	}
 }
 
 func WithResolver(bScheme string) clientOption {
-	return func(config *ClientConfig) {
+	return func(config *Config) {
 		config.BalanceScheme = bScheme
 	}
 }
 
 func WithBalance(scheme string) clientOption {
-	return func(config *ClientConfig) {
+	return func(config *Config) {
 		config.BalanceScheme = scheme
 	}
 }
 
 func WithTlsClient(tlsC *tls.Config) clientOption {
-	return func(config *ClientConfig) {
+	return func(config *Config) {
 		config.TlsConfig = tlsC
 	}
 }
 
 func WithAddressClient(addr string) clientOption {
-	return func(config *ClientConfig) {
+	return func(config *Config) {
 		config.ServerAddr = addr
 	}
 }
 
 func WithCustomLoggerClient(logger bilog.Logger) clientOption {
-	return func(config *ClientConfig) {
+	return func(config *Config) {
 		config.Logger = logger
 	}
 }
 
 func WithCallOnErr(fn func(err error)) clientOption {
-	return func(config *ClientConfig) {
+	return func(config *Config) {
 		config.CallOnErr = fn
 	}
 }
 
 func WithClientEncoder(scheme string) clientOption {
-	return func(config *ClientConfig) {
+	return func(config *Config) {
 		config.Encoder = packet.GetEncoder(scheme)
 	}
 }
 
 func WithClientCodec(scheme string) clientOption {
-	return func(config *ClientConfig) {
+	return func(config *Config) {
 		config.Codec = protocol.GetCodec(scheme)
+	}
+}
+
+func WithProtocol(scheme string) clientOption {
+	return func(config *Config) {
+		config.NetWork = scheme
 	}
 }

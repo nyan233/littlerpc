@@ -3,14 +3,12 @@ package transport
 import (
 	"github.com/lesismal/nbio"
 	"github.com/lesismal/nbio/nbhttp"
-	"github.com/lesismal/nbio/nbhttp/websocket"
 	"runtime"
 	"testing"
 )
 
-func tcpOnMessage(connInter interface{},data []byte) {
-	conn := connInter.(*nbio.Conn)
-	_, _ = conn.Write(data)
+func tcpOnMessage(conn ServerConnAdapter,data []byte) {
+	_,_ = conn.Write(data)
 }
 
 
@@ -46,9 +44,8 @@ func TestTcpTransport(t *testing.T) {
 	t.Log(string(data))
 }
 
-func wsOnMessage(connInter interface{},data []byte) {
-	conn := connInter.(*websocket.Conn)
-	_ = conn.WriteMessage(websocket.BinaryMessage,data)
+func wsOnMessage(conn ServerConnAdapter,data []byte) {
+	_,_ = conn.Write(data)
 }
 
 func TestWebSocketTransport(t *testing.T) {

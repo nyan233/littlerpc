@@ -1,4 +1,4 @@
-package littlerpc
+package internal
 
 import (
 	"errors"
@@ -9,7 +9,7 @@ import (
 )
 
 // structPtr中必须是指针变量
-func checkCoderType(codec protocol.Codec,callerMd protocol.FrameMd, structPtr interface{}) (interface{}, error) {
+func CheckCoderType(codec protocol.Codec,callerMd protocol.FrameMd, structPtr interface{}) (interface{}, error) {
 	switch callerMd.ArgType {
 	case protocol.String:
 		ptr,_ := lreflect.ToTypePtr(structPtr)
@@ -36,7 +36,7 @@ func checkCoderType(codec protocol.Codec,callerMd protocol.FrameMd, structPtr in
 	}
 }
 
-func checkIType(i interface{}) protocol.Type {
+func CheckIType(i interface{}) protocol.Type {
 	if i == nil {
 		return protocol.Type(math.MaxUint8)
 	}
@@ -72,7 +72,7 @@ func checkIType(i interface{}) protocol.Type {
 	}
 }
 
-func checkCoderBaseType(typ protocol.Type) interface{} {
+func CheckCoderBaseType(typ protocol.Type) interface{} {
 	switch typ {
 	case protocol.Byte:
 		return interface{}(*new(byte))
@@ -95,4 +95,20 @@ func checkCoderBaseType(typ protocol.Type) interface{} {
 	default:
 		return nil
 	}
+}
+
+// CheckInputTypeList Little-RPC中定义了传入类型中不能为指针类型，所以Server根据这种方法就能快速判断
+// 序列化好的远程栈帧的每个帧的类型是否和需要调用的参数列表的每个参数的类型相同
+// 如果inputS有receiver的话，需要调用者对slice做Offset，比如[1:]
+func CheckInputTypeList(callArgs []reflect.Value, inputS []interface{}) (bool, []string) {
+	if len(callArgs) != len(inputS) {
+		return false, nil
+	}
+	for k := range callArgs {
+		if !(callArgs[k].Type().Kind() == reflect.TypeOf(inputS[k]).Kind()) {
+			return false, []string{callArgs[k].Type().Kind().String(),
+				reflect.TypeOf(inputS[k]).Kind().String()}
+		}
+	}
+	return true, nil
 }

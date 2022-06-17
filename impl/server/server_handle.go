@@ -1,10 +1,11 @@
-package littlerpc
+package server
 
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/lesismal/nbio/nbhttp/websocket"
-	"github.com/nyan233/littlerpc/internal/transport"
+	"github.com/nyan233/littlerpc/impl/common"
+	"github.com/nyan233/littlerpc/impl/internal"
+	"github.com/nyan233/littlerpc/impl/transport"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
@@ -13,7 +14,7 @@ import (
 
 // try 指示是否需要重入处理结果的逻辑
 // cr2 表示内部append过的callResult，以使更改调用者可见
-func (s *Server) handleErrAndRepResult(codec protocol.Codec,encoder packet.Encoder,msgId uint64,c *websocket.Conn,callResult []reflect.Value,rep *protocol.Message) (cr2 []reflect.Value,try bool){
+func (s *Server) handleErrAndRepResult(codec protocol.Codec,encoder packet.Encoder,msgId uint64,c transport.ServerConnAdapter,callResult []reflect.Value,rep *protocol.Message) (cr2 []reflect.Value,try bool){
 	errMd := protocol.FrameMd{
 		ArgType: protocol.Struct,
 	}
@@ -27,7 +28,7 @@ func (s *Server) handleErrAndRepResult(codec protocol.Codec,encoder packet.Encod
 		}
 		errBytes, err := codec.Marshal(i)
 		if err != nil {
-			HandleError(codec,encoder,msgId,*ErrServer, c, err.Error())
+			common.HandleError(codec,encoder,msgId,*common.ErrServer, c, err.Error())
 			return
 		}
 		errMd.ArgType = protocol.Struct
@@ -51,7 +52,7 @@ func (s *Server) handleErrAndRepResult(codec protocol.Codec,encoder packet.Encod
 		errMd.ArgType = protocol.Integer
 		bytes, err := codec.Marshal(&intNil)
 		if err != nil {
-			HandleError(codec,encoder,msgId, *ErrServer, c, err.Error())
+			common.HandleError(codec,encoder,msgId, *common.ErrServer, c, err.Error())
 			return
 		}
 		errMd.Data = bytes
@@ -75,23 +76,23 @@ func (s *Server) handleErrAndRepResult(codec protocol.Codec,encoder packet.Encod
 	buf := s.bufferPool.Get().(*transport.BufferPool)
 	defer s.bufferPool.Put(buf)
 	buf.Buf = buf.Buf[:0]
-	buf.Buf = append(buf.Buf,writeHeader(rep.Header)...)
+	buf.Buf = append(buf.Buf,common.WriteHeader(rep.Header)...)
 	// write body
 	// Rep Body中的每个Frame.Data已经由handleResult()调用对应的code序列化完成
 	// 所以这里不需要对每个栈帧数据进行序列化，只需要序列化元数据
 	jsonBytes, err := json.Marshal(rep.Body)
 	if err != nil {
-		HandleError(codec,encoder,msgId, *ErrServer, c, err.Error())
+		common.HandleError(codec,encoder,msgId, *common.ErrServer, c, err.Error())
 		return
 	}
 	bytes, err := s.encoder.EnPacket(jsonBytes)
 	if err != nil {
-		HandleError(codec,encoder,msgId, *ErrServer, c, err.Error())
+		common.HandleError(codec,encoder,msgId, *common.ErrServer, c, err.Error())
 		return
 	}
 	buf.Buf = append(buf.Buf,bytes...)
 	// write data
-	err = c.WriteMessage(websocket.TextMessage, buf.Buf)
+	_, err = c.Write(buf.Buf)
 	if err != nil {
 		s.logger.ErrorFromErr(err)
 		return nil,false
@@ -100,14 +101,14 @@ func (s *Server) handleErrAndRepResult(codec protocol.Codec,encoder packet.Encod
 }
 
 // 将用户过程的返回结果集序列化为可传输的json数据
-func (s *Server) handleResult(codec protocol.Codec,encoder packet.Encoder,msgId uint64,c *websocket.Conn,callResult []reflect.Value,rep *protocol.Message) {
+func (s *Server) handleResult(codec protocol.Codec,encoder packet.Encoder,msgId uint64,c transport.ServerConnAdapter,callResult []reflect.Value,rep *protocol.Message) {
 	for _, v := range callResult[:len(callResult)-1] {
 		var md protocol.FrameMd
 		var eface = v.Interface()
-		typ := checkIType(eface)
+		typ := internal.CheckIType(eface)
 		// 返回值的类型为指针的情况，为其设置参数类型和正确的附加类型
 		if typ == protocol.Pointer {
-			md.ArgType = checkIType(v.Elem().Interface())
+			md.ArgType = internal.CheckIType(v.Elem().Interface())
 			if md.ArgType == protocol.Map || md.ArgType == protocol.Struct {
 				_ = true
 			}
@@ -117,7 +118,7 @@ func (s *Server) handleResult(codec protocol.Codec,encoder packet.Encoder,msgId 
 		// 可替换的Codec已经不需要Any包装器了
 		efaceBytes, err := codec.Marshal(eface)
 		if err != nil {
-			HandleError(codec,encoder,msgId, *ErrServer, c, "")
+			common.HandleError(codec,encoder,msgId, *common.ErrServer, c, "")
 			return
 		}
 		md.Data = efaceBytes
@@ -127,7 +128,7 @@ func (s *Server) handleResult(codec protocol.Codec,encoder packet.Encoder,msgId 
 
 // 从客户端传来的数据中序列化对应过程需要的调用参数
 // ok指示数据是否合法
-func (s *Server) getCallArgsFromClient(codec protocol.Codec,encoder packet.Encoder,msgId uint64,c *websocket.Conn,receiver,method reflect.Value,callerMd,rep *protocol.Message) (callArgs []reflect.Value,ok bool){
+func (s *Server) getCallArgsFromClient(codec protocol.Codec,encoder packet.Encoder,msgId uint64,c transport.ServerConnAdapter,receiver,method reflect.Value,callerMd,rep *protocol.Message) (callArgs []reflect.Value,ok bool){
 	callArgs = []reflect.Value{
 		// receiver
 		receiver,
@@ -136,9 +137,9 @@ func (s *Server) getCallArgsFromClient(codec protocol.Codec,encoder packet.Encod
 	for k, v := range callerMd.Body.Frame {
 		// 排除receiver
 		index := k + 1
-		callArg, err := checkCoderType(codec,v, inputTypeList[index])
+		callArg, err := internal.CheckCoderType(codec,v, inputTypeList[index])
 		if err != nil {
-			HandleError(codec,encoder,msgId, *ErrServer, c, err.Error())
+			common.HandleError(codec,encoder,msgId, *common.ErrServer, c, err.Error())
 			return nil,false
 		}
 		// 可以根据获取的参数类别的每一个参数的类型信息得到
@@ -147,14 +148,14 @@ func (s *Server) getCallArgsFromClient(codec protocol.Codec,encoder packet.Encod
 	}
 	// 验证客户端传来的栈帧中每个参数的类型是否与服务器需要的一致？
 	// receiver(接收器)参与验证
-	ok, noMatch := checkInputTypeList(callArgs, inputTypeList)
+	ok, noMatch := internal.CheckInputTypeList(callArgs, inputTypeList)
 	if !ok {
 		if noMatch != nil {
-			HandleError(codec,encoder,msgId, *ErrCallArgsType, c,
+			common.HandleError(codec,encoder,msgId, *common.ErrCallArgsType, c,
 				fmt.Sprintf("pass value type is %s but call arg type is %s", noMatch[1], noMatch[0]),
 			)
 		} else {
-			HandleError(codec,encoder,msgId, *ErrCallArgsType, c,
+			common.HandleError(codec,encoder,msgId, *common.ErrCallArgsType, c,
 				fmt.Sprintf("pass arg list length no equal of call arg list : len(callArgs) == %d : len(inputTypeList) == %d",
 					len(callArgs)-1, len(inputTypeList)-1),
 			)

@@ -1,12 +1,12 @@
-package littlerpc
+package server
 
 import (
 	"encoding/json"
 	"errors"
-	"github.com/lesismal/nbio/nbhttp"
-	"github.com/lesismal/nbio/nbhttp/websocket"
+	"fmt"
+	"github.com/nyan233/littlerpc/impl/common"
+	"github.com/nyan233/littlerpc/impl/transport"
 	"github.com/nyan233/littlerpc/internal/pool"
-	"github.com/nyan233/littlerpc/internal/transport"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
@@ -19,21 +19,13 @@ import (
 	"time"
 )
 
-type ElemMeta struct {
-	// instance type
-	typ     reflect.Type
-	// instance pointer
-	data    reflect.Value
-	// instance method collection
-	methods map[string]reflect.Value
-}
 
 type Server struct {
 	// 存储绑定的实例的集合
 	// Map[TypeName]:[ElemMeta]
 	elems sync.Map
 	// Server Engine
-	server *transport.WebSocketTransServer
+	server transport.ServerTransport
 	// 任务池
 	taskPool *pool.TaskPool
 	// 简单的缓冲内存池
@@ -46,7 +38,7 @@ type Server struct {
 
 func NewServer(opts ...serverOption) *Server {
 	server := &Server{}
-	sc := &ServerConfig{}
+	sc := &Config{}
 	WithDefaultServer()(sc)
 	for _, v := range opts {
 		v(sc)
@@ -54,22 +46,15 @@ func NewServer(opts ...serverOption) *Server {
 	if sc.Logger != nil {
 		server.logger = sc.Logger
 	} else {
-		server.logger = Logger
+		server.logger = common.Logger
 	}
-	wsConf := nbhttp.Config{
-		NPoller:        runtime.NumCPU() * 2,
-		ReadBufferSize: 4096 * 8,
-	}
-	if sc.TlsConfig == nil {
-		wsConf.Addrs = sc.Address
-	} else {
-		wsConf.AddrsTLS = sc.Address
-	}
-	server.server = transport.NewWebSocketServer(sc.TlsConfig, wsConf)
-	server.server.SetOnMessage(server.onMessage)
-	server.server.SetOnClose(server.onClose)
-	server.server.SetOnErr(server.onErr)
-	server.server.SetOnOpen(server.onOpen)
+	builder := serverSupportProtocol[sc.NetWork](*sc)
+	builder.SetOnMessage(server.onMessage)
+	builder.SetOnClose(server.onClose)
+	builder.SetOnErr(server.onErr)
+	builder.SetOnOpen(server.onOpen)
+	// server engine
+	server.server = builder.Instance()
 	// New Buffer Pool
 	server.bufferPool = sync.Pool{
 		New: func() interface{} {
@@ -87,34 +72,34 @@ func (s *Server) Elem(i interface{}) error {
 	if i == nil {
 		return errors.New("register elem is nil")
 	}
-	elemD := ElemMeta{}
-	elemD.typ = reflect.TypeOf(i)
-	elemD.data = reflect.ValueOf(i)
+	elemD := common.ElemMeta{}
+	elemD.Typ = reflect.TypeOf(i)
+	elemD.Data = reflect.ValueOf(i)
 	// 检查类型的名字是否正确，因为类型名要作为key
 	name := reflect.Indirect(reflect.ValueOf(i)).Type().Name()
 	if name == "" {
 		return errors.New("the typ name is not defined")
 	}
 	// 检查是否有与该类型绑定的方法
-	if elemD.typ.NumMethod() == 0 {
+	if elemD.Typ.NumMethod() == 0 {
 		return errors.New("no bind receiver method")
 	}
 	// init map
-	elemD.methods = make(map[string]reflect.Value, elemD.typ.NumMethod())
-	for i := 0; i < elemD.typ.NumMethod(); i++ {
-		method := elemD.typ.Method(i)
+	elemD.Methods = make(map[string]reflect.Value, elemD.Typ.NumMethod())
+	for i := 0; i < elemD.Typ.NumMethod(); i++ {
+		method := elemD.Typ.Method(i)
 		if method.IsExported() {
-			elemD.methods[method.Name] = method.Func
+			elemD.Methods[method.Name] = method.Func
 		}
 	}
 	s.elems.Store(name,elemD)
 	return nil
 }
 
-func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType, data []byte) {
+func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 	// TODO : Handle Ping-Pong Message
 	// TODO : Handle Control Header
-	header,headerLen := readHeader(data)
+	header,headerLen := common.ReadHeader(data)
 	codec := protocol.GetCodec(header.CodecType)
 	encoder := packet.GetEncoder(header.Encoding)
 	if headerLen == 0 {
@@ -124,7 +109,7 @@ func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType,
 		if encoder == nil {
 			encoder = packet.GetEncoder("text")
 		}
-		HandleError(codec,encoder,header.MsgId,*ErrMessageFormat,c,"")
+		common.HandleError(codec,encoder,header.MsgId,*common.ErrMessageFormat,c,"")
 		return
 	}
 	// TODO : Read All Messages Data
@@ -138,7 +123,7 @@ func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType,
 		}
 		start += readN
 		if err != nil {
-			HandleError(codec,encoder,header.MsgId,*ErrBodyRead,c,strconv.Itoa(start))
+			common.HandleError(codec,encoder,header.MsgId,*common.ErrBodyRead,c,strconv.Itoa(start))
 			return
 		}
 		if start != len(bodyBytes) {
@@ -152,14 +137,14 @@ func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType,
 	// 调用编码器解包
 	bodyBytes, err := s.encoder.UnPacket(bodyBytes)
 	if err != nil {
-		HandleError(codec,encoder,header.MsgId, *ErrServer, c, "")
+		common.HandleError(codec,encoder,header.MsgId, *common.ErrServer, c, "")
 		return
 	}
 	frames := &protocol.Body{}
 	// Request Body暂时需要encoding/json来序列化，因为元数据都是json格式的
 	err = json.Unmarshal(bodyBytes,frames)
 	if err != nil {
-		HandleError(codec,encoder,header.MsgId, *ErrJsonUnMarshal, c, "")
+		common.HandleError(codec,encoder,header.MsgId, *common.ErrJsonUnMarshal, c, "")
 		return
 	}
 	msg := protocol.Message{Header: header,Body: *frames}
@@ -168,35 +153,34 @@ func (s *Server) onMessage(c *websocket.Conn, messageType websocket.MessageType,
 	methodData := strings.SplitN(header.MethodName,".",2)
 	// 方法名和类型名不能为空
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
-		HandleError(codec,encoder,header.MsgId,*ErrMethodNoRegister,c,header.MethodName)
+		common.HandleError(codec,encoder,header.MsgId,*common.ErrMethodNoRegister,c,header.MethodName)
 		return
 	}
 	eTmp, ok := s.elems.Load(methodData[0])
 	if !ok {
-		HandleError(codec,encoder,header.MsgId,*ErrElemTypeNoRegister,c,methodData[0])
+		common.HandleError(codec,encoder,header.MsgId,*common.ErrElemTypeNoRegister,c,methodData[0])
 		return
 	}
-	elemData := eTmp.(ElemMeta)
-	method, ok := elemData.methods[methodData[1]]
+	elemData := eTmp.(common.ElemMeta)
+	method, ok := elemData.Methods[methodData[1]]
 	if !ok {
-		HandleError(codec,encoder,header.MsgId, *ErrMethodNoRegister, c, "")
+		common.HandleError(codec,encoder,header.MsgId, *common.ErrMethodNoRegister, c, "")
 		return
 	}
 	// 从客户端校验并获得合法的调用参数
-	callArgs,ok := s.getCallArgsFromClient(codec,encoder,header.MsgId,c,elemData.data,method,&msg,&msg)
+	callArgs,ok := s.getCallArgsFromClient(codec,encoder,header.MsgId,c,elemData.Data,method,&msg,&msg)
 	// 参数校验为不合法
 	if !ok {
 		return
 	}
 	// 向任务池提交调用用户过程的任务
-	s.taskPool.Push(func() {
-		s.callHandleUnit(codec,encoder,header.MsgId,c,method,callArgs,&msg)
-	})
+	s.callHandleUnit(codec,encoder,header.MsgId,c,method,callArgs,&msg)
 }
 
 // 提供用于任务池的处理调用用户过程的单元
 // 因为用户过程可能会有阻塞操作
-func (s *Server) callHandleUnit(codec protocol.Codec,encoder packet.Encoder,msgId uint64,c *websocket.Conn,method reflect.Value,callArgs []reflect.Value,rep *protocol.Message) {
+func (s *Server) callHandleUnit(codec protocol.Codec,encoder packet.Encoder,msgId uint64,
+	c transport.ServerConnAdapter,method reflect.Value, callArgs []reflect.Value,rep *protocol.Message) {
 	callResult := method.Call(callArgs)
 	// 函数在没有返回error则填充nil
 	if len(callResult) == 0 {
@@ -223,16 +207,16 @@ handleResult:
 	}
 }
 
-func (s *Server) onClose(conn *websocket.Conn, err error) {
-
+func (s *Server) onClose(conn transport.ServerConnAdapter, err error) {
+	s.logger.ErrorFromString(fmt.Sprintf("Close Connection: %v", err))
 }
 
-func (s *Server) onOpen(conn *websocket.Conn) {
-
+func (s *Server) onOpen(conn transport.ServerConnAdapter) {
+	return
 }
 
 func (s *Server) onErr(err error) {
-
+	s.logger.ErrorFromErr(err)
 }
 
 func (s *Server) Start() error {

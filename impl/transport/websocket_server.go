@@ -5,8 +5,10 @@ import (
 	"github.com/lesismal/llib/std/crypto/tls"
 	"github.com/lesismal/nbio/nbhttp"
 	"github.com/lesismal/nbio/nbhttp/websocket"
+	"net"
 	"net/http"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -19,9 +21,9 @@ type WebSocketTransServer struct {
 	started int32
 	closed  int32
 	server  *nbhttp.Server
-	onMsg   func(conn interface{}, bytes []byte)
-	onClose func(conn interface{}, err error)
-	onOpen  func(conn interface{})
+	onMsg   func(conn ServerConnAdapter, bytes []byte)
+	onClose func(conn ServerConnAdapter, err error)
+	onOpen  func(conn ServerConnAdapter)
 	onErr   func(err error)
 }
 
@@ -35,13 +37,13 @@ func NewWebSocketServer(tlsC *tls.Config, nConfig nbhttp.Config) ServerTransport
 	server.onErr = func(err error) {
 		panic(err)
 	}
-	server.onOpen = func(conn interface{}) {
+	server.onOpen = func(conn ServerConnAdapter) {
 		return
 	}
-	server.onMsg = func(conn interface{}, bytes []byte) {
+	server.onMsg = func(conn ServerConnAdapter, bytes []byte) {
 		return
 	}
-	server.onClose = func(conn interface{}, err error) {
+	server.onClose = func(conn ServerConnAdapter, err error) {
 		return
 	}
 	return server
@@ -51,15 +53,15 @@ func (server *WebSocketTransServer) Instance() ServerTransport {
 	return server
 }
 
-func (server *WebSocketTransServer) SetOnMessage(fn func(conn interface{}, data []byte)) {
+func (server *WebSocketTransServer) SetOnMessage(fn func(conn ServerConnAdapter, data []byte)) {
 	server.onMsg = fn
 }
 
-func (server *WebSocketTransServer) SetOnClose(fn func(conn interface{}, err error)) {
+func (server *WebSocketTransServer) SetOnClose(fn func(conn ServerConnAdapter, err error)) {
 	server.onClose = fn
 }
 
-func (server *WebSocketTransServer) SetOnOpen(fn func(conn interface{})) {
+func (server *WebSocketTransServer) SetOnOpen(fn func(conn ServerConnAdapter)) {
 	server.onOpen = fn
 }
 
@@ -75,13 +77,16 @@ func (server *WebSocketTransServer) Start() error {
 	mux.HandleFunc(wsUrl, func(writer http.ResponseWriter, request *http.Request) {
 		ws := websocket.NewUpgrader()
 		ws.OnMessage(func(conn *websocket.Conn, messageType websocket.MessageType, bytes []byte) {
-			server.onMsg(conn,bytes)
+			adapter := &WebSocketServerConnImpl{conn: conn}
+			server.onMsg(adapter,bytes)
 		})
 		ws.OnClose(func(conn *websocket.Conn, err error) {
-			server.onClose(conn,err)
+			adapter := &WebSocketServerConnImpl{conn: conn}
+			server.onClose(adapter,err)
 		})
 		ws.OnOpen(func(conn *websocket.Conn) {
-			server.onOpen(conn)
+			adapter := &WebSocketServerConnImpl{conn: conn}
+			server.onOpen(adapter)
 		})
 		// 从Http升级到WebSocket
 		conn, err := ws.Upgrade(writer, request, nil)
@@ -101,4 +106,44 @@ func (server *WebSocketTransServer) Stop() error {
 	}
 	server.server.Stop()
 	return nil
+}
+
+type WebSocketServerConnImpl struct {
+	conn *websocket.Conn
+}
+
+func (w WebSocketServerConnImpl) Read(b []byte) (n int, err error) {
+	return w.conn.Read(b)
+}
+
+func (w WebSocketServerConnImpl) Write(b []byte) (n int, err error) {
+	err = w.conn.WriteMessage(websocket.BinaryMessage, b)
+	if err != nil {
+		return -1, err
+	}
+	return len(b),nil
+}
+
+func (w WebSocketServerConnImpl) Close() error {
+	return w.conn.Close()
+}
+
+func (w WebSocketServerConnImpl) LocalAddr() net.Addr {
+	return w.conn.LocalAddr()
+}
+
+func (w WebSocketServerConnImpl) RemoteAddr() net.Addr {
+	return w.conn.RemoteAddr()
+}
+
+func (w WebSocketServerConnImpl) SetDeadline(t time.Time) error {
+	return w.conn.SetDeadline(t)
+}
+
+func (w WebSocketServerConnImpl) SetReadDeadline(t time.Time) error {
+	return w.conn.SetReadDeadline(t)
+}
+
+func (w WebSocketServerConnImpl) SetWriteDeadline(t time.Time) error {
+	return w.conn.SetWriteDeadline(t)
 }

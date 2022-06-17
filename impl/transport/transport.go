@@ -2,6 +2,7 @@ package transport
 
 import (
 	"github.com/gorilla/websocket"
+	"net"
 )
 
 const (
@@ -27,11 +28,15 @@ type ServerTransport interface {
 	Stop() error
 }
 
+type ServerConnAdapter interface {
+	net.Conn
+}
+
 type ServerTransportBuilder interface {
 	Instance() ServerTransport
-	SetOnMessage(_ func(conn interface{}, data []byte))
-	SetOnClose(_ func(conn interface{}, err error))
-	SetOnOpen(_ func(conn interface{}))
+	SetOnMessage(_ func(conn ServerConnAdapter, data []byte))
+	SetOnClose(_ func(conn ServerConnAdapter, err error))
+	SetOnOpen(_ func(conn ServerConnAdapter))
 	SetOnErr(_ func(err error))
 }
 

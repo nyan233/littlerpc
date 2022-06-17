@@ -1,9 +1,11 @@
-package littlerpc
+package client
 
 import (
 	"encoding/json"
 	"errors"
-	"github.com/nyan233/littlerpc/internal/transport"
+	"github.com/nyan233/littlerpc/impl/common"
+	"github.com/nyan233/littlerpc/impl/internal"
+	"github.com/nyan233/littlerpc/impl/transport"
 	"github.com/nyan233/littlerpc/middle/balance"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/middle/resolver"
@@ -23,12 +25,12 @@ var (
 )
 
 type Client struct {
-	elem   ElemMeta
+	elem   common.ElemMeta
 	logger bilog.Logger
 	// 错误处理回调函数
 	onErr func(err error)
 	// client Engine
-	conn *transport.WebSocketTransClient
+	conn transport.ClientTransport
 	// 简单的内存池
 	memPool sync.Pool
 	// 字节流编码器
@@ -54,8 +56,8 @@ func ClientOpenBalance(scheme,url string,updateT time.Duration) error {
 	return nil
 }
 
-func NewClient(opts ...clientOption) *Client {
-	config := &ClientConfig{}
+func NewClient(opts ...clientOption) (*Client,error) {
+	config := &Config{}
 	WithDefaultClient()(config)
 	for _, v := range opts {
 		v(config)
@@ -76,10 +78,17 @@ func NewClient(opts ...clientOption) *Client {
 		}
 		addr := balancer.Target(addrCollection)
 		mu.Unlock()
-		conn := transport.NewWebSocketTransClient(config.TlsConfig, addr)
+		config.ServerAddr = addr
+		conn,err := clientSupportCollection[config.NetWork](*config)
+		if err != nil {
+			return nil,err
+		}
 		client.conn = conn
 	} else {
-		conn := transport.NewWebSocketTransClient(config.TlsConfig, config.ServerAddr)
+		conn,err := clientSupportCollection[config.NetWork](*config)
+		if err != nil {
+			return nil,err
+		}
 		client.conn = conn
 	}
 	// init pool
@@ -93,7 +102,7 @@ func NewClient(opts ...clientOption) *Client {
 	client.encoder = config.Encoder
 	// codec
 	client.codec = config.Codec
-	return client
+	return client,nil
 }
 
 func (c *Client) BindFunc(i interface{}) error {
@@ -102,15 +111,15 @@ func (c *Client) BindFunc(i interface{}) error {
 	}
 	// init message id in rand
 	rand.Seed(time.Now().UnixNano())
-	elemD := ElemMeta{}
-	elemD.typ = reflect.TypeOf(i)
-	elemD.data = reflect.ValueOf(i)
+	elemD := common.ElemMeta{}
+	elemD.Typ = reflect.TypeOf(i)
+	elemD.Data = reflect.ValueOf(i)
 	// init map
-	elemD.methods = make(map[string]reflect.Value, elemD.typ.NumMethod())
-	for i := 0; i < elemD.typ.NumMethod(); i++ {
-		method := elemD.typ.Method(i)
+	elemD.Methods = make(map[string]reflect.Value, elemD.Typ.NumMethod())
+	for i := 0; i < elemD.Typ.NumMethod(); i++ {
+		method := elemD.Typ.Method(i)
 		if method.IsExported() {
-			elemD.methods[method.Name] = method.Func
+			elemD.Methods[method.Name] = method.Func
 		}
 	}
 	c.elem = elemD
@@ -128,16 +137,16 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	}
 	msg := &protocol.Message{}
 	msg.Header.MethodName = processName
-	method, ok := c.elem.methods[methodData[1]]
+	method, ok := c.elem.Methods[methodData[1]]
 	if !ok {
 		panic("the method no register or is private method")
 	}
 	for _, v := range args {
 		var md protocol.FrameMd
-		md.ArgType = checkIType(v)
+		md.ArgType = internal.CheckIType(v)
 		// 参数为指针类型则找出Elem的类型
 		if md.ArgType == protocol.Pointer {
-			md.ArgType = checkIType(reflect.ValueOf(v).Elem().Interface())
+			md.ArgType = internal.CheckIType(reflect.ValueOf(v).Elem().Interface())
 			// 不支持多重指针的数据结构
 			if md.ArgType == protocol.Pointer {
 				panic("multiple pointer no support")
@@ -145,7 +154,7 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 		}
 		// 参数为数组类型则保证额外的类型
 		if md.ArgType == protocol.Array {
-			md.AppendType = checkIType(lreflect.IdentArrayOrSliceType(v))
+			md.AppendType = internal.CheckIType(lreflect.IdentArrayOrSliceType(v))
 		}
 
 		argBytes, err := c.codec.Marshal(v)
@@ -170,7 +179,7 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	*memBuffer = (*memBuffer)[:0]
 	defer c.memPool.Put(memBuffer)
 	// write header
-	*memBuffer = append(*memBuffer,writeHeader(msg.Header)...)
+	*memBuffer = append(*memBuffer,common.WriteHeader(msg.Header)...)
 	requestBytes, err = c.encoder.EnPacket(requestBytes)
 	if err != nil {
 		c.onErr(err)
@@ -180,18 +189,18 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	*memBuffer = append(*memBuffer,requestBytes...)
 	// write data
 	if c.encoder.Scheme() == "text" {
-		err = c.conn.WriteTextMessage(*memBuffer)
+		_,err = c.conn.SendData(*memBuffer)
 	} else {
-		err = c.conn.WriteBinaryMessage(*memBuffer)
+		_,err = c.conn.SendData(*memBuffer)
 	}
 	if err != nil {
 		c.onErr(err)
 		return
 	}
 	// 接收服务器返回的调用结果并将header反序列化
-	_, buffer, err := c.conn.RecvMessage()
+	buffer, err := c.conn.RecvData()
 	// read header
-	header,headerLen := readHeader(buffer)
+	header,headerLen := common.ReadHeader(buffer)
 	// TODO : Client Handle Ping&Pong
 	_ = header
 	msg.Body.Frame = nil
@@ -215,7 +224,7 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 			AppendType: v.AppendType,
 			Data:        v.Data,
 		}
-		returnV, err := checkCoderType(c.codec,md, eface)
+		returnV, err := internal.CheckCoderType(c.codec,md, eface)
 		if err != nil {
 			c.onErr(err)
 			return

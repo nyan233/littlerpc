@@ -1,4 +1,4 @@
-package littlerpc
+package common
 
 import (
 	"fmt"

@@ -13,9 +13,9 @@ type TcpTransServer struct {
 	closed int32
 	tlsC *tls.Config
 	server *nbio.Engine
-	onMsg   func(conn interface{}, bytes []byte)
-	onClose func(conn interface{}, err error)
-	onOpen  func(conn interface{})
+	onMsg   func(conn ServerConnAdapter, bytes []byte)
+	onClose func(conn ServerConnAdapter, err error)
+	onOpen  func(conn ServerConnAdapter)
 	onErr   func(err error)
 }
 
@@ -30,13 +30,13 @@ func NewTcpTransServer(tlsC *tls.Config,nConfig nbio.Config) ServerTransportBuil
 	server.onErr = func(err error) {
 		panic(err)
 	}
-	server.onMsg = func(conn interface{}, bytes []byte) {
+	server.onMsg = func(conn ServerConnAdapter, bytes []byte) {
 		return
 	}
-	server.onOpen = func(conn interface{}) {
+	server.onOpen = func(conn ServerConnAdapter) {
 		return
 	}
-	server.onClose = func(conn interface{}, err error) {
+	server.onClose = func(conn ServerConnAdapter, err error) {
 		return
 	}
 	return server
@@ -46,15 +46,15 @@ func (t *TcpTransServer) Instance() ServerTransport {
 	return t
 }
 
-func (t *TcpTransServer) SetOnMessage(fn func(conn interface{}, data []byte)) {
+func (t *TcpTransServer) SetOnMessage(fn func(conn ServerConnAdapter, data []byte)) {
 	t.onMsg = fn
 }
 
-func (t *TcpTransServer) SetOnClose(fn func(conn interface{}, err error)) {
+func (t *TcpTransServer) SetOnClose(fn func(conn ServerConnAdapter, err error)) {
 	t.onClose = fn
 }
 
-func (t *TcpTransServer) SetOnOpen(fn func(conn interface{})) {
+func (t *TcpTransServer) SetOnOpen(fn func(conn ServerConnAdapter)) {
 	t.onOpen = fn
 }
 
