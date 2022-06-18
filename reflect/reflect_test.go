@@ -15,11 +15,11 @@ func TestFuncReflect(t *testing.T) {
 		return nil, nil
 	}
 	// 测试函数的参数列表
-	typs := FuncInputTypeList(reflect.ValueOf(testFunc))
+	typs := FuncInputTypeList(reflect.ValueOf(testFunc),false)
 	_ = typs[0].([]int)
 	_ = typs[1].(*testStruct)
 	// 测试函数的返回值列表
-	typs = FuncOutputTypeList(reflect.ValueOf(testFunc))
+	typs = FuncOutputTypeList(reflect.ValueOf(testFunc),false)
 	_ = typs[0].(*int)
 	_ = typs[1].(*testStruct)
 }
