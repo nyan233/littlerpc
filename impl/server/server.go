@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc/impl/common"
@@ -19,6 +18,11 @@ import (
 	"time"
 )
 
+type serverCallContext struct {
+	Codec protocol.Codec
+	Encoder packet.Encoder
+	Conn transport.ServerConnAdapter
+}
 
 type Server struct {
 	// 存储绑定的实例的集合
@@ -99,112 +103,109 @@ func (s *Server) Elem(i interface{}) error {
 func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 	// TODO : Handle Ping-Pong Message
 	// TODO : Handle Control Header
-	header,headerLen := common.ReadHeader(data)
-	codec := protocol.GetCodec(header.CodecType)
-	encoder := packet.GetEncoder(header.Encoding)
-	if headerLen == 0 {
-		if codec == nil {
-			codec = protocol.GetCodec("json")
+	msg := &protocol.Message{}
+	err := msg.DecodeHeader(data)
+	sArg := serverCallContext{
+		Codec:   protocol.GetCodec(msg.Header.CodecType),
+		Encoder: packet.GetEncoder(msg.Header.Encoding),
+		Conn:    c,
+	}
+	if err != nil {
+		if sArg.Codec == nil {
+			sArg.Codec = protocol.GetCodec("json")
 		}
-		if encoder == nil {
-			encoder = packet.GetEncoder("text")
+		if sArg.Encoder == nil {
+			sArg.Encoder = packet.GetEncoder("text")
 		}
-		common.HandleError(codec,encoder,header.MsgId,*common.ErrMessageFormat,c,"")
+		HandleError(sArg,msg.Header.MsgId,*common.ErrMessageFormat,"")
 		return
 	}
+
 	// TODO : Read All Messages Data
-	bodyBytes := make([]byte,4096)
-	copy(bodyBytes,data[headerLen:])
-	start := len(data) - headerLen
-	for len(data) > 4096{
-		readN, err := c.Read(bodyBytes[start:])
+	offset := len(data)
+	for len(data) == transport.READ_BUFFER_SIZE {
+		data = append(data,[]byte{0,0,0,0}...)
+		readN, err := c.Read(data[offset:])
 		if errors.Is(err,syscall.EAGAIN) {
 			break
 		}
-		start += readN
+		offset += readN
 		if err != nil {
-			common.HandleError(codec,encoder,header.MsgId,*common.ErrBodyRead,c,strconv.Itoa(start))
+			HandleError(sArg,msg.Header.MsgId,*common.ErrBodyRead,strconv.Itoa(offset))
 			return
 		}
-		if start != len(bodyBytes) {
+		if offset != len(data) {
 			break
 		}
-		// grow
-		bodyBytes = append(bodyBytes,[]byte{0,0,0,0}...)
-		bodyBytes = bodyBytes[:cap(bodyBytes)]
 	}
-	bodyBytes = bodyBytes[:start]
+	data = data[msg.BodyStart:offset]
 	// 调用编码器解包
-	bodyBytes, err := s.encoder.UnPacket(bodyBytes)
+	data, err = s.encoder.UnPacket(data)
 	if err != nil {
-		common.HandleError(codec,encoder,header.MsgId, *common.ErrServer, c, "")
+		HandleError(sArg,msg.Header.MsgId, *common.ErrServer, "")
 		return
 	}
-	frames := &protocol.Body{}
-	// Request Body暂时需要encoding/json来序列化，因为元数据都是json格式的
-	err = json.Unmarshal(bodyBytes,frames)
-	if err != nil {
-		common.HandleError(codec,encoder,header.MsgId, *common.ErrJsonUnMarshal, c, "")
-		return
-	}
-	msg := protocol.Message{Header: header,Body: *frames}
+	// 从完整的data中解码Body
+	msg.DecodeBodyFromBodyBytes(data)
+
 	// 序列化完之后才确定调用名
 	// MethodName : Hello.Hello : receiver:methodName
-	methodData := strings.SplitN(header.MethodName,".",2)
+	methodData := strings.SplitN(msg.Header.MethodName,".",2)
 	// 方法名和类型名不能为空
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
-		common.HandleError(codec,encoder,header.MsgId,*common.ErrMethodNoRegister,c,header.MethodName)
+		HandleError(sArg,msg.Header.MsgId,*common.ErrMethodNoRegister,msg.Header.MethodName)
 		return
 	}
 	eTmp, ok := s.elems.Load(methodData[0])
 	if !ok {
-		common.HandleError(codec,encoder,header.MsgId,*common.ErrElemTypeNoRegister,c,methodData[0])
+		HandleError(sArg,msg.Header.MsgId,*common.ErrElemTypeNoRegister,methodData[0])
 		return
 	}
 	elemData := eTmp.(common.ElemMeta)
 	method, ok := elemData.Methods[methodData[1]]
 	if !ok {
-		common.HandleError(codec,encoder,header.MsgId, *common.ErrMethodNoRegister, c, "")
+		HandleError(sArg,msg.Header.MsgId, *common.ErrMethodNoRegister, "")
 		return
 	}
 	// 从客户端校验并获得合法的调用参数
-	callArgs,ok := s.getCallArgsFromClient(codec,encoder,header.MsgId,c,elemData.Data,method,&msg,&msg)
+	callArgs,ok := s.getCallArgsFromClient(sArg,msg,elemData.Data,method)
 	// 参数校验为不合法
 	if !ok {
 		return
 	}
 	// 向任务池提交调用用户过程的任务
-	s.callHandleUnit(codec,encoder,header.MsgId,c,method,callArgs,&msg)
+	s.callHandleUnit(sArg,msg,method,callArgs)
 }
 
 // 提供用于任务池的处理调用用户过程的单元
 // 因为用户过程可能会有阻塞操作
-func (s *Server) callHandleUnit(codec protocol.Codec,encoder packet.Encoder,msgId uint64,
-	c transport.ServerConnAdapter,method reflect.Value, callArgs []reflect.Value,rep *protocol.Message) {
+func (s *Server) callHandleUnit(sArg serverCallContext,msg *protocol.Message,method reflect.Value, callArgs []reflect.Value) {
 	callResult := method.Call(callArgs)
 	// 函数在没有返回error则填充nil
 	if len(callResult) == 0 {
 		callResult = append(callResult, reflect.ValueOf(nil))
 	}
-	// Multi Return Value
-	// 服务器返回的参数中不区分是是否是指针类型
-	// 客户端在处理返回值的类型时需要自己根据注册的过程进行处理
-	rep.Header.MsgType = protocol.MessageReturn
-	rep.Header.Timestamp = uint64(time.Now().Unix())
-	rep.Header.CodecType = codec.Scheme()
-	rep.Header.Encoding = encoder.Scheme()
 	// NOTE : 重新设置Body的长度，否则可能会被请求序列化的数据污染
 	// NOTE : 不能在handleResult()中重置，因为handleErrAndRepResult()可能会认为
 	// NOTE : 遗漏了一些数据，从而导致重入handleResult()，这时负责发送Body的函数可能只会看到长度为1的Body
-	rep.Body.Frame = rep.Body.Frame[:0]
-handleResult:
-	s.handleResult(codec,encoder,msgId,c, callResult, rep)
-	// 处理用户过程返回的错误，如果用户过程没有返回错误则填充nil
-	tmpResult, try := s.handleErrAndRepResult(codec,encoder,msgId,c, callResult, rep)
-	if try {
-		callResult = tmpResult
-		goto handleResult
-	}
+	msgId := msg.Header.MsgId
+	methodName := msg.Header.MethodName
+	msg.ResetAll()
+	// Multi Return Value
+	// 服务器返回的参数中不区分是是否是指针类型
+	// 客户端在处理返回值的类型时需要自己根据注册的过程进行处理
+	msg.Header.MsgType = protocol.MessageReturn
+	msg.Header.Timestamp = time.Now().Unix()
+	msg.Header.CodecType = sArg.Codec.Scheme()
+	msg.Header.Encoding = sArg.Encoder.Scheme()
+	msg.Header.MsgId = msgId
+	msg.Header.MethodName = methodName
+
+	s.handleResult(sArg,msg,callResult)
+	// 处理用户过程返回的错误，v0.30开始规定每个符合规范的API最后一个返回值是error接口
+	s.handleErrAndRepResult(sArg,msg,callResult)
+	// 处理结果发送
+	s.sendMsg(sArg,msg)
 }
 
 func (s *Server) onClose(conn transport.ServerConnAdapter, err error) {

@@ -16,6 +16,11 @@ const (
 	PongMessage = websocket.PongMessage
 )
 
+const (
+	READ_BUFFER_SIZE = 4096 * 8
+	MAX_WRITE_BUFFER_SIZE = 1024 * 1024 * 1024
+)
+
 // ClientTransport 抽象了不同的通信协议
 type ClientTransport interface {
 	SendData(p []byte) (n int, err error)

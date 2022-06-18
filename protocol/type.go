@@ -18,6 +18,7 @@ const (
 	Pointer          // 表示一个指针或者暗含一个指针,这个值不允许传输时使用，只能用于类型验证
 	Interface        // 通用的接口类型
 	ServerError      // 用于附加类型，用于区别是正常返回的错误还是Server遇到比如解析Json失败传回的错误
+	Null             // 表示此槽位的数据为空
 )
 
 // AnyArgs 用于所有的参数传递

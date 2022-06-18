@@ -40,6 +40,7 @@ func (t TcpTransClient) RecvData() (p []byte, err error) {
 	}
 	for readN == cap(buf) {
 		buf = append(buf,[]byte{0,0,0,0}...)
+		buf = buf[:cap(buf)]
 		rn, err := t.conn.Read(buf[readN:])
 		if err != nil {
 			return nil, err

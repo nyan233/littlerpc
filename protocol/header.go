@@ -22,7 +22,11 @@ type Header struct {
 	// 要调用的方法名
 	MethodName string
 	// 消息ID，用于跟踪等用途
-	MsgId uint64
+	MsgId int64
 	// 生成该消息的时间戳,精确到毫秒
-	Timestamp uint64
+	Timestamp int64
+	// Body中存放有多少个参数
+	NBodyOffset int64
+	// Body中没个数据槽位的偏移量
+	BodyAllOffset []int
 }

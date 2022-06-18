@@ -32,6 +32,8 @@ func NewWebSocketServer(tlsC *tls.Config, nConfig nbhttp.Config) ServerTransport
 	nConfig.Name = "LittleRpc-Server-WebSocket"
 	nConfig.Network = "tcp"
 	nConfig.ReleaseWebsocketPayload = true
+	nConfig.ReadBufferSize = READ_BUFFER_SIZE
+	nConfig.MaxWriteBufferSize = MAX_WRITE_BUFFER_SIZE
 	server := &WebSocketTransServer{server: nbhttp.NewServer(nConfig)}
 	// set default function
 	server.onErr = func(err error) {

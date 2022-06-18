@@ -3,42 +3,25 @@ package internal
 import (
 	"errors"
 	"github.com/nyan233/littlerpc/protocol"
-	lreflect "github.com/nyan233/littlerpc/reflect"
-	"math"
 	"reflect"
 )
 
-// structPtr中必须是指针变量
-func CheckCoderType(codec protocol.Codec,callerMd protocol.FrameMd, structPtr interface{}) (interface{}, error) {
-	switch callerMd.ArgType {
-	case protocol.String:
-		ptr,_ := lreflect.ToTypePtr(structPtr)
-		err := codec.Unmarshal(callerMd.Data, ptr)
-		return structPtr, err
-	case protocol.Integer, protocol.Long, protocol.Float, protocol.Double, protocol.Boolean:
-		// 通用的Codec,不需要Any包装器
-		val,_ := lreflect.ToTypePtr(structPtr)
-		err := codec.Unmarshal(callerMd.Data, val)
-		if err != nil {
-			return nil, err
-		}
-		return structPtr, err
-	case protocol.Array, protocol.Struct, protocol.Map:
-		// 通用的Codec,不需要Any包装器
-		val,_ := lreflect.ToTypePtr(structPtr)
-		err := codec.Unmarshal(callerMd.Data, val)
-		if err != nil {
-			return nil, err
-		}
-		return structPtr, err
-	default:
-		return nil, errors.New("type is not found")
+func CheckCoderType(codec protocol.Codec, data []byte,structPtr interface{}) (interface{}, error) {
+	if structPtr == nil || data == nil || len(data) == 0 {
+		return nil,errors.New("no satisfy unmarshal case")
 	}
+	//val,_ := lreflect.ToTypePtr(structPtr)
+	err := codec.Unmarshal(data, structPtr)
+	if err != nil {
+		return nil, err
+	}
+	return structPtr, err
 }
+
 
 func CheckIType(i interface{}) protocol.Type {
 	if i == nil {
-		return protocol.Type(math.MaxUint8)
+		return protocol.Null
 	}
 	switch i.(type) {
 	case int, int8, int16, int32, int64:

@@ -10,7 +10,7 @@ import (
 var Logger bilog.Logger = bilog.NewLogger(os.Stdout, bilog.PANIC, bilog.WithTimes(),
 	bilog.WithCaller(), bilog.WithLowBuffer(0), bilog.WithTopBuffer(0))
 
-var noCallerLogger bilog.Logger = bilog.NewLogger(os.Stdout, bilog.PANIC, bilog.WithDefault())
+var NoCallerLogger bilog.Logger = bilog.NewLogger(os.Stdout, bilog.PANIC, bilog.WithDefault())
 
 type CustomLogger string
 
@@ -19,19 +19,19 @@ func (c CustomLogger) SetLevel(lvl int) {
 }
 
 func (c CustomLogger) Debug(format string, v ...interface{}) {
-	noCallerLogger.Debug(fmt.Sprintf(format, v...))
+	NoCallerLogger.Debug(fmt.Sprintf(format, v...))
 }
 
 func (c CustomLogger) Info(format string, v ...interface{}) {
-	noCallerLogger.Info(fmt.Sprintf(format, v...))
+	NoCallerLogger.Info(fmt.Sprintf(format, v...))
 }
 
 func (c CustomLogger) Warn(format string, v ...interface{}) {
-	noCallerLogger.Trace(fmt.Sprintf(format, v...))
+	NoCallerLogger.Trace(fmt.Sprintf(format, v...))
 }
 
 func (c CustomLogger) Error(format string, v ...interface{}) {
-	noCallerLogger.ErrorFromString(fmt.Sprintf(format, v...))
+	NoCallerLogger.ErrorFromString(fmt.Sprintf(format, v...))
 }
 
 func init() {

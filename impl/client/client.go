@@ -1,7 +1,6 @@
 package client
 
 import (
-	"encoding/json"
 	"errors"
 	"github.com/nyan233/littlerpc/impl/common"
 	"github.com/nyan233/littlerpc/impl/internal"
@@ -25,6 +24,7 @@ var (
 )
 
 type Client struct {
+	mu sync.Mutex
 	elem   common.ElemMeta
 	logger bilog.Logger
 	// 错误处理回调函数
@@ -131,6 +131,8 @@ func (c *Client) defaultOnErr(err error) {
 }
 
 func (c *Client) Call(processName string, args ...interface{}) (rep []interface{}, uErr error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	methodData := strings.SplitN(processName,".",2)
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
 		panic("the illegal type name and method name")
@@ -142,51 +144,44 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 		panic("the method no register or is private method")
 	}
 	for _, v := range args {
-		var md protocol.FrameMd
-		md.ArgType = internal.CheckIType(v)
+		argType := internal.CheckIType(v)
 		// 参数为指针类型则找出Elem的类型
-		if md.ArgType == protocol.Pointer {
-			md.ArgType = internal.CheckIType(reflect.ValueOf(v).Elem().Interface())
+		if argType == protocol.Pointer {
+			argType = internal.CheckIType(reflect.ValueOf(v).Elem().Interface())
 			// 不支持多重指针的数据结构
-			if md.ArgType == protocol.Pointer {
+			if argType == protocol.Pointer {
 				panic("multiple pointer no support")
 			}
 		}
-		// 参数为数组类型则保证额外的类型
-		if md.ArgType == protocol.Array {
-			md.AppendType = internal.CheckIType(lreflect.IdentArrayOrSliceType(v))
-		}
 
-		argBytes, err := c.codec.Marshal(v)
+		err := msg.Encode(c.codec,v)
 		if err != nil {
 			panic(err)
 		}
-		md.Data = argBytes
-		msg.Body.Frame = append(msg.Body.Frame, md)
 	}
 	// init header
-	msg.Header.MsgId = rand.Uint64()
+	msg.Header.MsgId = rand.Int63()
 	msg.Header.MsgType = protocol.MessageCall
-	msg.Header.Timestamp = uint64(time.Now().Unix())
+	msg.Header.Timestamp = time.Now().Unix()
 	msg.Header.Encoding = c.encoder.Scheme()
 	msg.Header.CodecType = c.codec.Scheme()
-	// request body 暂时需要encoding/json来序列化
-	requestBytes, err := json.Marshal(msg.Body)
-	if err != nil {
-		panic(err)
-	}
+	// request body
 	memBuffer := c.memPool.Get().(*[]byte)
 	*memBuffer = (*memBuffer)[:0]
 	defer c.memPool.Put(memBuffer)
 	// write header
-	*memBuffer = append(*memBuffer,common.WriteHeader(msg.Header)...)
-	requestBytes, err = c.encoder.EnPacket(requestBytes)
+	*memBuffer = append(*memBuffer,msg.EncodeHeader()...)
+	bodyStart := len(*memBuffer)
+	for _,v := range msg.Body {
+		*memBuffer = append(*memBuffer,v...)
+	}
+	bodyBytes, err := c.encoder.EnPacket((*memBuffer)[bodyStart:])
 	if err != nil {
 		c.onErr(err)
 		return
 	}
 	// write body
-	*memBuffer = append(*memBuffer,requestBytes...)
+	*memBuffer = append((*memBuffer)[:bodyStart],bodyBytes...)
 	// write data
 	if c.encoder.Scheme() == "text" {
 		_,err = c.conn.SendData(*memBuffer)
@@ -200,31 +195,29 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	// 接收服务器返回的调用结果并将header反序列化
 	buffer, err := c.conn.RecvData()
 	// read header
-	header,headerLen := common.ReadHeader(buffer)
+	msg.ResetAll()
+	err = msg.DecodeHeader(buffer)
+	if err != nil {
+		c.onErr(err)
+		return
+	}
 	// TODO : Client Handle Ping&Pong
-	_ = header
-	msg.Body.Frame = nil
-	buffer,err = c.encoder.UnPacket(buffer[headerLen:])
+	buffer,err = c.encoder.UnPacket(buffer[msg.BodyStart:])
 	if err != nil {
 		c.onErr(err)
 		return
 	}
 	// response body 暂时需要encoding/json来反序列化
-	err = json.Unmarshal(buffer, &msg.Body)
+	msg.DecodeBodyFromBodyBytes(buffer)
 	if err != nil {
 		c.onErr(err)
 		return
 	}
 	// 处理服务端传回的参数
-	outputTypeList := lreflect.FuncOutputTypeList(method)
-	for k, v := range msg.Body.Frame[:len(msg.Body.Frame)-1] {
+	outputTypeList := lreflect.FuncOutputTypeList(method,false)
+	for k, v := range msg.Body[:len(msg.Body)-1] {
 		eface := outputTypeList[k]
-		md := protocol.FrameMd{
-			ArgType:    v.ArgType,
-			AppendType: v.AppendType,
-			Data:        v.Data,
-		}
-		returnV, err := internal.CheckCoderType(c.codec,md, eface)
+		returnV, err := internal.CheckCoderType(c.codec,v, eface)
 		if err != nil {
 			c.onErr(err)
 			return
@@ -232,41 +225,42 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 		rep = append(rep, returnV)
 	}
 	// 单独处理返回的错误类型
-	errMd := msg.Body.Frame[len(msg.Body.Frame)-1]
+	//errMd := msg.Body[len(msg.Body)-1]
 	// 处理最后返回的Error
 	// 返回的数据的类型不可能是指针类型，需要客户端自己去处理
-	switch errMd.ArgType {
-	case protocol.Struct:
-		if c.codec.Scheme() != "json" {
-			break
-		}
-		errPtr := &protocol.Error{}
-		ierr := c.codec.Unmarshal(errMd.Data, errPtr)
-		if ierr != nil {
-			panic(err)
-		}
-		uErr = errPtr
-	case protocol.String:
-		if c.codec.Scheme() != "json" {
-			break
-		}
-		var tmp = ""
-		err := c.codec.Unmarshal(errMd.Data, &tmp)
-		if err != nil {
-			panic(err)
-		}
-		uErr = errors.New(tmp)
-	case protocol.Integer:
-		if c.codec.Scheme() != "json" {
-			break
-		}
-		uErr = error(nil)
-	}
-	// 检查错误是Server的异常还是远程过程正常返回的error
-	if errMd.AppendType == protocol.ServerError {
-		c.onErr(uErr)
-		uErr = nil
-	}
+	//switch errMd.ArgType {
+	//case protocol.Struct:
+	//	if c.codec.Scheme() != "json" {
+	//		break
+	//	}
+	//	errPtr := &protocol.Error{}
+	//	ierr := c.codec.Unmarshal(errMd.Data, errPtr)
+	//	if ierr != nil {
+	//		panic(err)
+	//	}
+	//	uErr = errPtr
+	//case protocol.String:
+	//	if c.codec.Scheme() != "json" {
+	//		break
+	//	}
+	//	var tmp = ""
+	//	err := c.codec.Unmarshal(errMd.Data, &tmp)
+	//	if err != nil {
+	//		panic(err)
+	//	}
+	//	uErr = errors.New(tmp)
+	//case protocol.Integer:
+	//	if c.codec.Scheme() != "json" {
+	//		break
+	//	}
+	//	uErr = error(nil)
+	//}
+	//// 根据Header CallType判断是否服务器错误
+	//// 检查错误是Server的异常还是远程过程正常返回的error
+	//if errMd.AppendType == protocol.ServerError {
+	//	c.onErr(uErr)
+	//	uErr = nil
+	//}
 	return
 }
 

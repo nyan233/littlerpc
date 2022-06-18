@@ -20,29 +20,32 @@ type HelloTest struct {
 	userMap sync.Map
 }
 
-func (t *HelloTest) Add(i int64) {
+func (t *HelloTest) Add(i int64) error {
 	atomic.AddInt64(&t.count, i)
+	return nil
 }
 
-func (t *HelloTest) CreateUser(user User) {
+func (t *HelloTest) CreateUser(user User) error{
 	t.userMap.Store(user.Id, user)
+	return nil
 }
 
-func (t *HelloTest) DeleteUser(uid int) {
+func (t *HelloTest) DeleteUser(uid int) error{
 	t.userMap.Delete(uid)
+	return nil
 }
 
-func (t *HelloTest) SelectUser(uid int) (User, bool) {
+func (t *HelloTest) SelectUser(uid int) (User, bool, error) {
 	u, ok := t.userMap.Load(uid)
 	if ok {
-		return u.(User), ok
+		return u.(User), ok,nil
 	}
-	return User{}, false
+	return User{}, false,nil
 }
 
-func (t *HelloTest) ModifyUser(uid int, user User) bool {
+func (t *HelloTest) ModifyUser(uid int, user User) (bool,error) {
 	_, ok := t.userMap.LoadOrStore(uid, user)
-	return ok
+	return ok,nil
 }
 
 type HelloTestProxy struct {
@@ -59,32 +62,32 @@ func NewHelloTestProxy(client *lclient.Client) *HelloTestProxy {
 	return proxy
 }
 
-func (proxy HelloTestProxy) Add(i int64) {
-	_, _ = proxy.Call("HelloTest.Add", i)
-	return
+func (proxy HelloTestProxy) Add(i int64) error {
+	_, err := proxy.Call("HelloTest.Add", i)
+	return err
 }
 
-func (proxy HelloTestProxy) CreateUser(user User) {
-	_, _ = proxy.Call("HelloTest.CreateUser", user)
-	return
+func (proxy HelloTestProxy) CreateUser(user User) error{
+	_, err := proxy.Call("HelloTest.CreateUser", user)
+	return err
 }
 
-func (proxy HelloTestProxy) DeleteUser(uid int) {
-	_, _ = proxy.Call("HelloTest.DeleteUser", uid)
-	return
+func (proxy HelloTestProxy) DeleteUser(uid int) error {
+	_, err := proxy.Call("HelloTest.DeleteUser", uid)
+	return err
 }
 
-func (proxy HelloTestProxy) SelectUser(uid int) (User, bool) {
-	inter, _ := proxy.Call("HelloTest.SelectUser", uid)
+func (proxy HelloTestProxy) SelectUser(uid int) (User, bool, error) {
+	inter, err := proxy.Call("HelloTest.SelectUser", uid)
 	r0 := inter[0].(User)
 	r1 := inter[1].(bool)
-	return r0, r1
+	return r0, r1,err
 }
 
-func (proxy HelloTestProxy) ModifyUser(uid int, user User) bool {
-	inter, _ := proxy.Call("HelloTest.ModifyUser", uid, user)
+func (proxy HelloTestProxy) ModifyUser(uid int, user User) (bool,error) {
+	inter, err := proxy.Call("HelloTest.ModifyUser", uid, user)
 	r0 := inter[0].(bool)
-	return r0
+	return r0,err
 }
 
 func TestNoTlsConnect(t *testing.T) {
@@ -123,25 +126,27 @@ func TestNoTlsConnect(t *testing.T) {
 			}
 			defer client.Close()
 			proxy := NewHelloTestProxy(client)
-			proxy.Add(int64(addV))
-			proxy.CreateUser(User{
-				Id:   j + 100,
-				Name: "Jeni",
-			})
-			user, ok := proxy.SelectUser(j + 100)
-			if !ok {
-				panic("the no value")
+			for i := 0; i < 5; i++ {
+				_ = proxy.Add(int64(addV))
+				_ = proxy.CreateUser(User{
+					Id:   j + 100,
+					Name: "Jeni",
+				})
+				user, ok,_ := proxy.SelectUser(j + 100)
+				if !ok {
+					panic("the no value")
+				}
+				if user.Name != "Jeni" {
+					panic("the no value")
+				}
+				_, _ = proxy.ModifyUser(j+100, User{
+					Id:   j + 100,
+					Name: "Tony",
+				})
+				_ = proxy.DeleteUser(j + 100)
+				// 构造一次错误的请求
+				_, _ = proxy.Call("HelloTest.DeleteUser", "string")
 			}
-			if user.Name != "Jeni" {
-				panic("the no value")
-			}
-			proxy.ModifyUser(j+100, User{
-				Id:   j + 100,
-				Name: "Tony",
-			})
-			proxy.DeleteUser(j + 100)
-			// 构造一次错误的请求
-			_, _ = proxy.Call("HelloTest.DeleteUser", "string")
 			wg.Done()
 		}()
 	}

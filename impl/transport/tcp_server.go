@@ -22,6 +22,8 @@ type TcpTransServer struct {
 func NewTcpTransServer(tlsC *tls.Config,nConfig nbio.Config) ServerTransportBuilder {
 	nConfig.Name = "LittleRpc-Server-Tcp"
 	nConfig.Network = "tcp"
+	nConfig.ReadBufferSize = READ_BUFFER_SIZE
+	nConfig.MaxWriteBufferSize = MAX_WRITE_BUFFER_SIZE
 	eng := nbio.NewEngine(nConfig)
 	server := &TcpTransServer{}
 	server.tlsC = tlsC
