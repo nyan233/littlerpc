@@ -22,8 +22,8 @@ func WithDefaultClient() clientOption {
 		config.ClientConnTimeout = 90 * time.Second
 		config.ClientPPTimeout = 5 * time.Second
 		config.Logger = common.Logger
-		config.Encoder = packet.GetEncoder("text")
-		config.Codec = protocol.GetCodec("json")
+		config.Encoder = packet.GetEncoder(protocol.DefaultEncodingType)
+		config.Codec = protocol.GetCodec(protocol.DefaultCodecType)
 		config.NetWork = "tcp"
 	}
 }
