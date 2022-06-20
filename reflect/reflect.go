@@ -27,7 +27,7 @@ func FuncInputTypeList(value reflect.Value,isRecv bool) []interface{} {
 			i = 1
 		}
 		if typ.In(i).Kind() == reflect.Interface {
-			typs = append(typs,value.Interface())
+			typs = append(typs,reflect.New(typ.In(i)).Interface())
 			continue
 		}
 		typs = append(typs,reflect.New(typ.In(i).Elem()).Interface())
@@ -47,7 +47,7 @@ func FuncOutputTypeList(value reflect.Value,isRecv bool) []interface{} {
 			i = 1
 		}
 		if typ.Out(i).Kind() == reflect.Interface {
-			typs = append(typs,value.Interface())
+			typs = append(typs,reflect.New(typ.Out(i)).Interface())
 			continue
 		}
 		typs = append(typs,reflect.New(typ.Out(i).Elem()).Interface())
