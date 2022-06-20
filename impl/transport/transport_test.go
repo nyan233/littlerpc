@@ -7,18 +7,17 @@ import (
 	"testing"
 )
 
-func tcpOnMessage(conn ServerConnAdapter,data []byte) {
-	_,_ = conn.Write(data)
+func tcpOnMessage(conn ServerConnAdapter, data []byte) {
+	_, _ = conn.Write(data)
 }
-
 
 func TestTcpTransport(t *testing.T) {
 	config := nbio.Config{
-		Network:                      "tcp",
-		Addrs:                        []string{":1234"},
-		NPoller:                      runtime.NumCPU() * 4,
+		Network: "tcp",
+		Addrs:   []string{":1234"},
+		NPoller: runtime.NumCPU() * 4,
 	}
-	builder := NewTcpTransServer(nil,config)
+	builder := NewTcpTransServer(nil, config)
 	builder.SetOnErr(func(err error) {
 		t.Fatal(err)
 	})
@@ -29,7 +28,7 @@ func TestTcpTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	client,err := NewTcpTransClient(nil,":1234")
+	client, err := NewTcpTransClient(nil, ":1234")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,18 +43,18 @@ func TestTcpTransport(t *testing.T) {
 	t.Log(string(data))
 }
 
-func wsOnMessage(conn ServerConnAdapter,data []byte) {
-	_,_ = conn.Write(data)
+func wsOnMessage(conn ServerConnAdapter, data []byte) {
+	_, _ = conn.Write(data)
 }
 
 func TestWebSocketTransport(t *testing.T) {
 	config := nbhttp.Config{
-		Network:                      "tcp",
-		Addrs:                        []string{":1234"},
-		NPoller:                      runtime.NumCPU() * 4,
-		ReleaseWebsocketPayload:      true,
+		Network:                 "tcp",
+		Addrs:                   []string{":1234"},
+		NPoller:                 runtime.NumCPU() * 4,
+		ReleaseWebsocketPayload: true,
 	}
-	builder := NewWebSocketServer(nil,config)
+	builder := NewWebSocketServer(nil, config)
 	builder.SetOnErr(func(err error) {
 		t.Fatal(err)
 	})
@@ -66,7 +65,7 @@ func TestWebSocketTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	client,err := NewWebSocketTransClient(nil,":1234")
+	client, err := NewWebSocketTransClient(nil, ":1234")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +74,7 @@ func TestWebSocketTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data,err := client.RecvData()
+	data, err := client.RecvData()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,41 +16,41 @@ type Iface struct {
 }
 
 // FuncInputTypeList 返回函数的输入参数类型列表，空接口切片表示
-func FuncInputTypeList(value reflect.Value,isRecv bool) []interface{} {
+func FuncInputTypeList(value reflect.Value, isRecv bool) []interface{} {
 	typ := value.Type()
-	typs := make([]interface{},0,typ.NumIn())
+	typs := make([]interface{}, 0, typ.NumIn())
 	if isRecv && cap(typs) <= 1 {
 		return nil
 	}
-	for i := 0 ; i < cap(typs); i++ {
+	for i := 0; i < cap(typs); i++ {
 		if isRecv && i == 0 {
 			i = 1
 		}
 		if typ.In(i).Kind() == reflect.Interface {
-			typs = append(typs,reflect.New(typ.In(i)).Interface())
+			typs = append(typs, reflect.New(typ.In(i)).Interface())
 			continue
 		}
-		typs = append(typs,reflect.New(typ.In(i).Elem()).Interface())
+		typs = append(typs, reflect.New(typ.In(i).Elem()).Interface())
 	}
 	return typs
 }
 
 // FuncOutputTypeList 返回函数的返回值类型列表，空接口切片表示
-func FuncOutputTypeList(value reflect.Value,isRecv bool) []interface{} {
+func FuncOutputTypeList(value reflect.Value, isRecv bool) []interface{} {
 	typ := value.Type()
-	typs := make([]interface{},0,typ.NumOut())
+	typs := make([]interface{}, 0, typ.NumOut())
 	if isRecv && cap(typs) <= 1 {
 		return nil
 	}
-	for i := 0 ; i < cap(typs); i++ {
+	for i := 0; i < cap(typs); i++ {
 		if isRecv && i == 0 {
 			i = 1
 		}
 		if typ.Out(i).Kind() == reflect.Interface {
-			typs = append(typs,reflect.New(typ.Out(i)).Interface())
+			typs = append(typs, reflect.New(typ.Out(i)).Interface())
 			continue
 		}
-		typs = append(typs,reflect.New(typ.Out(i).Elem()).Interface())
+		typs = append(typs, reflect.New(typ.Out(i).Elem()).Interface())
 	}
 	return typs
 }

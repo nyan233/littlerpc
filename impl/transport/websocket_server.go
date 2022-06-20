@@ -80,11 +80,11 @@ func (server *WebSocketTransServer) Start() error {
 		ws := websocket.NewUpgrader()
 		ws.OnMessage(func(conn *websocket.Conn, messageType websocket.MessageType, bytes []byte) {
 			adapter := &WebSocketServerConnImpl{conn: conn}
-			server.onMsg(adapter,bytes)
+			server.onMsg(adapter, bytes)
 		})
 		ws.OnClose(func(conn *websocket.Conn, err error) {
 			adapter := &WebSocketServerConnImpl{conn: conn}
-			server.onClose(adapter,err)
+			server.onClose(adapter, err)
 		})
 		ws.OnOpen(func(conn *websocket.Conn) {
 			adapter := &WebSocketServerConnImpl{conn: conn}
@@ -123,7 +123,7 @@ func (w WebSocketServerConnImpl) Write(b []byte) (n int, err error) {
 	if err != nil {
 		return -1, err
 	}
-	return len(b),nil
+	return len(b), nil
 }
 
 func (w WebSocketServerConnImpl) Close() error {

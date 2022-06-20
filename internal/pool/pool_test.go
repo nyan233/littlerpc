@@ -10,7 +10,7 @@ import (
 const nTask = 100000
 
 func TestTaskPool(t *testing.T) {
-	pool := NewTaskPool(MaxTaskPoolSize,runtime.NumCPU() * 4)
+	pool := NewTaskPool(MaxTaskPoolSize, runtime.NumCPU()*4)
 	defer pool.Stop()
 	for i := 0; i < nTask; i++ {
 		pool.Push(func() {
@@ -21,7 +21,7 @@ func TestTaskPool(t *testing.T) {
 }
 
 func BenchmarkTaskPool(b *testing.B) {
-	pool := NewTaskPool(MaxTaskPoolSize,runtime.NumCPU() * 4)
+	pool := NewTaskPool(MaxTaskPoolSize, runtime.NumCPU()*4)
 	defer pool.Stop()
 	b.Run("TaskPool", func(b *testing.B) {
 		b.ReportAllocs()

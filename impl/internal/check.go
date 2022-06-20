@@ -6,9 +6,9 @@ import (
 	"reflect"
 )
 
-func CheckCoderType(codec protocol.Codec, data []byte,structPtr interface{}) (interface{}, error) {
+func CheckCoderType(codec protocol.Codec, data []byte, structPtr interface{}) (interface{}, error) {
 	if structPtr == nil || data == nil || len(data) == 0 {
-		return nil,errors.New("no satisfy unmarshal case")
+		return nil, errors.New("no satisfy unmarshal case")
 	}
 	//val,_ := lreflect.ToTypePtr(structPtr)
 	err := codec.Unmarshal(data, structPtr)
@@ -17,7 +17,6 @@ func CheckCoderType(codec protocol.Codec, data []byte,structPtr interface{}) (in
 	}
 	return structPtr, err
 }
-
 
 func CheckIType(i interface{}) protocol.Type {
 	if i == nil {

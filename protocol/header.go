@@ -6,12 +6,12 @@ const (
 	// MessageErrorReturn 调用因某种原因失败的返回
 	MessageErrorReturn string = "call_error"
 	// MessagePing Ping消息
-	MessagePing   string = "ping"
+	MessagePing string = "ping"
 	// MessagePong Pong消息
-	MessagePong   string = "pong"
+	MessagePong string = "pong"
 
 	DefaultEncodingType = "text"
-	DefaultCodecType = "json"
+	DefaultCodecType    = "json"
 )
 
 // Header 对于有效载荷消息的头描述

@@ -19,9 +19,9 @@ import (
 )
 
 type serverCallContext struct {
-	Codec protocol.Codec
+	Codec   protocol.Codec
 	Encoder packet.Encoder
-	Conn transport.ServerConnAdapter
+	Conn    transport.ServerConnAdapter
 }
 
 type Server struct {
@@ -62,7 +62,7 @@ func NewServer(opts ...serverOption) *Server {
 	// New Buffer Pool
 	server.bufferPool = sync.Pool{
 		New: func() interface{} {
-			return &transport.BufferPool{Buf: make([]byte,0,4096)}
+			return &transport.BufferPool{Buf: make([]byte, 0, 4096)}
 		},
 	}
 	// New TaskPool
@@ -96,7 +96,7 @@ func (s *Server) Elem(i interface{}) error {
 			elemD.Methods[method.Name] = method.Func
 		}
 	}
-	s.elems.Store(name,elemD)
+	s.elems.Store(name, elemD)
 	return nil
 }
 
@@ -117,21 +117,21 @@ func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 		if sArg.Encoder == nil {
 			sArg.Encoder = packet.GetEncoder("text")
 		}
-		HandleError(sArg,msg.Header.MsgId,*common.ErrMessageFormat,"")
+		HandleError(sArg, msg.Header.MsgId, *common.ErrMessageFormat, "")
 		return
 	}
 
 	// TODO : Read All Messages Data
 	offset := len(data)
 	for len(data) == transport.READ_BUFFER_SIZE {
-		data = append(data,[]byte{0,0,0,0}...)
+		data = append(data, []byte{0, 0, 0, 0}...)
 		readN, err := c.Read(data[offset:])
-		if errors.Is(err,syscall.EAGAIN) {
+		if errors.Is(err, syscall.EAGAIN) {
 			break
 		}
 		offset += readN
 		if err != nil {
-			HandleError(sArg,msg.Header.MsgId,*common.ErrBodyRead,strconv.Itoa(offset))
+			HandleError(sArg, msg.Header.MsgId, *common.ErrBodyRead, strconv.Itoa(offset))
 			return
 		}
 		if offset != len(data) {
@@ -142,7 +142,7 @@ func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 	// 调用编码器解包
 	data, err = s.encoder.UnPacket(data)
 	if err != nil {
-		HandleError(sArg,msg.Header.MsgId, *common.ErrServer, "")
+		HandleError(sArg, msg.Header.MsgId, *common.ErrServer, "")
 		return
 	}
 	// 从完整的data中解码Body
@@ -150,36 +150,36 @@ func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 
 	// 序列化完之后才确定调用名
 	// MethodName : Hello.Hello : receiver:methodName
-	methodData := strings.SplitN(msg.Header.MethodName,".",2)
+	methodData := strings.SplitN(msg.Header.MethodName, ".", 2)
 	// 方法名和类型名不能为空
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
-		HandleError(sArg,msg.Header.MsgId,*common.ErrMethodNoRegister,msg.Header.MethodName)
+		HandleError(sArg, msg.Header.MsgId, *common.ErrMethodNoRegister, msg.Header.MethodName)
 		return
 	}
 	eTmp, ok := s.elems.Load(methodData[0])
 	if !ok {
-		HandleError(sArg,msg.Header.MsgId,*common.ErrElemTypeNoRegister,methodData[0])
+		HandleError(sArg, msg.Header.MsgId, *common.ErrElemTypeNoRegister, methodData[0])
 		return
 	}
 	elemData := eTmp.(common.ElemMeta)
 	method, ok := elemData.Methods[methodData[1]]
 	if !ok {
-		HandleError(sArg,msg.Header.MsgId, *common.ErrMethodNoRegister, "")
+		HandleError(sArg, msg.Header.MsgId, *common.ErrMethodNoRegister, "")
 		return
 	}
 	// 从客户端校验并获得合法的调用参数
-	callArgs,ok := s.getCallArgsFromClient(sArg,msg,elemData.Data,method)
+	callArgs, ok := s.getCallArgsFromClient(sArg, msg, elemData.Data, method)
 	// 参数校验为不合法
 	if !ok {
 		return
 	}
 	// 向任务池提交调用用户过程的任务
-	s.callHandleUnit(sArg,msg,method,callArgs)
+	s.callHandleUnit(sArg, msg, method, callArgs)
 }
 
 // 提供用于任务池的处理调用用户过程的单元
 // 因为用户过程可能会有阻塞操作
-func (s *Server) callHandleUnit(sArg serverCallContext,msg *protocol.Message,method reflect.Value, callArgs []reflect.Value) {
+func (s *Server) callHandleUnit(sArg serverCallContext, msg *protocol.Message, method reflect.Value, callArgs []reflect.Value) {
 	callResult := method.Call(callArgs)
 	// 函数在没有返回error则填充nil
 	if len(callResult) == 0 {
@@ -201,11 +201,11 @@ func (s *Server) callHandleUnit(sArg serverCallContext,msg *protocol.Message,met
 	msg.Header.MsgId = msgId
 	msg.Header.MethodName = methodName
 
-	s.handleResult(sArg,msg,callResult)
+	s.handleResult(sArg, msg, callResult)
 	// 处理用户过程返回的错误，v0.30开始规定每个符合规范的API最后一个返回值是error接口
-	s.handleErrAndRepResult(sArg,msg,callResult)
+	s.handleErrAndRepResult(sArg, msg, callResult)
 	// 处理结果发送
-	s.sendMsg(sArg,msg)
+	s.sendMsg(sArg, msg)
 }
 
 func (s *Server) onClose(conn transport.ServerConnAdapter, err error) {

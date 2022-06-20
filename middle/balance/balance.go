@@ -15,13 +15,12 @@ type Balancer interface {
 	Target(addrs []string) string
 }
 
-
 func RegisterBalancer(balancer Balancer) {
-	balancerCollection.Store(balancer.Scheme(),balancer)
+	balancerCollection.Store(balancer.Scheme(), balancer)
 }
 
 func GetBalancer(scheme string) Balancer {
-	b,ok := balancerCollection.Load(scheme)
+	b, ok := balancerCollection.Load(scheme)
 	if !ok {
 		return nil
 	}

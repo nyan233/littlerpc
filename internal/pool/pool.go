@@ -9,8 +9,8 @@ import (
 
 const (
 	MaxTaskPoolSize = 1024 * 1024 * 1024
-	MaxDelay = time.Nanosecond * 100000
-	MinDelay = time.Nanosecond * 10
+	MaxDelay        = time.Nanosecond * 100000
+	MinDelay        = time.Nanosecond * 10
 )
 
 type TaskPool struct {
@@ -24,12 +24,12 @@ type TaskPool struct {
 	size int
 }
 
-func NewTaskPool(bufSize,size int) *TaskPool {
+func NewTaskPool(bufSize, size int) *TaskPool {
 	pool := &TaskPool{}
 	if bufSize > MaxTaskPoolSize {
 		bufSize = MaxTaskPoolSize
 	}
-	pool.tasks = make(chan func(),bufSize)
+	pool.tasks = make(chan func(), bufSize)
 	pool.size = size
 	pool.wg = &sync.WaitGroup{}
 	pool.wg.Add(size)
@@ -38,7 +38,7 @@ func NewTaskPool(bufSize,size int) *TaskPool {
 }
 
 func (p *TaskPool) start() {
-	ctx,cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	p.cancelFn = cancel
 	for i := 0; i < p.size; i++ {
 		go func() {

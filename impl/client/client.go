@@ -17,11 +17,11 @@ import (
 
 var (
 	addrCollection []string
-	mu sync.Mutex
+	mu             sync.Mutex
 )
 
 type Client struct {
-	mu sync.Mutex
+	mu     sync.Mutex
 	elem   common.ElemMeta
 	logger bilog.Logger
 	// client Engine
@@ -34,7 +34,7 @@ type Client struct {
 	codec protocol.Codec
 }
 
-func OpenBalance(scheme,url string,updateT time.Duration) error {
+func OpenBalance(scheme, url string, updateT time.Duration) error {
 	mu.Lock()
 	defer mu.Unlock()
 	rb := resolver.GetResolver(scheme)
@@ -43,7 +43,7 @@ func OpenBalance(scheme,url string,updateT time.Duration) error {
 	}
 	rb.SetOpen(true)
 	rb.SetUpdateTime(updateT)
-	addrC,err := rb.Instance().Parse(url)
+	addrC, err := rb.Instance().Parse(url)
 	if err != nil {
 		return err
 	}
@@ -51,7 +51,7 @@ func OpenBalance(scheme,url string,updateT time.Duration) error {
 	return nil
 }
 
-func NewClient(opts ...clientOption) (*Client,error) {
+func NewClient(opts ...clientOption) (*Client, error) {
 	config := &Config{}
 	WithDefaultClient()(config)
 	for _, v := range opts {
@@ -69,22 +69,22 @@ func NewClient(opts ...clientOption) (*Client,error) {
 		addr := balancer.Target(addrCollection)
 		mu.Unlock()
 		config.ServerAddr = addr
-		conn,err := clientSupportCollection[config.NetWork](*config)
+		conn, err := clientSupportCollection[config.NetWork](*config)
 		if err != nil {
-			return nil,err
+			return nil, err
 		}
 		client.conn = conn
 	} else {
-		conn,err := clientSupportCollection[config.NetWork](*config)
+		conn, err := clientSupportCollection[config.NetWork](*config)
 		if err != nil {
-			return nil,err
+			return nil, err
 		}
 		client.conn = conn
 	}
 	// init pool
 	client.memPool = sync.Pool{
 		New: func() interface{} {
-			tmp := make([]byte,4096)
+			tmp := make([]byte, 4096)
 			return &tmp
 		},
 	}
@@ -92,7 +92,7 @@ func NewClient(opts ...clientOption) (*Client,error) {
 	client.encoder = config.Encoder
 	// codec
 	client.codec = config.Codec
-	return client,nil
+	return client, nil
 }
 
 func (c *Client) BindFunc(i interface{}) error {
@@ -116,7 +116,6 @@ func (c *Client) BindFunc(i interface{}) error {
 	return nil
 }
 
-
 // Call 远程过程返回的所有值都在rep中,sErr是调用过程中的错误，不是远程过程返回的错误
 // 现在的onErr回调函数将不起作用，sErr表示Client.Call()在调用一些函数返回的错误或者调用远程过程时返回的错误
 // 用户定义的远程过程返回的错误应该被安排在rep的最后一个槽位中
@@ -125,17 +124,17 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	msg := &protocol.Message{}
-	method,err := c.identArgAndEncode(processName,msg,args)
+	method, err := c.identArgAndEncode(processName, msg, args)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	err = c.sendCallMsg(msg)
 	if err != nil {
 		return nil, err
 	}
-	err = c.readMsgAndDecodeReply(msg,method,&rep)
+	err = c.readMsgAndDecodeReply(msg, method, &rep)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	return
 }

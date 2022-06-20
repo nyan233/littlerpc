@@ -10,16 +10,16 @@ import (
 
 type TcpTransServer struct {
 	started int32
-	closed int32
-	tlsC *tls.Config
-	server *nbio.Engine
+	closed  int32
+	tlsC    *tls.Config
+	server  *nbio.Engine
 	onMsg   func(conn ServerConnAdapter, bytes []byte)
 	onClose func(conn ServerConnAdapter, err error)
 	onOpen  func(conn ServerConnAdapter)
 	onErr   func(err error)
 }
 
-func NewTcpTransServer(tlsC *tls.Config,nConfig nbio.Config) ServerTransportBuilder {
+func NewTcpTransServer(tlsC *tls.Config, nConfig nbio.Config) ServerTransportBuilder {
 	nConfig.Name = "LittleRpc-Server-Tcp"
 	nConfig.Network = "tcp"
 	nConfig.ReadBufferSize = READ_BUFFER_SIZE
@@ -74,23 +74,23 @@ func (t *TcpTransServer) Start() error {
 			t.onOpen(c)
 		})
 		server.OnData(func(c *nbio.Conn, data []byte) {
-			t.onMsg(c,data)
+			t.onMsg(c, data)
 		})
 		server.OnClose(func(c *nbio.Conn, err error) {
-			t.onClose(c,err)
+			t.onClose(c, err)
 		})
 	} else {
 		t.tlsC.BuildNameToCertificate()
 		server.OnClose(ntls.WrapClose(func(c *nbio.Conn, tlsConn *ntls.Conn, err error) {
-			t.onClose(tlsConn,err)
+			t.onClose(tlsConn, err)
 		}))
-		server.OnOpen(ntls.WrapOpen(t.tlsC,false,
+		server.OnOpen(ntls.WrapOpen(t.tlsC, false,
 			func(c *nbio.Conn, tlsConn *ntls.Conn) {
 				t.onOpen(tlsConn)
 			}),
 		)
 		server.OnData(ntls.WrapData(func(c *nbio.Conn, tlsConn *ntls.Conn, data []byte) {
-			t.onMsg(tlsConn,data)
+			t.onMsg(tlsConn, data)
 		}))
 	}
 
@@ -104,4 +104,3 @@ func (t *TcpTransServer) Stop() error {
 	t.server.Stop()
 	return nil
 }
-

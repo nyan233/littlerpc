@@ -4,10 +4,10 @@ import "testing"
 
 func TestGzip(t *testing.T) {
 	gz := &GzipPacket{}
-	bigBytes := make([]byte,1 << 20)
+	bigBytes := make([]byte, 1<<20)
 	initStr := "hello world"
-	for i := 0; i < len(bigBytes); i += len(initStr){
-		copy(bigBytes[i:],initStr)
+	for i := 0; i < len(bigBytes); i += len(initStr) {
+		copy(bigBytes[i:], initStr)
 	}
 	bytes, err := gz.EnPacket(bigBytes)
 	if err != nil {
@@ -21,10 +21,10 @@ func TestGzip(t *testing.T) {
 
 func TestText(t *testing.T) {
 	text := &TextPacket{}
-	bigBytes := make([]byte,1 << 20)
+	bigBytes := make([]byte, 1<<20)
 	initStr := "hello world"
-	for i := 0; i < len(bigBytes); i += len(initStr){
-		copy(bigBytes[i:],initStr)
+	for i := 0; i < len(bigBytes); i += len(initStr) {
+		copy(bigBytes[i:], initStr)
 	}
 	bytes, err := text.EnPacket(bigBytes)
 	if err != nil {

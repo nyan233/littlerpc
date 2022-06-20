@@ -20,12 +20,12 @@ func CreateAnyStructOnElemType(val interface{}) interface{} {
 	eface := (*[2]uintptr)(unsafe.Pointer(&val))
 	var typ reflect.Type
 	// 查询有无缓存，缓存中有对应的*type结构则不需要创建
-	typVal,ok := cacheSliceType.Load(eface[0])
+	typVal, ok := cacheSliceType.Load(eface[0])
 	if !ok {
 		typ = reflect.StructOf([]reflect.StructField{
 			{Name: "Any", Type: reflect.SliceOf(reflect.TypeOf(val))},
 		})
-		cacheSliceType.Store(eface[0],typ)
+		cacheSliceType.Store(eface[0], typ)
 	} else {
 		typ = typVal.(reflect.Type)
 	}
@@ -40,12 +40,12 @@ func CreateAnyStructOnType(val interface{}) interface{} {
 	eface := (*[2]uintptr)(unsafe.Pointer(&val))
 	var typ reflect.Type
 	// 查询有无缓存，缓存中有对应的*type结构则不需要创建
-	typVal,ok := cacheType.Load(eface[0])
+	typVal, ok := cacheType.Load(eface[0])
 	if !ok {
 		typ = reflect.StructOf([]reflect.StructField{
 			{Name: "Any", Type: reflect.TypeOf(val)},
 		})
-		cacheType.Store(eface[0],typ)
+		cacheType.Store(eface[0], typ)
 	} else {
 		typ = typVal.(reflect.Type)
 	}

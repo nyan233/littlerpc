@@ -8,35 +8,35 @@ import "sync"
 type Encoder interface {
 	Scheme() string
 	// EnPacket 装包
-	EnPacket(p []byte) ([]byte,error)
+	EnPacket(p []byte) ([]byte, error)
 	// UnPacket 拆包
-	UnPacket(p []byte) ([]byte,error)
+	UnPacket(p []byte) ([]byte, error)
 }
 
 var (
 	packetCollection sync.Map
 )
 
-type TextPacket struct {}
+type TextPacket struct{}
 
 func (t TextPacket) Scheme() string {
 	return "text"
 }
 
-func (t TextPacket) EnPacket(p []byte) ([]byte,error) {
-	return p,nil
+func (t TextPacket) EnPacket(p []byte) ([]byte, error) {
+	return p, nil
 }
 
-func (t TextPacket) UnPacket(p []byte) ([]byte,error) {
-	return p,nil
+func (t TextPacket) UnPacket(p []byte) ([]byte, error) {
+	return p, nil
 }
 
 func RegisterEncoder(p Encoder) {
-	packetCollection.Store(p.Scheme(),p)
+	packetCollection.Store(p.Scheme(), p)
 }
 
 func GetEncoder(scheme string) Encoder {
-	encoder,ok := packetCollection.Load(scheme)
+	encoder, ok := packetCollection.Load(scheme)
 	if !ok {
 		return nil
 	}

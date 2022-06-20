@@ -27,25 +27,25 @@ type Config struct {
 	Codec protocol.Codec
 }
 
-type NewProtocolSupport func(config Config) (transport.ClientTransport,error)
+type NewProtocolSupport func(config Config) (transport.ClientTransport, error)
 
 var (
 	clientSupportCollection = make(map[string]NewProtocolSupport)
 )
 
-func RegisterProtocol(scheme string,newFn NewProtocolSupport) {
+func RegisterProtocol(scheme string, newFn NewProtocolSupport) {
 	clientSupportCollection[scheme] = newFn
 }
 
-func newTcpClient(config Config) (transport.ClientTransport,error) {
-	return transport.NewTcpTransClient(config.TlsConfig,config.ServerAddr)
+func newTcpClient(config Config) (transport.ClientTransport, error) {
+	return transport.NewTcpTransClient(config.TlsConfig, config.ServerAddr)
 }
 
-func newWebSocketClient(config Config) (transport.ClientTransport,error) {
-	return transport.NewWebSocketTransClient(config.TlsConfig,config.ServerAddr)
+func newWebSocketClient(config Config) (transport.ClientTransport, error) {
+	return transport.NewWebSocketTransClient(config.TlsConfig, config.ServerAddr)
 }
 
 func init() {
-	RegisterProtocol("tcp",newTcpClient)
-	RegisterProtocol("websocket",newWebSocketClient)
+	RegisterProtocol("tcp", newTcpClient)
+	RegisterProtocol("websocket", newWebSocketClient)
 }

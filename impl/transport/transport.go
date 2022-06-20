@@ -17,7 +17,7 @@ const (
 )
 
 const (
-	READ_BUFFER_SIZE = 4096 * 8
+	READ_BUFFER_SIZE      = 4096 * 8
 	MAX_WRITE_BUFFER_SIZE = 1024 * 1024 * 1024
 )
 
@@ -44,7 +44,6 @@ type ServerTransportBuilder interface {
 	SetOnOpen(_ func(conn ServerConnAdapter))
 	SetOnErr(_ func(err error))
 }
-
 
 type BufferPool struct {
 	Buf []byte

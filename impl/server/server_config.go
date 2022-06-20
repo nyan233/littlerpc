@@ -31,39 +31,39 @@ var (
 	serverSupportProtocol = make(map[string]NewProtocolSupport)
 )
 
-func RegisterProtocolNew(key string,support NewProtocolSupport) {
+func RegisterProtocolNew(key string, support NewProtocolSupport) {
 	serverSupportProtocol[key] = support
 }
 
 func newTcpSupport(config Config) transport.ServerTransportBuilder {
 	nbioCfg := nbio.Config{
-		Name:                         "LittleRpc-Server-Tcp",
-		Network:                      "tcp",
-		Addrs:                        config.Address,
-		NPoller:                      runtime.NumCPU() * 2,
-		LockListener:                 false,
-		LockPoller:                   false,
+		Name:         "LittleRpc-Server-Tcp",
+		Network:      "tcp",
+		Addrs:        config.Address,
+		NPoller:      runtime.NumCPU() * 2,
+		LockListener: false,
+		LockPoller:   false,
 	}
-	return transport.NewTcpTransServer(config.TlsConfig,nbioCfg)
+	return transport.NewTcpTransServer(config.TlsConfig, nbioCfg)
 }
 
 func newWebSocketSupport(config Config) transport.ServerTransportBuilder {
 	nbioCfg := nbhttp.Config{
-		Name:                         "LittleRpc-Server-WebSocket",
-		Network:                      "tcp",
-		LockListener:                 false,
-		LockPoller:                   false,
-		ReleaseWebsocketPayload:      true,
+		Name:                    "LittleRpc-Server-WebSocket",
+		Network:                 "tcp",
+		LockListener:            false,
+		LockPoller:              false,
+		ReleaseWebsocketPayload: true,
 	}
 	if config.TlsConfig == nil {
 		nbioCfg.Addrs = config.Address
 	} else {
 		nbioCfg.AddrsTLS = config.Address
 	}
-	return transport.NewWebSocketServer(config.TlsConfig,nbioCfg)
+	return transport.NewWebSocketServer(config.TlsConfig, nbioCfg)
 }
 
 func init() {
-	RegisterProtocolNew("tcp",newTcpSupport)
-	RegisterProtocolNew("websocket",newWebSocketSupport)
+	RegisterProtocolNew("tcp", newTcpSupport)
+	RegisterProtocolNew("websocket", newWebSocketSupport)
 }

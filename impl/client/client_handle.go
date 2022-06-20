@@ -10,22 +10,22 @@ import (
 	"time"
 )
 
-func (c *Client) handleProcessRetErr(msg *protocol.Message,i interface{}) (interface{},error) {
+func (c *Client) handleProcessRetErr(msg *protocol.Message, i interface{}) (interface{}, error) {
 	//单独处理返回的错误类型
 	errBytes := msg.Body[len(msg.Body)-1]
 	//处理最后返回的Error
-	i,_ = lreflect.ToTypePtr(i)
+	i, _ = lreflect.ToTypePtr(i)
 	err := c.codec.UnmarshalError(errBytes, i)
 	if err != nil {
 		return nil, err
 	}
-	if e,ok := i.(*error); ok {
-		return *e,nil
+	if e, ok := i.(*error); ok {
+		return *e, nil
 	}
-	return i,nil
+	return i, nil
 }
 
-func (c *Client) readMsgAndDecodeReply(msg *protocol.Message,method reflect.Value,rep *[]interface{}) error{
+func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, method reflect.Value, rep *[]interface{}) error {
 	// 接收服务器返回的调用结果并将header反序列化
 	buffer, err := c.conn.RecvData()
 	// read header
@@ -35,7 +35,7 @@ func (c *Client) readMsgAndDecodeReply(msg *protocol.Message,method reflect.Valu
 		return err
 	}
 	// TODO : Client Handle Ping&Pong
-	buffer,err = c.encoder.UnPacket(buffer[msg.BodyStart:])
+	buffer, err = c.encoder.UnPacket(buffer[msg.BodyStart:])
 	if err != nil {
 		return err
 	}
@@ -45,28 +45,28 @@ func (c *Client) readMsgAndDecodeReply(msg *protocol.Message,method reflect.Valu
 		return err
 	}
 	// 处理服务端传回的参数
-	outputTypeList := lreflect.FuncOutputTypeList(method,false)
+	outputTypeList := lreflect.FuncOutputTypeList(method, false)
 	for k, v := range msg.Body[:len(msg.Body)-1] {
 		eface := outputTypeList[k]
-		returnV, err := internal.CheckCoderType(c.codec,v, eface)
+		returnV, err := internal.CheckCoderType(c.codec, v, eface)
 		if err != nil {
 			return err
 		}
 		*rep = append(*rep, returnV)
 	}
 	// 处理返回值列表中最后的error
-	returnV,err := c.handleProcessRetErr(msg, outputTypeList[len(outputTypeList)-1])
+	returnV, err := c.handleProcessRetErr(msg, outputTypeList[len(outputTypeList)-1])
 	if err != nil {
 		return err
 	}
-	*rep = append(*rep,returnV)
+	*rep = append(*rep, returnV)
 	return nil
 }
 
 // return method
-func (c *Client) identArgAndEncode(processName string,msg *protocol.Message,args []interface{}) (reflect.Value,error) {
+func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, args []interface{}) (reflect.Value, error) {
 	msg.Header.MethodName = processName
-	methodData := strings.SplitN(processName,".",2)
+	methodData := strings.SplitN(processName, ".", 2)
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
 		panic("the illegal type name and method name")
 	}
@@ -84,12 +84,12 @@ func (c *Client) identArgAndEncode(processName string,msg *protocol.Message,args
 				panic("multiple pointer no support")
 			}
 		}
-		err := msg.Encode(c.codec,v)
+		err := msg.Encode(c.codec, v)
 		if err != nil {
 			return reflect.ValueOf(nil), err
 		}
 	}
-	return method,nil
+	return method, nil
 }
 
 func (c *Client) sendCallMsg(msg *protocol.Message) error {
@@ -104,19 +104,19 @@ func (c *Client) sendCallMsg(msg *protocol.Message) error {
 	*memBuffer = (*memBuffer)[:0]
 	defer c.memPool.Put(memBuffer)
 	// write header
-	*memBuffer = append(*memBuffer,msg.EncodeHeader()...)
+	*memBuffer = append(*memBuffer, msg.EncodeHeader()...)
 	bodyStart := len(*memBuffer)
-	for _,v := range msg.Body {
-		*memBuffer = append(*memBuffer,v...)
+	for _, v := range msg.Body {
+		*memBuffer = append(*memBuffer, v...)
 	}
 	bodyBytes, err := c.encoder.EnPacket((*memBuffer)[bodyStart:])
 	if err != nil {
 		return err
 	}
 	// write body
-	*memBuffer = append((*memBuffer)[:bodyStart],bodyBytes...)
+	*memBuffer = append((*memBuffer)[:bodyStart], bodyBytes...)
 	// write data
-	_,err = c.conn.SendData(*memBuffer)
+	_, err = c.conn.SendData(*memBuffer)
 	if err != nil {
 		return err
 	}

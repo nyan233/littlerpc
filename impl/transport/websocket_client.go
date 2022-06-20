@@ -10,7 +10,7 @@ type WebSocketTransClient struct {
 	conn *websocket.Conn
 }
 
-func NewWebSocketTransClient(tlsC *tls.Config, addr string) (*WebSocketTransClient,error) {
+func NewWebSocketTransClient(tlsC *tls.Config, addr string) (*WebSocketTransClient, error) {
 	dialer := websocket.Dialer{
 		TLSClientConfig: tlsC,
 	}
@@ -24,9 +24,9 @@ func NewWebSocketTransClient(tlsC *tls.Config, addr string) (*WebSocketTransClie
 	}
 	conn, _, err := dialer.Dial(u.String(), nil)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
-	return &WebSocketTransClient{conn: conn},nil
+	return &WebSocketTransClient{conn: conn}, nil
 }
 
 func (c *WebSocketTransClient) Close() error {
@@ -34,14 +34,14 @@ func (c *WebSocketTransClient) Close() error {
 }
 
 func (c *WebSocketTransClient) SendData(p []byte) (n int, err error) {
-	err = c.conn.WriteMessage(websocket.BinaryMessage,p)
+	err = c.conn.WriteMessage(websocket.BinaryMessage, p)
 	if err != nil {
-		return -1,err
+		return -1, err
 	}
-	return len(p),err
+	return len(p), err
 }
 
 func (c *WebSocketTransClient) RecvData() (p []byte, err error) {
-	_,p,err = c.conn.ReadMessage()
+	_, p, err = c.conn.ReadMessage()
 	return
 }

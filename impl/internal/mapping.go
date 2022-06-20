@@ -26,21 +26,21 @@ func MappingCoderPtrType(typ protocol.Type) (interface{}, error) {
 	case protocol.Boolean:
 		return new(bool), nil
 	case protocol.Byte:
-		return new(byte),nil
+		return new(byte), nil
 	case protocol.Map:
 		tmp := make(map[interface{}]interface{})
-		return &tmp,nil
+		return &tmp, nil
 	case protocol.Struct:
-		return &struct {}{},nil
+		return &struct{}{}, nil
 	case protocol.Array:
-		tmp := make([]byte,0)
-		return &tmp,nil
+		tmp := make([]byte, 0)
+		return &tmp, nil
 	default:
 		return nil, errors.New("not support other type")
 	}
 }
 
-func MappingCoderNoPtrType(typ protocol.Type) (interface{},error) {
+func MappingCoderNoPtrType(typ protocol.Type) (interface{}, error) {
 	switch typ {
 	case protocol.Long:
 		return *new(int32), nil
@@ -59,15 +59,15 @@ func MappingCoderNoPtrType(typ protocol.Type) (interface{},error) {
 	case protocol.Boolean:
 		return *new(bool), nil
 	case protocol.Byte:
-		return *new(byte),nil
+		return *new(byte), nil
 	case protocol.Map:
 		tmp := make(map[interface{}]interface{})
-		return tmp,nil
+		return tmp, nil
 	case protocol.Struct:
-		return struct {}{},nil
+		return struct{}{}, nil
 	case protocol.Array:
-		tmp := make([]byte,0)
-		return tmp,nil
+		tmp := make([]byte, 0)
+		return tmp, nil
 	default:
 		return nil, errors.New("not support other type")
 	}

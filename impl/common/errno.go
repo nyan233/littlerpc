@@ -12,6 +12,6 @@ var (
 	ErrBodyRead           = protocol.NewError("read body failed : readN == ", "")
 	ErrServer             = protocol.NewError("server error: ", "")
 	ErrCallArgsType       = protocol.NewError("call arguments type error : ", "")
-	ErrCodecMarshalError = protocol.NewError("codec.MarshalError return one error : ","")
+	ErrCodecMarshalError  = protocol.NewError("codec.MarshalError return one error : ", "")
 	Nil                   = protocol.NewError("the error is nil", "")
 )

@@ -16,8 +16,8 @@ func (r *roundRobbin) Scheme() string {
 }
 
 func (r *roundRobbin) Target(addrs []string) string {
-	addr := addrs[atomic.LoadInt64(&r.count) % int64(len(addrs))]
-	atomic.AddInt64(&r.count,1)
+	addr := addrs[atomic.LoadInt64(&r.count)%int64(len(addrs))]
+	atomic.AddInt64(&r.count, 1)
 	return addr
 }
 
@@ -30,14 +30,13 @@ func (h *hashBalance) Scheme() string {
 }
 
 func (h *hashBalance) Target(addrs []string) string {
-	i := getHashCode(time.Now().UnixNano(),len(addrs) + 1)
+	i := getHashCode(time.Now().UnixNano(), len(addrs)+1)
 	if i > 0 {
-		return addrs[i - 1]
+		return addrs[i-1]
 	}
 	return addrs[i]
 }
 
-func getHashCode(key int64,len int) int {
-	return int(key % int64(len) << 16) % len
+func getHashCode(key int64, len int) int {
+	return int(key%int64(len)<<16) % len
 }
-

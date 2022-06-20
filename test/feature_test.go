@@ -25,12 +25,12 @@ func (t *HelloTest) Add(i int64) error {
 	return nil
 }
 
-func (t *HelloTest) CreateUser(user User) error{
+func (t *HelloTest) CreateUser(user User) error {
 	t.userMap.Store(user.Id, user)
 	return nil
 }
 
-func (t *HelloTest) DeleteUser(uid int) error{
+func (t *HelloTest) DeleteUser(uid int) error {
 	t.userMap.Delete(uid)
 	return nil
 }
@@ -38,14 +38,14 @@ func (t *HelloTest) DeleteUser(uid int) error{
 func (t *HelloTest) SelectUser(uid int) (User, bool, error) {
 	u, ok := t.userMap.Load(uid)
 	if ok {
-		return u.(User), ok,nil
+		return u.(User), ok, nil
 	}
-	return User{}, false,nil
+	return User{}, false, nil
 }
 
-func (t *HelloTest) ModifyUser(uid int, user User) (bool,error) {
+func (t *HelloTest) ModifyUser(uid int, user User) (bool, error) {
 	_, ok := t.userMap.LoadOrStore(uid, user)
-	return ok,nil
+	return ok, nil
 }
 
 type HelloTestProxy struct {
@@ -67,7 +67,7 @@ func (proxy HelloTestProxy) Add(i int64) error {
 	return err
 }
 
-func (proxy HelloTestProxy) CreateUser(user User) error{
+func (proxy HelloTestProxy) CreateUser(user User) error {
 	_, err := proxy.Call("HelloTest.CreateUser", user)
 	return err
 }
@@ -81,20 +81,20 @@ func (proxy HelloTestProxy) SelectUser(uid int) (User, bool, error) {
 	inter, err := proxy.Call("HelloTest.SelectUser", uid)
 	r0 := inter[0].(User)
 	r1 := inter[1].(bool)
-	return r0, r1,err
+	return r0, r1, err
 }
 
-func (proxy HelloTestProxy) ModifyUser(uid int, user User) (bool,error) {
+func (proxy HelloTestProxy) ModifyUser(uid int, user User) (bool, error) {
 	inter, err := proxy.Call("HelloTest.ModifyUser", uid, user)
 	r0 := inter[0].(bool)
-	return r0,err
+	return r0, err
 }
 
 func TestNoTlsConnect(t *testing.T) {
 	server := lserver.NewServer(
 		lserver.WithAddressServer(":1234"),
 		lserver.WithServerEncoder("gzip"),
-		)
+	)
 	h := &HelloTest{}
 	err := server.Elem(h)
 	if err != nil {
@@ -116,11 +116,11 @@ func TestNoTlsConnect(t *testing.T) {
 	for i := 0; i < nGoroutine; i++ {
 		j := i
 		go func() {
-			client,err := lclient.NewClient(
-				lclient.WithCallOnErr(func(err error) {atomic.AddInt64(&errCount, 1)}),
+			client, err := lclient.NewClient(
+				lclient.WithCallOnErr(func(err error) { atomic.AddInt64(&errCount, 1) }),
 				lclient.WithAddressClient(":1234"),
 				lclient.WithClientEncoder("gzip"),
-				)
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -132,7 +132,7 @@ func TestNoTlsConnect(t *testing.T) {
 					Id:   j + 100,
 					Name: "Jeni",
 				})
-				user, ok,_ := proxy.SelectUser(j + 100)
+				user, ok, _ := proxy.SelectUser(j + 100)
 				if !ok {
 					panic("the no value")
 				}
@@ -164,7 +164,7 @@ func TestTlsConnect(t *testing.T) {
 }
 
 func TestBalance(t *testing.T) {
-	server := lserver.NewServer(lserver.WithAddressServer("127.0.0.1:9090","127.0.0.1:8080"))
+	server := lserver.NewServer(lserver.WithAddressServer("127.0.0.1:9090", "127.0.0.1:8080"))
 	err := server.Elem(new(HelloTest))
 	if err != nil {
 		t.Fatal(err)
@@ -178,12 +178,12 @@ func TestBalance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c1,err := lclient.NewClient(lclient.WithBalance("roundRobin"))
+	c1, err := lclient.NewClient(lclient.WithBalance("roundRobin"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	p1 := NewHelloTestProxy(c1)
-	c2,err := lclient.NewClient(lclient.WithBalance("roundRobin"))
+	c2, err := lclient.NewClient(lclient.WithBalance("roundRobin"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -190,7 +190,7 @@ func getAllFunc(file *ast.File, rawFile *os.File, proxyRecvName string, filter f
 				sb.WriteString("inter,err := proxy.Call(")
 			}
 		}
-		sb.WriteString(fmt.Sprintf("\"%s.%s\",", receiver.Name,funcDecl.Name.Name))
+		sb.WriteString(fmt.Sprintf("\"%s.%s\",", receiver.Name, funcDecl.Name.Name))
 		for _, v := range params {
 			sb.WriteString(v)
 			sb.WriteByte(',')
