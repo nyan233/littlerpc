@@ -23,7 +23,7 @@ func ToTypePtr(v interface{}) (interface{}, bool) {
 			data: unsafe.Pointer(&ptr),
 		})), true
 	}
-	return reflect.New(reflect.PtrTo(typ)).Interface(), true
+	return reflect.New(typ).Interface(), true
 }
 
 // ToValueTypeEface 如果reflect.Value为nil则返回可以和nil比较的interface{}

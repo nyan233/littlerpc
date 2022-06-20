@@ -30,6 +30,11 @@ func FuncInputTypeList(value reflect.Value, isRecv bool) []interface{} {
 			typs = append(typs, reflect.New(typ.In(i)).Interface())
 			continue
 		}
+		// 非指针的类型
+		if typ.In(i).Kind() != reflect.Ptr {
+			typs = append(typs,reflect.New(typ.In(i)).Elem().Interface())
+			continue
+		}
 		typs = append(typs, reflect.New(typ.In(i).Elem()).Interface())
 	}
 	return typs
@@ -48,6 +53,11 @@ func FuncOutputTypeList(value reflect.Value, isRecv bool) []interface{} {
 		}
 		if typ.Out(i).Kind() == reflect.Interface {
 			typs = append(typs, reflect.New(typ.Out(i)).Interface())
+			continue
+		}
+		// 非指针类型
+		if typ.Out(i).Kind() != reflect.Ptr {
+			typs = append(typs,reflect.New(typ.Out(i)).Elem().Interface())
 			continue
 		}
 		typs = append(typs, reflect.New(typ.Out(i).Elem()).Interface())
