@@ -4,6 +4,7 @@ import (
 	"github.com/lesismal/llib/std/crypto/tls"
 	"github.com/nyan233/littlerpc/impl/common"
 	"github.com/nyan233/littlerpc/middle/packet"
+	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
 	"time"
 )
@@ -27,7 +28,7 @@ func WithDefaultServer() serverOption {
 		config.ServerKeepAlive = true
 		config.ServerPPTimeout = 5 * time.Second
 		config.ServerTimeout = 90 * time.Second
-		config.Encoder = packet.GetEncoder("text")
+		config.Encoder = packet.GetEncoder(protocol.DefaultEncodingType)
 		config.NetWork = "tcp"
 	}
 }

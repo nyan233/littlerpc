@@ -116,6 +116,11 @@ func (m *Message) Encode(codec Codec,i interface{}) error {
 	return nil
 }
 
+func (m *Message) EncodeRaw(p []byte) {
+	m.Header.NBodyOffset++
+	m.Body = append(m.Body,p)
+}
+
 func (m *Message) Decode(codec Codec,i interface{}) error {
 	m.bodyIndex++
 	return codec.Unmarshal(m.Body[m.bodyIndex - 1],i)

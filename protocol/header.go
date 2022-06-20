@@ -3,7 +3,11 @@ package protocol
 const (
 	MessageCall   string = "call"
 	MessageReturn string = "return"
+	// MessageErrorReturn 调用因某种原因失败的返回
+	MessageErrorReturn string = "call_error"
+	// MessagePing Ping消息
 	MessagePing   string = "ping"
+	// MessagePong Pong消息
 	MessagePong   string = "pong"
 
 	DefaultEncodingType = "text"

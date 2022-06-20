@@ -18,44 +18,13 @@ import (
 // try 指示是否需要重入处理结果的逻辑
 // cr2 表示内部append过的callResult，以使更改调用者可见
 func (s *Server) handleErrAndRepResult(sArg serverCallContext,msg *protocol.Message,callResult []reflect.Value) {
-
-	switch i := lreflect.ToValueTypeEface(callResult[len(callResult)-1]); i.(type) {
-	case *protocol.Error:
-		// 非默认Codec不注入这些错误，因为像protobuf之类的可能有自己的
-		// 编码和Struct Tag规则，这些自动生成的error会导致错误
-		if sArg.Codec.Scheme() != "json" {
-			break
-		}
-		err := msg.Encode(sArg.Codec,i)
-		if err != nil {
-			HandleError(sArg,msg.Header.MsgId,*common.ErrServer, err.Error())
-			return
-		}
-	case error:
-		if sArg.Codec.Scheme() != "json" {
-			break
-		}
-		var str = i.(error).Error()
-		err := msg.Encode(sArg.Codec,&str)
-		if err != nil {
-			HandleError(sArg,msg.Header.MsgId,*common.ErrServer, err.Error())
-			return
-		}
-	case nil:
-		if sArg.Codec.Scheme() != "json" {
-			break
-		}
-		var intNil int64
-		err := msg.Encode(sArg.Codec,&intNil)
-		if err != nil {
-			HandleError(sArg,msg.Header.MsgId,*common.ErrServer, err.Error())
-			return
-		}
-	default:
-		// 不允许最后一个返回值不是*code.Error/error
-		panic("last return value no implement error")
+	bytes, err := sArg.Codec.MarshalError(lreflect.ToValueTypeEface(callResult[len(callResult)-1]))
+	if err != nil {
+		HandleError(sArg,msg.Header.MsgId,*common.ErrCodecMarshalError,
+			fmt.Sprintf("%s : %s",sArg.Codec.Scheme(),err.Error()))
+		return
 	}
-	return
+	msg.EncodeRaw(bytes)
 }
 
 func (s *Server) sendMsg(sArg serverCallContext,msg *protocol.Message) {

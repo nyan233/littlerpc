@@ -174,7 +174,7 @@ func TestBalance(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	err = lclient.ClientOpenBalance("live", "live://127.0.0.1:8080;127.0.0.1:9090", math.MaxInt64)
+	err = lclient.OpenBalance("live", "live://127.0.0.1:8080;127.0.0.1:9090", math.MaxInt64)
 	if err != nil {
 		t.Fatal(err)
 	}
