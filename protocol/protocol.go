@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"strconv"
+	"sync"
 )
 
 var (
@@ -89,6 +90,27 @@ func (m *Message) EncodeHeader() []byte {
 	return buffer
 }
 
+func (m *Message) EncodeHeaderFormBufferPool(bp *[]byte) {
+	*bp = append(*bp,m.EncodeHeader()...)
+}
+
+func (m *Message) EncodeHeaderAndBodyFromBufferPool(pool *sync.Pool) *[]byte {
+	bp := pool.Get().(*[]byte)
+	*bp = (*bp)[:0]
+	*bp = append(*bp,m.EncodeHeader()...)
+	for _,v := range m.Body {
+		*bp = append(*bp,v...)
+	}
+	return bp
+}
+
+
+func (m *Message) EncodeBodyFormBufferPool(bp *[]byte) {
+	for _,v := range m.Body {
+		*bp = append(*bp,v...)
+	}
+}
+
 func (m *Message) DecodeBodyFromBytes(data []byte) {
 	data = data[m.BodyStart:]
 	var offset int
@@ -115,7 +137,7 @@ func (m *Message) Encode(codec Codec, i interface{}) error {
 	return nil
 }
 
-func (m *Message) EncodeRaw(p []byte) {
+func (m *Message) DecodeRaw(p []byte) {
 	m.Header.NBodyOffset++
 	m.Body = append(m.Body, p)
 }

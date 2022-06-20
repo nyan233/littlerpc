@@ -1,17 +1,12 @@
 package server
 
 import (
-	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc/impl/common"
 	"github.com/nyan233/littlerpc/impl/internal"
-	"github.com/nyan233/littlerpc/impl/transport"
-	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"reflect"
-	"runtime"
-	"strconv"
 	"time"
 )
 
@@ -20,34 +15,32 @@ import (
 func (s *Server) handleErrAndRepResult(sArg serverCallContext, msg *protocol.Message, callResult []reflect.Value) {
 	bytes, err := sArg.Codec.MarshalError(lreflect.ToValueTypeEface(callResult[len(callResult)-1]))
 	if err != nil {
-		HandleError(sArg, msg.Header.MsgId, *common.ErrCodecMarshalError,
+		s.HandleError(sArg, msg.Header.MsgId, *common.ErrCodecMarshalError,
 			fmt.Sprintf("%s : %s", sArg.Codec.Scheme(), err.Error()))
 		return
 	}
-	msg.EncodeRaw(bytes)
+	msg.DecodeRaw(bytes)
 }
 
 func (s *Server) sendMsg(sArg serverCallContext, msg *protocol.Message) {
 	// TODO : implement text encoding and gzip encoding
 	// rep Header已经被调用者提前设置好内容，所以这里发送消息的逻辑不用设置
 	// write header
-	buf := s.bufferPool.Get().(*transport.BufferPool)
-	defer s.bufferPool.Put(buf)
-	buf.Buf = buf.Buf[:0]
-	buf.Buf = append(buf.Buf, msg.EncodeHeader()...)
-	bodyStart := len(buf.Buf)
+	bp := s.bufferPool.Get().(*[]byte)
+	*bp = (*bp)[:0]
+	defer s.bufferPool.Put(bp)
+	msg.EncodeHeaderFormBufferPool(bp)
+	bodyStart := len(*bp)
 	// write body
-	for _, v := range msg.Body {
-		buf.Buf = append(buf.Buf, v...)
-	}
-	bytes, err := s.encoder.EnPacket(buf.Buf[bodyStart:])
+	msg.EncodeBodyFormBufferPool(bp)
+	bytes, err := sArg.Encoder.EnPacket((*bp)[bodyStart:])
 	if err != nil {
-		HandleError(sArg, msg.Header.MsgId, *common.ErrServer, err.Error())
+		s.HandleError(sArg, msg.Header.MsgId, *common.ErrServer, err.Error())
 		return
 	}
-	buf.Buf = append(buf.Buf[:bodyStart], bytes...)
+	*bp = append((*bp)[:bodyStart], bytes...)
 	// write data
-	_, err = sArg.Conn.Write(buf.Buf)
+	_, err = sArg.Conn.Write(*bp)
 	if err != nil {
 		s.logger.ErrorFromErr(err)
 	}
@@ -60,7 +53,7 @@ func (s *Server) handleResult(sArg serverCallContext, msg *protocol.Message, cal
 		// 可替换的Codec已经不需要Any包装器了
 		err := msg.Encode(sArg.Codec, eface)
 		if err != nil {
-			HandleError(sArg, msg.Header.MsgId, *common.ErrServer, "")
+			s.HandleError(sArg, msg.Header.MsgId, *common.ErrServer, "")
 			return
 		}
 	}
@@ -76,9 +69,10 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	// 排除receiver
 	inputTypeList := lreflect.FuncInputTypeList(method, true)
 	for k, v := range msg.Body {
-		callArg, err := internal.CheckCoderType(sArg.Codec, v, inputTypeList[k])
+		eface := inputTypeList[k]
+		callArg, err := internal.CheckCoderType(sArg.Codec, v, eface)
 		if err != nil {
-			HandleError(sArg, msg.Header.MsgId, *common.ErrServer, err.Error())
+			s.HandleError(sArg, msg.Header.MsgId, *common.ErrServer, err.Error())
 			return nil, false
 		}
 		// 可以根据获取的参数类别的每一个参数的类型信息得到
@@ -90,11 +84,11 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	ok, noMatch := internal.CheckInputTypeList(callArgs, append([]interface{}{receiver.Interface()}, inputTypeList...))
 	if !ok {
 		if noMatch != nil {
-			HandleError(sArg, msg.Header.MsgId, *common.ErrCallArgsType,
+			s.HandleError(sArg, msg.Header.MsgId, *common.ErrCallArgsType,
 				fmt.Sprintf("pass value type is %s but call arg type is %s", noMatch[1], noMatch[0]),
 			)
 		} else {
-			HandleError(sArg, msg.Header.MsgId, *common.ErrCallArgsType,
+			s.HandleError(sArg, msg.Header.MsgId, *common.ErrCallArgsType,
 				fmt.Sprintf("pass arg list length no equal of call arg list : len(callArgs) == %d : len(inputTypeList) == %d",
 					len(callArgs)-1, len(inputTypeList)-1),
 			)
@@ -104,57 +98,23 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	return callArgs, true
 }
 
-func HandleError(sArg serverCallContext, msgId int64, errNo protocol.Error, appendInfo string) {
-	codec := protocol.GetCodec("json")
+func (s *Server) HandleError(sArg serverCallContext, msgId int64, errNo protocol.Error, appendInfo string) {
 	conn := sArg.Conn
-	encoder := packet.GetEncoder("text")
 	msg := protocol.Message{}
 	// write header
 	header := &msg.Header
 	header.Timestamp = time.Now().Unix()
-	header.MsgType = protocol.MessageReturn
+	// 表示该消息类型是服务器的错误返回
+	header.MsgType = protocol.MessageErrorReturn
 	header.MsgId = msgId
-	header.CodecType = codec.Scheme()
-	header.Encoding = encoder.Scheme()
-	switch errNo.Info {
-	case common.ErrJsonUnMarshal.Info, common.ErrMethodNoRegister.Info, common.ErrCallArgsType.Info:
-		errNo.Trace += appendInfo
-		err := msg.Encode(codec, errNo)
-		if err != nil {
-			panic(errors.New("encoding/json marshal failed"))
-		}
-		errNoBytes := common.BufferIoEncodeMessage(&msg)
-		errNoBytes, err = encoder.EnPacket(errNoBytes)
-		if err != nil {
-			panic(errors.New(fmt.Sprintf("encoding/%s enpacket failed", encoder.Scheme())))
-		}
-		conn.Write(errNoBytes)
-		break
-	case common.ErrServer.Info:
-		errNo.Info += appendInfo
-		_, file, line, _ := runtime.Caller(1)
-		errNo.Trace = file + ":" + strconv.Itoa(line)
-		err := msg.Encode(codec, errNo)
-		if err != nil {
-			panic(errors.New("encoding/json marshal failed"))
-		}
-		errNoBytes := common.BufferIoEncodeMessage(&msg)
-		errNoBytes, err = encoder.EnPacket(errNoBytes)
-		if err != nil {
-			panic(errors.New(fmt.Sprintf("encoding/%s enpacket failed", encoder.Scheme())))
-		}
-		conn.Write(errNoBytes)
-		break
-	case common.Nil.Info:
-		err := msg.Encode(codec, errNo)
-		if err != nil {
-			panic(errors.New("encoding/json marshal failed"))
-		}
-		errNoBytes := common.BufferIoEncodeMessage(&msg)
-		errNoBytes, err = encoder.EnPacket(errNoBytes)
-		if err != nil {
-			panic(errors.New(fmt.Sprintf("encoding/%s enpacket failed", encoder.Scheme())))
-		}
-		conn.Write(errNoBytes)
+	// 设置error
+	errNo.Trace = appendInfo
+	msg.DecodeRaw([]byte(errNo.Error()))
+	bp := msg.EncodeHeaderAndBodyFromBufferPool(&s.bufferPool)
+	defer s.bufferPool.Put(bp)
+	_, err := conn.Write(*bp)
+	if err != nil {
+		s.logger.ErrorFromErr(err)
+		return
 	}
 }

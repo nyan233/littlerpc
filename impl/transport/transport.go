@@ -45,6 +45,3 @@ type ServerTransportBuilder interface {
 	SetOnErr(_ func(err error))
 }
 
-type BufferPool struct {
-	Buf []byte
-}

@@ -20,6 +20,10 @@ type HelloTest struct {
 	userMap sync.Map
 }
 
+func (t *HelloTest) GetCount() (int64,*User,error) {
+	return atomic.LoadInt64(&t.count),nil,nil
+}
+
 func (t *HelloTest) Add(i int64) error {
 	atomic.AddInt64(&t.count, i)
 	return nil
@@ -48,47 +52,6 @@ func (t *HelloTest) ModifyUser(uid int, user User) (bool, error) {
 	return ok, nil
 }
 
-type HelloTestProxy struct {
-	*lclient.Client
-}
-
-func NewHelloTestProxy(client *lclient.Client) *HelloTestProxy {
-	proxy := &HelloTestProxy{}
-	err := client.BindFunc(proxy)
-	if err != nil {
-		panic(err)
-	}
-	proxy.Client = client
-	return proxy
-}
-
-func (proxy HelloTestProxy) Add(i int64) error {
-	_, err := proxy.Call("HelloTest.Add", i)
-	return err
-}
-
-func (proxy HelloTestProxy) CreateUser(user User) error {
-	_, err := proxy.Call("HelloTest.CreateUser", user)
-	return err
-}
-
-func (proxy HelloTestProxy) DeleteUser(uid int) error {
-	_, err := proxy.Call("HelloTest.DeleteUser", uid)
-	return err
-}
-
-func (proxy HelloTestProxy) SelectUser(uid int) (User, bool, error) {
-	inter, err := proxy.Call("HelloTest.SelectUser", uid)
-	r0 := inter[0].(User)
-	r1 := inter[1].(bool)
-	return r0, r1, err
-}
-
-func (proxy HelloTestProxy) ModifyUser(uid int, user User) (bool, error) {
-	inter, err := proxy.Call("HelloTest.ModifyUser", uid, user)
-	r0 := inter[0].(bool)
-	return r0, err
-}
 
 func TestNoTlsConnect(t *testing.T) {
 	server := lserver.NewServer(
@@ -119,6 +82,7 @@ func TestNoTlsConnect(t *testing.T) {
 			client, err := lclient.NewClient(
 				lclient.WithCallOnErr(func(err error) { atomic.AddInt64(&errCount, 1) }),
 				lclient.WithAddressClient(":1234"),
+				lclient.WithClientCodec("json"),
 				lclient.WithClientEncoder("gzip"),
 			)
 			if err != nil {
@@ -143,9 +107,14 @@ func TestNoTlsConnect(t *testing.T) {
 					Id:   j + 100,
 					Name: "Tony",
 				})
+				_, _, err := proxy.GetCount()
+				if err != nil {
+					t.Error(err)
+				}
 				_ = proxy.DeleteUser(j + 100)
+				pp := proxy.(*HelloTestProxy)
 				// 构造一次错误的请求
-				_, _ = proxy.Call("HelloTest.DeleteUser", "string")
+				_, _ = pp.Call("HelloTest.DeleteUser", "string")
 			}
 			wg.Done()
 		}()

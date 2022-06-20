@@ -201,6 +201,12 @@ func getAllFunc(file *ast.File, rawFile *os.File, proxyRecvName string, filter f
 		sb.WriteString("err }\n\t")
 		// inject function body
 		for k, v := range rTypes {
+			// error == nil时默认的断言会panic
+			// 为了不panic必须使用带成功与否返回的类型断言
+			if k == len(rTypes) - 1 {
+				sb.WriteString(fmt.Sprintf("r%d,_ := inter[%d].(%s)\n\t",k,k,v))
+				continue
+			}
 			sb.WriteString(fmt.Sprintf("r%d := inter[%d].(%s)\n\t", k, k, v))
 		}
 		sb.WriteString("return ")

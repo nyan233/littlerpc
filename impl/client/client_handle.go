@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"github.com/nyan233/littlerpc/impl/internal"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
@@ -33,6 +34,10 @@ func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, method reflect.Val
 	err = msg.DecodeHeader(buffer)
 	if err != nil {
 		return err
+	}
+	// 处理服务器的错误返回
+	if msg.Header.MsgType == protocol.MessageErrorReturn {
+		return errors.New(string(buffer[msg.BodyStart:]))
 	}
 	// TODO : Client Handle Ping&Pong
 	buffer, err = c.encoder.UnPacket(buffer[msg.BodyStart:])

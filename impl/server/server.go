@@ -36,8 +36,6 @@ type Server struct {
 	bufferPool sync.Pool
 	// logger
 	logger bilog.Logger
-	// 数据编码器
-	encoder packet.Encoder
 }
 
 func NewServer(opts ...serverOption) *Server {
@@ -62,13 +60,12 @@ func NewServer(opts ...serverOption) *Server {
 	// New Buffer Pool
 	server.bufferPool = sync.Pool{
 		New: func() interface{} {
-			return &transport.BufferPool{Buf: make([]byte, 0, 4096)}
+			tmp := make([]byte, 0, 4096)
+			return &tmp
 		},
 	}
 	// New TaskPool
 	server.taskPool = pool.NewTaskPool(pool.MaxTaskPoolSize, runtime.NumCPU()*4)
-	// encoder
-	server.encoder = sc.Encoder
 	return server
 }
 
@@ -117,7 +114,7 @@ func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 		if sArg.Encoder == nil {
 			sArg.Encoder = packet.GetEncoder("text")
 		}
-		HandleError(sArg, msg.Header.MsgId, *common.ErrMessageFormat, "")
+		s.HandleError(sArg, msg.Header.MsgId, *common.ErrMessageFormat, "")
 		return
 	}
 
@@ -131,7 +128,7 @@ func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 		}
 		offset += readN
 		if err != nil {
-			HandleError(sArg, msg.Header.MsgId, *common.ErrBodyRead, strconv.Itoa(offset))
+			s.HandleError(sArg, msg.Header.MsgId, *common.ErrBodyRead, strconv.Itoa(offset))
 			return
 		}
 		if offset != len(data) {
@@ -140,9 +137,10 @@ func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 	}
 	data = data[msg.BodyStart:offset]
 	// 调用编码器解包
-	data, err = s.encoder.UnPacket(data)
+	encoder := packet.GetEncoder(msg.Header.Encoding)
+	data, err = encoder.UnPacket(data)
 	if err != nil {
-		HandleError(sArg, msg.Header.MsgId, *common.ErrServer, "")
+		s.HandleError(sArg, msg.Header.MsgId, *common.ErrServer, "")
 		return
 	}
 	// 从完整的data中解码Body
@@ -153,18 +151,18 @@ func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 	methodData := strings.SplitN(msg.Header.MethodName, ".", 2)
 	// 方法名和类型名不能为空
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
-		HandleError(sArg, msg.Header.MsgId, *common.ErrMethodNoRegister, msg.Header.MethodName)
+		s.HandleError(sArg, msg.Header.MsgId, *common.ErrMethodNoRegister, msg.Header.MethodName)
 		return
 	}
 	eTmp, ok := s.elems.Load(methodData[0])
 	if !ok {
-		HandleError(sArg, msg.Header.MsgId, *common.ErrElemTypeNoRegister, methodData[0])
+		s.HandleError(sArg, msg.Header.MsgId, *common.ErrElemTypeNoRegister, methodData[0])
 		return
 	}
 	elemData := eTmp.(common.ElemMeta)
 	method, ok := elemData.Methods[methodData[1]]
 	if !ok {
-		HandleError(sArg, msg.Header.MsgId, *common.ErrMethodNoRegister, "")
+		s.HandleError(sArg, msg.Header.MsgId, *common.ErrMethodNoRegister, "")
 		return
 	}
 	// 从客户端校验并获得合法的调用参数

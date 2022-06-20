@@ -3,6 +3,7 @@ package internal
 import (
 	"errors"
 	"github.com/nyan233/littlerpc/protocol"
+	lreflect "github.com/nyan233/littlerpc/reflect"
 	"reflect"
 )
 
@@ -10,12 +11,17 @@ func CheckCoderType(codec protocol.Codec, data []byte, structPtr interface{}) (i
 	if structPtr == nil || data == nil || len(data) == 0 {
 		return nil, errors.New("no satisfy unmarshal case")
 	}
-	//val,_ := lreflect.ToTypePtr(structPtr)
-	err := codec.Unmarshal(data, structPtr)
+	val,_ := lreflect.ToTypePtr(structPtr)
+	err := codec.Unmarshal(data, val)
 	if err != nil {
 		return nil, err
 	}
-	return structPtr, err
+	// 指针类型和非指针类型的返回值不同
+	if reflect.TypeOf(structPtr).Kind() == reflect.Ptr {
+		return structPtr,nil
+	} else {
+		return reflect.ValueOf(val).Elem().Interface(),nil
+	}
 }
 
 func CheckIType(i interface{}) protocol.Type {

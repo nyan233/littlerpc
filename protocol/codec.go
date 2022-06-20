@@ -44,7 +44,8 @@ func (j JsonCodec) Unmarshal(data []byte, v interface{}) error {
 }
 
 func (j JsonCodec) UnmarshalError(data []byte, v interface{}) error {
-	if len(data) == 1 && data[0] == 0 {
+	// ascii 48 == '0'
+	if len(data) == 1 && data[0] == 48 {
 		return nil
 	}
 	switch v.(type) {

@@ -7,7 +7,7 @@ type Error struct {
 }
 
 func (e Error) Error() string {
-	return e.Info + "\n\t" + e.Trace
+	return e.Info + " " + e.Trace
 }
 
 func NewError(info string, trace string, more ...interface{}) *Error {

@@ -47,7 +47,7 @@ func (p *TaskPool) start() {
 			for {
 				select {
 				case fn := <-p.tasks:
-					delay /= 2
+					delay /= 10
 					if delay < MinDelay {
 						delay = MinDelay
 					}
@@ -55,7 +55,7 @@ func (p *TaskPool) start() {
 				case <-ctx.Done():
 					return
 				default:
-					delay *= 2
+					delay *= 10
 					if delay > MaxDelay {
 						delay = MaxDelay
 					}
