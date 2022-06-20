@@ -68,7 +68,7 @@ func genCode() {
 		})
 		funcStrs = append(funcStrs, tmp...)
 	}
-	fileBuffer.WriteString(createBeforeCode(pkgName, recvName+"Proxy"))
+	fileBuffer.WriteString(createBeforeCode(pkgName, recvName+"Proxy",recvName+"Interface",funcStrs))
 	for _, v := range funcStrs {
 		fileBuffer.WriteString("\n")
 		fileBuffer.WriteString(v)
@@ -176,19 +176,11 @@ func getAllFunc(file *ast.File, rawFile *os.File, proxyRecvName string, filter f
 	handleBody:
 		// inject call
 		sb.WriteString(" {\n\t")
-		// 无返回值的情况下不需要inter
+		// littlerpc规定的合法的过程中至少需要一个error类型的返回值
 		if funcDecl.Type.Results == nil {
-			sb.WriteString("_,_ = proxy.Call(")
+			panic("generate function no return value")
 		} else {
-			// 没有返回error/*protocol.Error的情况
-			if s := rTypes[len(rTypes)-1]; !(s == "error" || s == "*protocol.Error") {
-				sb.WriteString("inter,_ := proxy.Call(")
-			} else if len(rTypes) == 1 && (s == "error" || s == "*protocol.Error") {
-				// 只返回error/*protocol.Error时的情况
-				sb.WriteString("_,err := proxy.Call(")
-			} else {
-				sb.WriteString("inter,err := proxy.Call(")
-			}
+			sb.WriteString("inter,err := proxy.Call(")
 		}
 		sb.WriteString(fmt.Sprintf("\"%s.%s\",", receiver.Name, funcDecl.Name.Name))
 		for _, v := range params {
@@ -196,26 +188,24 @@ func getAllFunc(file *ast.File, rawFile *os.File, proxyRecvName string, filter f
 			sb.WriteByte(',')
 		}
 		sb.WriteString(")\n\t")
+		// 注入判断Call err的代码
+		sb.WriteString("if err != nil { return ")
+		for _,v := range rTypes[:len(rTypes) - 1] {
+			s,err := writeDefaultValue(v)
+			if err != nil {
+				panic(err)
+			}
+			sb.WriteString(s)
+			sb.WriteString(",")
+		}
+		sb.WriteString("err }\n\t")
 		// inject function body
 		for k, v := range rTypes {
-			// 返回值最后一个是error/*protocol.Error则不用输出类型断言的代码
-			if k == len(rTypes)-1 && (v == "error" || v == "*protocol.Error") {
-				break
-			}
 			sb.WriteString(fmt.Sprintf("r%d := inter[%d].(%s)\n\t", k, k, v))
 		}
 		sb.WriteString("return ")
-		for k, v := range rTypes {
-			// 返回值最后一个是error/*protocol.Error
-			if k == len(rTypes)-1 {
-				if v == "*protocol.Error" {
-					sb.WriteString("err.(*protocol.Error)")
-					break
-				} else if v == "error" {
-					sb.WriteString("err")
-					break
-				}
-			}
+		for k := range rTypes {
+			// 返回值最后一个是error
 			sb.WriteString("r")
 			sb.WriteString(strconv.Itoa(k))
 			if k < len(rTypes)-1 {
@@ -228,20 +218,33 @@ func getAllFunc(file *ast.File, rawFile *os.File, proxyRecvName string, filter f
 	return funcStrs
 }
 
-// 在这里生成包注释、导入、工厂函数
-func createBeforeCode(pkgName string, typeName string) string {
+
+// 在这里生成包注释、导入、工厂函数、各种需要的类型
+func createBeforeCode(pkgName string, typeName,interName string,allFunc []string) string {
+	var sb strings.Builder
+	sb.Grow(1024)
 	// 生成包注释
-	comment := fmt.Sprintf("/*\n\t%-12s : littlerpc-generator", "@Generator")
-	comment += fmt.Sprintf("\n\t%-12s : %s", "@CreateTime", time.Now().String())
-	comment += fmt.Sprintf("\n\t%-12s : littlerpc-generator\n*/\n", "@Author")
+	fmt.Fprintf(&sb,"/*\n\t%-12s : littlerpc-generator", "@Generator")
+	fmt.Fprintf(&sb,"\n\t%-12s : %s", "@CreateTime", time.Now().String())
+	fmt.Fprintf(&sb,"\n\t%-12s : littlerpc-generator\n*/\n", "@Author")
 	// 生成包名和导入文件
-	pkgInfo := "package " + pkgName + "\n"
-	pkgInfo += "import (\n\t"
-	pkgInfo += "\"github.com/nyan233/littlerpc\"\n)\n"
+	fmt.Fprintf(&sb,"package " + pkgName + "\n")
+	fmt.Fprintf(&sb,"import (\n\t")
+	fmt.Fprintf(&sb,"\"github.com/nyan233/littlerpc/impl/client\"\n)\n")
+	// 生成被代理对象方法集的接口描述
+	fmt.Fprintf(&sb,"type %s interface {",interName)
+	for _,v := range allFunc {
+		// func (x receiver) Say(i int) error {...
+		methodMeta := strings.SplitN(v,")",2)[1]
+		methodMeta = strings.SplitN(methodMeta,"{",2)[0]
+		sb.WriteString(methodMeta)
+		sb.WriteString(";")
+	}
+	sb.WriteString("}\n\n")
 	// 生成类型名和工厂函数
-	typeInfo := fmt.Sprintf("type %s struct {\n\t*littlerpc.Client\n}\n", typeName)
-	typeInfo += fmt.Sprintf("func New%s(client *littlerpc.Client) *%s {", typeName, typeName)
-	typeInfo += fmt.Sprintf("\n\tproxy := &%s{}\n\terr := client.BindFunc(proxy)\n\t", typeName)
-	typeInfo += "if err != nil {\n\tpanic(err)\n\t}\n\tproxy.Client = client\n\treturn proxy\n}\n"
-	return comment + pkgInfo + typeInfo
+	fmt.Fprintf(&sb,"type %s struct {\n\t*client.Client\n}\n", typeName)
+	fmt.Fprintf(&sb,"func New%s(client *client.Client) %s {", typeName, interName)
+	fmt.Fprintf(&sb,"\n\tproxy := &%s{}\n\terr := client.BindFunc(proxy)\n\t", typeName)
+	sb.WriteString("if err != nil {\n\tpanic(err)\n\t}\n\tproxy.Client = client\n\treturn proxy\n}\n")
+	return sb.String()
 }
