@@ -3,8 +3,8 @@ package client
 import (
 	"crypto/tls"
 	"github.com/nyan233/littlerpc/impl/transport"
+	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
-	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
 	"time"
 )
@@ -22,9 +22,9 @@ type Config struct {
 	// 客户端Call错误处理的回调函数
 	CallOnErr func(err error)
 	// 字节流编码器
-	Encoder packet.Encoder
+	Encoder packet.Wrapper
 	// 结构化数据编码器
-	Codec protocol.Codec
+	Codec codec.Wrapper
 }
 
 type NewProtocolSupport func(config Config) (transport.ClientTransport, error)

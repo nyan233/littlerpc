@@ -28,7 +28,7 @@ func WithDefaultServer() serverOption {
 		config.ServerKeepAlive = true
 		config.ServerPPTimeout = 5 * time.Second
 		config.ServerTimeout = 90 * time.Second
-		config.Encoder = packet.GetEncoder(protocol.DefaultEncodingType)
+		config.Encoder = packet.GetEncoderFromIndex(int(protocol.DefaultEncodingType))
 		config.NetWork = "tcp"
 	}
 }
@@ -47,12 +47,20 @@ func WithTlsServer(tlsC *tls.Config) serverOption {
 
 func WithServerEncoder(scheme string) serverOption {
 	return func(config *Config) {
-		config.Encoder = packet.GetEncoder(scheme)
+		config.Encoder = packet.GetEncoderFromScheme(scheme)
 	}
 }
 
 func WithTransProtocol(scheme string) serverOption {
 	return func(config *Config) {
 		config.NetWork = scheme
+	}
+}
+
+func WithOpenLogger(ok bool) serverOption {
+	return func(config *Config) {
+		if !ok {
+			config.Logger = common.NilLogger
+		}
 	}
 }

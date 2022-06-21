@@ -2,12 +2,13 @@ package internal
 
 import (
 	"errors"
+	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"reflect"
 )
 
-func CheckCoderType(codec protocol.Codec, data []byte, structPtr interface{}) (interface{}, error) {
+func CheckCoderType(codec codec.Codec, data []byte, structPtr interface{}) (interface{}, error) {
 	if structPtr == nil || data == nil || len(data) == 0 {
 		return nil, errors.New("no satisfy unmarshal case")
 	}

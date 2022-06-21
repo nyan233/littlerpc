@@ -6,20 +6,21 @@ import (
 	"github.com/nyan233/littlerpc/impl/common"
 	"github.com/nyan233/littlerpc/impl/transport"
 	"github.com/nyan233/littlerpc/internal/pool"
+	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
+	"math"
 	"reflect"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 )
 
 type serverCallContext struct {
-	Codec   protocol.Codec
+	Codec   codec.Codec
 	Encoder packet.Encoder
 	Conn    transport.ServerConnAdapter
 }
@@ -36,6 +37,12 @@ type Server struct {
 	bufferPool sync.Pool
 	// logger
 	logger bilog.Logger
+	// 用于操作protocol.Message
+	mop protocol.MessageOperation
+	// 缓存一些Codec以加速索引
+	cacheCodec []codec.Wrapper
+	// 缓存一些Encoder以加速索引
+	cacheEncoder []packet.Wrapper
 }
 
 func NewServer(opts ...serverOption) *Server {
@@ -64,6 +71,26 @@ func NewServer(opts ...serverOption) *Server {
 			return &tmp
 		},
 	}
+	// init encoder cache
+	for i := 0; i < math.MaxUint8; i++ {
+		wp := packet.GetEncoderFromIndex(i)
+		if wp != nil {
+			server.cacheEncoder = append(server.cacheEncoder,wp)
+		} else {
+			break
+		}
+	}
+	// init codec cache
+	for i := 0; i < math.MaxUint8;i++ {
+		wp := codec.GetCodecFromIndex(i)
+		if wp != nil {
+			server.cacheCodec = append(server.cacheCodec,wp)
+		} else {
+			break
+		}
+	}
+	// init message operations
+	server.mop = protocol.NewMessageOperation()
 	// New TaskPool
 	server.taskPool = pool.NewTaskPool(pool.MaxTaskPoolSize, runtime.NumCPU()*4)
 	return server
@@ -100,21 +127,24 @@ func (s *Server) Elem(i interface{}) error {
 func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 	// TODO : Handle Ping-Pong Message
 	// TODO : Handle Control Header
-	msg := &protocol.Message{}
-	err := msg.DecodeHeader(data)
-	sArg := serverCallContext{
-		Codec:   protocol.GetCodec(msg.Header.CodecType),
-		Encoder: packet.GetEncoder(msg.Header.Encoding),
-		Conn:    c,
+	msg := protocol.NewMessage()
+	pyloadStart,err := s.mop.UnmarshalHeader(msg,data)
+	// 根据读取的头信息初始化一些需要的Codec/Encoder
+	cwp := safeIndexCodecWps(s.cacheCodec, int(msg.GetCodecType()))
+	ewp := safeIndexEncoderWps(s.cacheEncoder,int(msg.GetEncoderType()))
+	var sArg serverCallContext
+	if cwp == nil || ewp == nil {
+		sArg.Codec = safeIndexCodecWps(s.cacheCodec,int(protocol.DefaultCodecType)).Instance()
+		sArg.Encoder = safeIndexEncoderWps(s.cacheEncoder,int(protocol.DefaultEncodingType)).Instance()
+	} else {
+		sArg = serverCallContext{
+			Codec:   cwp.Instance(),
+			Encoder: ewp.Instance(),
+		}
 	}
+	sArg.Conn = c
 	if err != nil {
-		if sArg.Codec == nil {
-			sArg.Codec = protocol.GetCodec("json")
-		}
-		if sArg.Encoder == nil {
-			sArg.Encoder = packet.GetEncoder("text")
-		}
-		s.HandleError(sArg, msg.Header.MsgId, *common.ErrMessageFormat, "")
+		s.handleError(sArg, msg.MsgId, *common.ErrMessageFormat, "")
 		return
 	}
 
@@ -128,41 +158,38 @@ func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 		}
 		offset += readN
 		if err != nil {
-			s.HandleError(sArg, msg.Header.MsgId, *common.ErrBodyRead, strconv.Itoa(offset))
+			s.handleError(sArg, msg.MsgId, *common.ErrBodyRead, strconv.Itoa(offset))
 			return
 		}
 		if offset != len(data) {
 			break
 		}
 	}
-	data = data[msg.BodyStart:offset]
+	data = data[pyloadStart:offset]
 	// 调用编码器解包
-	encoder := packet.GetEncoder(msg.Header.Encoding)
-	data, err = encoder.UnPacket(data)
-	if err != nil {
-		s.HandleError(sArg, msg.Header.MsgId, *common.ErrServer, "")
-		return
+	// 优化text类型的编码器
+	encoder := sArg.Encoder
+	if encoder.Scheme() != "text" {
+		data, err = encoder.UnPacket(data)
+		if err != nil {
+			s.handleError(sArg, msg.MsgId, *common.ErrServer, "")
+			return
+		}
 	}
 	// 从完整的data中解码Body
-	msg.DecodeBodyFromBodyBytes(data)
+	msg.Payloads = data
 
 	// 序列化完之后才确定调用名
 	// MethodName : Hello.Hello : receiver:methodName
-	methodData := strings.SplitN(msg.Header.MethodName, ".", 2)
-	// 方法名和类型名不能为空
-	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
-		s.HandleError(sArg, msg.Header.MsgId, *common.ErrMethodNoRegister, msg.Header.MethodName)
-		return
-	}
-	eTmp, ok := s.elems.Load(methodData[0])
+	eTmp, ok := s.elems.Load(msg.InstanceName)
 	if !ok {
-		s.HandleError(sArg, msg.Header.MsgId, *common.ErrElemTypeNoRegister, methodData[0])
+		s.handleError(sArg, msg.MsgId, *common.ErrElemTypeNoRegister, msg.InstanceName)
 		return
 	}
 	elemData := eTmp.(common.ElemMeta)
-	method, ok := elemData.Methods[methodData[1]]
+	method, ok := elemData.Methods[msg.MethodName]
 	if !ok {
-		s.HandleError(sArg, msg.Header.MsgId, *common.ErrMethodNoRegister, "")
+		s.handleError(sArg, msg.MsgId, *common.ErrMethodNoRegister, "")
 		return
 	}
 	// 从客户端校验并获得合法的调用参数
@@ -186,19 +213,14 @@ func (s *Server) callHandleUnit(sArg serverCallContext, msg *protocol.Message, m
 	// NOTE : 重新设置Body的长度，否则可能会被请求序列化的数据污染
 	// NOTE : 不能在handleResult()中重置，因为handleErrAndRepResult()可能会认为
 	// NOTE : 遗漏了一些数据，从而导致重入handleResult()，这时负责发送Body的函数可能只会看到长度为1的Body
-	msgId := msg.Header.MsgId
-	methodName := msg.Header.MethodName
-	msg.ResetAll()
+	msgId := msg.MsgId
 	// Multi Return Value
 	// 服务器返回的参数中不区分是是否是指针类型
 	// 客户端在处理返回值的类型时需要自己根据注册的过程进行处理
-	msg.Header.MsgType = protocol.MessageReturn
-	msg.Header.Timestamp = time.Now().Unix()
-	msg.Header.CodecType = sArg.Codec.Scheme()
-	msg.Header.Encoding = sArg.Encoder.Scheme()
-	msg.Header.MsgId = msgId
-	msg.Header.MethodName = methodName
-
+	msg.SetMsgType(protocol.MessageReturn)
+	msg.Timestamp = uint64(time.Now().Unix())
+	msg.MsgId = msgId
+	s.mop.Reset(msg,false,true,true,1024)
 	s.handleResult(sArg, msg, callResult)
 	// 处理用户过程返回的错误，v0.30开始规定每个符合规范的API最后一个返回值是error接口
 	s.handleErrAndRepResult(sArg, msg, callResult)

@@ -21,7 +21,7 @@ type Config struct {
 	// ping-pong timeout
 	ServerPPTimeout time.Duration
 	// 编码器
-	Encoder packet.Encoder
+	Encoder packet.Wrapper
 	Logger  bilog.Logger
 }
 

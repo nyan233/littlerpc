@@ -3,6 +3,7 @@ package client
 import (
 	"crypto/tls"
 	"github.com/nyan233/littlerpc/impl/common"
+	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
@@ -22,8 +23,8 @@ func WithDefaultClient() clientOption {
 		config.ClientConnTimeout = 90 * time.Second
 		config.ClientPPTimeout = 5 * time.Second
 		config.Logger = common.Logger
-		config.Encoder = packet.GetEncoder(protocol.DefaultEncodingType)
-		config.Codec = protocol.GetCodec(protocol.DefaultCodecType)
+		config.Encoder = packet.GetEncoderFromIndex(int(protocol.DefaultEncodingType))
+		config.Codec = codec.GetCodecFromIndex(int(protocol.DefaultCodecType))
 		config.NetWork = "tcp"
 	}
 }
@@ -66,13 +67,13 @@ func WithCallOnErr(fn func(err error)) clientOption {
 
 func WithClientEncoder(scheme string) clientOption {
 	return func(config *Config) {
-		config.Encoder = packet.GetEncoder(scheme)
+		config.Encoder = packet.GetEncoderFromScheme(scheme)
 	}
 }
 
 func WithClientCodec(scheme string) clientOption {
 	return func(config *Config) {
-		config.Codec = protocol.GetCodec(scheme)
+		config.Codec = codec.GetCodecFromScheme(scheme)
 	}
 }
 

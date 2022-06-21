@@ -11,12 +11,11 @@ import (
 	"time"
 )
 
-func (c *Client) handleProcessRetErr(msg *protocol.Message, i interface{}) (interface{}, error) {
+func (c *Client) handleProcessRetErr(errBytes []byte, i interface{}) (interface{}, error) {
 	//单独处理返回的错误类型
-	errBytes := msg.Body[len(msg.Body)-1]
 	//处理最后返回的Error
 	i, _ = lreflect.ToTypePtr(i)
-	err := c.codec.UnmarshalError(errBytes, i)
+	err := c.codecWp.Instance().UnmarshalError(errBytes, i)
 	if err != nil {
 		return nil, err
 	}
@@ -30,52 +29,66 @@ func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, method reflect.Val
 	// 接收服务器返回的调用结果并将header反序列化
 	buffer, err := c.conn.RecvData()
 	// read header
-	msg.ResetAll()
-	err = msg.DecodeHeader(buffer)
+	c.mop.Reset(msg,false,false,true,4096)
+	payloadStart,err := c.mop.UnmarshalHeader(msg,buffer)
 	if err != nil {
 		return err
 	}
 	// 处理服务器的错误返回
-	if msg.Header.MsgType == protocol.MessageErrorReturn {
-		return errors.New(string(buffer[msg.BodyStart:]))
+	if msg.GetMsgType() == protocol.MessageErrorReturn {
+		return errors.New(string(buffer[payloadStart:]))
 	}
+	msg.Payloads = buffer[payloadStart:]
 	// TODO : Client Handle Ping&Pong
-	buffer, err = c.encoder.UnPacket(buffer[msg.BodyStart:])
-	if err != nil {
-		return err
-	}
-	// response body 不encoding/json来反序列化
-	msg.DecodeBodyFromBodyBytes(buffer)
-	if err != nil {
-		return err
-	}
-	// 处理服务端传回的参数
-	outputTypeList := lreflect.FuncOutputTypeList(method, false)
-	for k, v := range msg.Body[:len(msg.Body)-1] {
-		eface := outputTypeList[k]
-		returnV, err := internal.CheckCoderType(c.codec, v, eface)
+	// encoder类型为text时不需要额外的内存拷贝
+	// 默认的encoder即text
+	if msg.GetEncoderType() != protocol.DefaultEncodingType {
+		buffer, err = c.encoderWp.Instance().UnPacket(msg.Payloads)
 		if err != nil {
 			return err
 		}
-		*rep = append(*rep, returnV)
+		msg.Payloads = append(msg.Payloads[:0],buffer...)
 	}
-	// 处理返回值列表中最后的error
-	returnV, err := c.handleProcessRetErr(msg, outputTypeList[len(outputTypeList)-1])
+	// 处理服务端传回的参数
+	outputTypeList := lreflect.FuncOutputTypeList(method, false)
+	var i int
+	c.mop.RangePayloads(msg,msg.Payloads, func(p []byte,endBefore bool) bool {
+		eface := outputTypeList[i]
+		var returnV interface{}
+		var err2 error
+		if !endBefore {
+			returnV, err2 = internal.CheckCoderType(c.codecWp.Instance(), p, eface)
+			if err2 != nil {
+				err = err2
+				return false
+			}
+		} else {
+			// 处理返回值列表中最后的error
+			returnV, err2 = c.handleProcessRetErr(p, outputTypeList[len(outputTypeList)-1])
+			if err2 != nil {
+				err = err2
+				return false
+			}
+		}
+		*rep = append(*rep, returnV)
+		i++
+		return true
+	})
 	if err != nil {
 		return err
 	}
-	*rep = append(*rep, returnV)
 	return nil
 }
 
 // return method
 func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, args []interface{}) (reflect.Value, error) {
-	msg.Header.MethodName = processName
 	methodData := strings.SplitN(processName, ".", 2)
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
 		panic("the illegal type name and method name")
 	}
-	method, ok := c.elem.Methods[methodData[1]]
+	msg.SetInstanceName(methodData[0])
+	msg.SetMethodName(methodData[1])
+	method, ok := c.elem.Methods[msg.MethodName]
 	if !ok {
 		panic("the method no register or is private method")
 	}
@@ -89,39 +102,38 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 				panic("multiple pointer no support")
 			}
 		}
-		err := msg.Encode(c.codec, v)
+		bytes,err := c.codecWp.Instance().Marshal(v)
 		if err != nil {
 			return reflect.ValueOf(nil), err
 		}
+		msg.AppendPayloads(bytes)
 	}
 	return method, nil
 }
 
 func (c *Client) sendCallMsg(msg *protocol.Message) error {
 	// init header
-	msg.Header.MsgId = rand.Int63()
-	msg.Header.MsgType = protocol.MessageCall
-	msg.Header.Timestamp = time.Now().Unix()
-	msg.Header.Encoding = c.encoder.Scheme()
-	msg.Header.CodecType = c.codec.Scheme()
+	msg.SetMsgId(rand.Uint64())
+	msg.SetMsgType(protocol.MessageCall)
+	msg.SetTimestamp(uint64(time.Now().Unix()))
+	msg.SetCodecType(uint8(c.codecWp.Index()))
+	msg.SetEncoderType(uint8(c.encoderWp.Index()))
 	// request body
 	memBuffer := c.memPool.Get().(*[]byte)
 	*memBuffer = (*memBuffer)[:0]
 	defer c.memPool.Put(memBuffer)
 	// write header
-	*memBuffer = append(*memBuffer, msg.EncodeHeader()...)
-	bodyStart := len(*memBuffer)
-	for _, v := range msg.Body {
-		*memBuffer = append(*memBuffer, v...)
+	// encoder类型为text不需要额外拷贝内存
+	if c.encoderWp.Index() != int(protocol.DefaultEncodingType) {
+		bodyBytes, err := c.encoderWp.Instance().EnPacket(msg.Payloads)
+		if err != nil {
+			return err
+		}
+		msg.Payloads = append(msg.Payloads[:0],bodyBytes...)
 	}
-	bodyBytes, err := c.encoder.EnPacket((*memBuffer)[bodyStart:])
-	if err != nil {
-		return err
-	}
-	// write body
-	*memBuffer = append((*memBuffer)[:bodyStart], bodyBytes...)
+	c.mop.MarshalAll(msg,memBuffer)
 	// write data
-	_, err = c.conn.SendData(*memBuffer)
+	_, err := c.conn.SendData(*memBuffer)
 	if err != nil {
 		return err
 	}

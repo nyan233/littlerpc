@@ -5,6 +5,7 @@ import (
 	"github.com/nyan233/littlerpc/impl/common"
 	"github.com/nyan233/littlerpc/impl/transport"
 	"github.com/nyan233/littlerpc/middle/balance"
+	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/middle/resolver"
 	"github.com/nyan233/littlerpc/protocol"
@@ -28,10 +29,12 @@ type Client struct {
 	conn transport.ClientTransport
 	// 简单的内存池
 	memPool sync.Pool
-	// 字节流编码器
-	encoder packet.Encoder
-	// 结构化数据编码器
-	codec protocol.Codec
+	// 字节流编码器包装器
+	encoderWp packet.Wrapper
+	// 结构化数据编码器包装器
+	codecWp codec.Wrapper
+	// 更好的操作protocol.Message的一套接口
+	mop protocol.MessageOperation
 }
 
 func OpenBalance(scheme, url string, updateT time.Duration) error {
@@ -88,10 +91,12 @@ func NewClient(opts ...clientOption) (*Client, error) {
 			return &tmp
 		},
 	}
-	// encoder
-	client.encoder = config.Encoder
+	// encoderWp
+	client.encoderWp = config.Encoder
 	// codec
-	client.codec = config.Codec
+	client.codecWp = config.Codec
+	// init message operations
+	client.mop = protocol.NewMessageOperation()
 	return client, nil
 }
 
@@ -123,7 +128,7 @@ func (c *Client) BindFunc(i interface{}) error {
 func (c *Client) Call(processName string, args ...interface{}) (rep []interface{}, sErr error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	msg := &protocol.Message{}
+	msg := protocol.NewMessage()
 	method, err := c.identArgAndEncode(processName, msg, args)
 	if err != nil {
 		return nil, err
