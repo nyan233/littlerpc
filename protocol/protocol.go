@@ -1,162 +1,318 @@
 package protocol
 
 import (
-	"bytes"
+	"encoding/binary"
 	"errors"
-	"reflect"
-	"strconv"
-	"sync"
+	"unsafe"
+)
+
+const (
+	MagicNumber   uint8 = 0x45
+	MessageCall   uint8 = 0x10
+	MessageReturn uint8 = 0x18
+	// MessageErrorReturn 调用因某种原因失败的返回
+	MessageErrorReturn uint8 = 0x26
+	// MessagePing Ping消息
+	MessagePing uint8 = 0x33
+	// MessagePong Pong消息
+	MessagePong uint8 = 0x35
+
+	DefaultEncodingType uint8 = 0 // text == json
+	DefaultCodecType    uint8 = 0 // encoding == text
 )
 
 var (
-	MessageHeaderNField = reflect.TypeOf(Header{}).NumField()
+	FourBytesPadding  = []byte{0, 0, 0, 0}
+	EightBytesPadding = []byte{0, 0, 0, 0, 0, 0, 0, 0}
 )
 
-// Message 是对一次RPC调用传递的数据的描述
-// 封装的方法均不是线程安全的
-// DecodeHeader会修改一些内部值，调用时需要注意顺序
+type Reset interface {
+	Reset()
+}
+
+// MessageOperation 注意: 该接口主要作为操作Message的拓展功能
+type MessageOperation interface {
+	// UnmarshalHeader 从字节Slice中解码出header，并返回载荷数据的起始地址
+	UnmarshalHeader(msg *Message, p []byte) (payloadStart int, err error)
+	// RangePayloads 根据头提供的信息逐个遍历所有载荷数据
+	// endAf指示是否是payloads中最后一个参数
+	RangePayloads(msg *Message, p []byte, fn func(p []byte,endBefore bool) bool)
+	// MarshalHeader 根据Msg Header编码出对应的字节Slice
+	MarshalHeader(msg *Message, p *[]byte)
+	// MarshalAll 序列化Header&Payloads
+	MarshalAll(msg *Message,p *[]byte)
+	// SetMetaData 设置对应的元数据
+	SetMetaData(msg *Message, key, value string)
+	// RangeMetaData 遍历所有元数据
+	RangeMetaData(msg *Message, fn func(key string, value string))
+	// Reset 指定策略的复用，对内存重用更加友好
+	// resetOther指示是否释放|Scope|NameLayout|InstanceName|MethodName|MsgId|Timestamp
+	// freeMetaData指示是否要释放存放元数据对应的map[string]sting
+	// usePayload指示是否要复用载荷数据
+	// useSize指示复用的slice类型长度的上限，即使指定了usePayload
+	// payload数据超过这个长度还是会被释放
+	Reset(msg *Message, resetOther,freeMetaData, usePayload bool, useSize int)
+}
+
+func NewMessageOperation() MessageOperation {
+	return &messageOperationImpl{}
+}
+
+func NewMessage() *Message {
+	return &Message{
+		MetaData:      map[string]string{},
+		PayloadLayout: make([]uint64, 0, 2),
+		Payloads:      nil,
+	}
+}
+
+//	Message 是对一次RPC调用传递的数据的描述
+//	封装的方法均不是线程安全的
+//	DecodeHeader会修改一些内部值，调用时需要注意顺序
+//	为了使用一致性的API，在访问内部一些简单的属性时，请使用Getxx方法
+//	在设置一些值的过程中可能需要调整其它值，所以请使用Setxx方法
 type Message struct {
-	Header    Header
-	bodyIndex int
-	BodyStart int
-	Body      [][]byte
+	// int/uint数值统一使用大端序
+	//	[0] == Magic (魔数，表示这是由littlerpc客户端发起或者服务端回复)
+	//	[1] == MsgType (call/return & ping/pong)
+	//	[2] == Encoding (default text/gzip)
+	//	[3] == CodecType (default json)
+	Scope [4]uint8
+	// 实例名和调用方法名的布局
+	//	InstanceName-Size|MethodName-Size
+	NameLayout [2]uint32
+	// 实例名
+	InstanceName string
+	// 要调用的方法名
+	MethodName string
+	// 消息ID，用于跟踪等用途
+	MsgId uint64
+	// 生成该消息的时间戳,精确到毫秒
+	Timestamp uint64
+	// 有戏载荷和元数据的范围
+	// 元数据的布局
+	//	NMetaData(4 Byte)|Key-Size(4 Byte)|Value-Size(4 Byte)|Key|Size
+	// Example :
+	//	"hello":"world","world:hello"
+	// OutPut:
+	//	0x00000002|0x00000005|0x00000005|hello|world|0x00000005|0x00000005|world|hello
+	MetaData map[string]string
+	// 有效载荷数据的布局描述
+	// Format :
+	//	NArgs(4 Byte)|Arg1-Size(4 Byte)|Arg2-Size(4 Byte)|Arg3-Size(4 Byte)
+	// Example :
+	//	{"mypyload1":"haha"},{"mypyload2":"hehe"}
+	// OutPut:
+	//	0x00000002|0x00000014|0x00000014
+	PayloadLayout []uint64
+	Payloads      []byte
 }
 
-func (m *Message) DecodeHeader(data []byte) error {
-	header := &m.Header
-	headerBytes := bytes.SplitN(data, []byte{';'}, MessageHeaderNField)
-	if len(headerBytes) != MessageHeaderNField {
-		return errors.New("header format error")
+func (m *Message) GetCodecType() uint8 {
+	return m.Scope[3]
+}
+
+func (m *Message) GetEncoderType() uint8 {
+	return m.Scope[2]
+}
+
+func (m *Message) GetMsgType() uint8 {
+	return m.Scope[1]
+}
+
+func (m *Message) GetInstanceName() string {
+	return m.InstanceName
+}
+
+func (m *Message) GetMethodName() string {
+	return m.MethodName
+}
+
+func (m *Message) GetTimestamp() uint64 {
+	return m.Timestamp
+}
+
+func (m *Message) SetMsgId(id uint64) {
+	m.MsgId = id
+}
+
+func (m *Message) SetCodecType(codecType uint8) {
+	m.Scope[3] = codecType
+}
+
+func (m *Message) SetEncoderType(encoderTyp uint8) {
+	m.Scope[2] = encoderTyp
+}
+
+func (m *Message) SetMsgType(msgTyp uint8) {
+	m.Scope[1] = msgTyp
+}
+
+func (m *Message) SetInstanceName(instanceName string) {
+	m.NameLayout[0] = uint32(len(instanceName))
+	m.InstanceName = instanceName
+}
+
+func (m *Message) SetMethodName(methodName string) {
+	m.NameLayout[1] = uint32(len(methodName))
+	m.MethodName = methodName
+}
+
+func (m *Message) SetTimestamp(t uint64) {
+	m.Timestamp = t
+}
+
+func (m *Message) AppendPayloads(p []byte) {
+	m.Payloads = append(m.Payloads,p...)
+	m.PayloadLayout = append(m.PayloadLayout,uint64(len(p)))
+}
+
+// Reset 给内存复用的操作提供一致性的语义
+func (m *Message) Reset() {
+	m.PayloadLayout = nil
+	m.Payloads = nil
+	*(*uint32)(unsafe.Pointer(&m.Scope)) = 0
+	m.InstanceName = ""
+	m.MethodName = ""
+	m.MsgId = 0
+	m.Timestamp = 0
+	m.MetaData = nil
+	m.PayloadLayout = nil
+	m.Payloads = nil
+}
+
+type messageOperationImpl struct{}
+
+func (m messageOperationImpl) UnmarshalHeader(msg *Message, p []byte) (payloadStart int, err error) {
+	*(*uint32)(unsafe.Pointer(&msg.Scope)) = *(*uint32)(unsafe.Pointer(&p[0]))
+	if msg.Scope[0] != MagicNumber {
+		return -1,errors.New("not littlerpc protocol")
 	}
-	header.MsgType = string(headerBytes[0])
-	header.Encoding = string(headerBytes[1])
-	header.CodecType = string(headerBytes[2])
-	header.MethodName = string(headerBytes[3])
-	msgId, err := strconv.ParseInt(string(headerBytes[4]), 10, 64)
-	if err != nil {
-		return err
-	}
-	timeStamp, err := strconv.ParseInt(string(headerBytes[5]), 10, 64)
-	if err != nil {
-		return err
-	}
-	nBodyOffset, err := strconv.ParseInt(string(headerBytes[6]), 10, 64)
-	if err != nil {
-		return err
-	}
-	header.MsgId = msgId
-	header.Timestamp = timeStamp
-	header.NBodyOffset = nBodyOffset
-	var headerLen int
-	for i := 0; i < MessageHeaderNField-1; i++ {
-		headerLen += len(headerBytes[i])
-	}
-	m.BodyStart = headerLen + (MessageHeaderNField - 1)
-	// get body all offset
-	bodyAllOffset := bytes.SplitN(headerBytes[7], []byte{';'}, int(header.NBodyOffset)+1)
-	for _, v := range bodyAllOffset[:len(bodyAllOffset)-1] {
-		m.BodyStart += len(v) + 1
-		offset, err := strconv.ParseInt(string(v), 10, 64)
-		if err != nil {
-			return err
+	msg.NameLayout[0] = binary.BigEndian.Uint32(p[4:8])
+	msg.NameLayout[1] = binary.BigEndian.Uint32(p[8:12])
+	payloadStart += 12 + int(msg.NameLayout[0]) + int(msg.NameLayout[1])
+	msg.InstanceName = string(p[12 : 12+msg.NameLayout[0]])
+	msg.MethodName = string(p[12+msg.NameLayout[0] : payloadStart])
+	msg.MsgId = binary.BigEndian.Uint64(p[payloadStart : payloadStart+8])
+	msg.Timestamp = binary.BigEndian.Uint64(p[payloadStart+8 : payloadStart+16])
+	payloadStart += 16
+	// 有多少个元数据
+	nMetaData := binary.BigEndian.Uint32(p[payloadStart:])
+	payloadStart += 4
+	for i := 0; i < int(nMetaData); i++ {
+		keySize := binary.BigEndian.Uint32(p[payloadStart : payloadStart+4])
+		valueSize := binary.BigEndian.Uint32(p[payloadStart+4 : payloadStart+8])
+		if msg.MetaData == nil {
+			msg.MetaData = make(map[string]string)
 		}
-		header.BodyAllOffset = append(header.BodyAllOffset, int(offset))
+		kss := payloadStart + 8
+		vss := payloadStart + 8 + int(keySize)
+		msg.MetaData[string(p[kss:vss])] = string(p[vss : vss+int(valueSize)])
+		payloadStart += int(keySize+valueSize) + 8
 	}
-	return nil
+	nArgs := binary.BigEndian.Uint32(p[payloadStart:])
+	payloadStart += 4
+	for i := 0; i < int(nArgs); i++ {
+		argsSize := binary.BigEndian.Uint64(p[payloadStart:])
+		msg.PayloadLayout = append(msg.PayloadLayout, argsSize)
+		payloadStart += 8
+	}
+	return payloadStart, nil
 }
 
-func (m *Message) EncodeHeader() []byte {
-	header := &m.Header
-	buffer := make([]byte, 0, 128)
-	headerTmp := make([][]byte, 0, 16)
-	headerTmp = append(headerTmp, []byte(header.MsgType))
-	headerTmp = append(headerTmp, []byte(header.Encoding))
-	headerTmp = append(headerTmp, []byte(header.CodecType))
-	headerTmp = append(headerTmp, []byte(header.MethodName))
-	headerTmp = append(headerTmp, []byte(strconv.FormatInt(header.MsgId, 10)))
-	headerTmp = append(headerTmp, []byte(strconv.FormatInt(header.Timestamp, 10)))
-	headerTmp = append(headerTmp, []byte(strconv.FormatInt(header.NBodyOffset, 10)))
-	for _, v := range headerTmp {
-		buffer = append(buffer, v...)
-		buffer = append(buffer, ';')
-	}
-	for _, v := range m.Body {
-		header.BodyAllOffset = append(header.BodyAllOffset, len(v))
-	}
-	for _, v := range header.BodyAllOffset {
-		buffer = append(buffer, strconv.FormatInt(int64(v), 10)...)
-		buffer = append(buffer, ';')
-	}
-	return buffer
-}
-
-func (m *Message) EncodeHeaderFormBufferPool(bp *[]byte) {
-	*bp = append(*bp,m.EncodeHeader()...)
-}
-
-func (m *Message) EncodeHeaderAndBodyFromBufferPool(pool *sync.Pool) *[]byte {
-	bp := pool.Get().(*[]byte)
-	*bp = (*bp)[:0]
-	*bp = append(*bp,m.EncodeHeader()...)
-	for _,v := range m.Body {
-		*bp = append(*bp,v...)
-	}
-	return bp
-}
-
-
-func (m *Message) EncodeBodyFormBufferPool(bp *[]byte) {
-	for _,v := range m.Body {
-		*bp = append(*bp,v...)
+func (m messageOperationImpl) RangePayloads(msg *Message, p []byte, fn func(p []byte,endBefore bool) bool) {
+	var i int
+	nPayload := len(msg.PayloadLayout)
+	for k,v := range msg.PayloadLayout {
+		endAf := false
+		if k == nPayload - 1 {
+			endAf = true
+		}
+		if !fn(p[i : i+int(v)],endAf) {
+			return
+		}
+		i += int(v)
 	}
 }
 
-func (m *Message) DecodeBodyFromBytes(data []byte) {
-	data = data[m.BodyStart:]
-	var offset int
-	for _, v := range m.Header.BodyAllOffset {
-		m.Body = append(m.Body, data[:offset+v])
+func (m messageOperationImpl) MarshalHeader(msg *Message, p *[]byte) {
+	*p = (*p)[:0]
+	// 设置魔数值
+	msg.Scope[0] = MagicNumber
+	*p = append(*p, msg.Scope[:]...)
+	*p = append(*p, FourBytesPadding...)
+	binary.BigEndian.PutUint32((*p)[len(*p)-4:], msg.NameLayout[0])
+	*p = append(*p, FourBytesPadding...)
+	binary.BigEndian.PutUint32((*p)[len(*p)-4:], msg.NameLayout[1])
+	*p = append(*p, msg.InstanceName...)
+	*p = append(*p, msg.MethodName...)
+	*p = append(*p, EightBytesPadding...)
+	binary.BigEndian.PutUint64((*p)[len(*p)-8:], msg.MsgId)
+	*p = append(*p, EightBytesPadding...)
+	binary.BigEndian.PutUint64((*p)[len(*p)-8:], msg.Timestamp)
+	// 序列化元数据
+	*p = append(*p, FourBytesPadding...)
+	binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(msg.MetaData)))
+	for k, v := range msg.MetaData {
+		*p = append(*p, FourBytesPadding...)
+		binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(k)))
+		*p = append(*p, FourBytesPadding...)
+		binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(v)))
+		*p = append(*p, k...)
+		*p = append(*p, v...)
+	}
+	// 序列化载荷数据描述信息
+	*p = append(*p, FourBytesPadding...)
+	binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(msg.PayloadLayout)))
+	for _, v := range msg.PayloadLayout {
+		*p = append(*p, EightBytesPadding...)
+		binary.BigEndian.PutUint64((*p)[len(*p)-8:], v)
 	}
 }
 
-func (m *Message) DecodeBodyFromBodyBytes(data []byte) {
-	var offset int
-	for _, v := range m.Header.BodyAllOffset {
-		m.Body = append(m.Body, data[offset:offset+v])
-		offset += v
+func (m messageOperationImpl) MarshalAll(msg *Message, p *[]byte) {
+	m.MarshalHeader(msg,p)
+	*p = append(*p,msg.Payloads...)
+}
+
+func (m messageOperationImpl) SetMetaData(msg *Message, key, value string) {
+	if msg.MetaData == nil {
+		msg.MetaData = make(map[string]string)
+	}
+	msg.MetaData[key] = value
+}
+
+func (m messageOperationImpl) RangeMetaData(msg *Message, fn func(key string, value string)) {
+	if msg.MetaData == nil {
+		return
+	}
+	for k, v := range msg.MetaData {
+		fn(k, v)
 	}
 }
 
-func (m *Message) Encode(codec Codec, i interface{}) error {
-	marshal, err := codec.Marshal(i)
-	if err != nil {
-		return err
+func (m messageOperationImpl) Reset(msg *Message, resetOther,freeMetaData, usePayload bool, useSize int) {
+	if freeMetaData {
+		msg.MetaData = nil
 	}
-	m.Header.NBodyOffset++
-	m.Body = append(m.Body, marshal)
-	return nil
-}
-
-func (m *Message) DecodeRaw(p []byte) {
-	m.Header.NBodyOffset++
-	m.Body = append(m.Body, p)
-}
-
-func (m *Message) Decode(codec Codec, i interface{}) error {
-	m.bodyIndex++
-	return codec.Unmarshal(m.Body[m.bodyIndex-1], i)
-}
-
-func (m *Message) ResetBody() {
-	m.bodyIndex = 0
-	m.Body = nil
-}
-
-func (m *Message) ResetHeader() {
-	m.Header = Header{}
-}
-
-func (m *Message) ResetAll() {
-	m.ResetHeader()
-	m.ResetBody()
+	if len(msg.PayloadLayout) > useSize {
+		msg.PayloadLayout = nil
+	} else {
+		msg.PayloadLayout = msg.PayloadLayout[:0]
+	}
+	if !usePayload {
+		msg.Payloads = nil
+	} else if usePayload && len(msg.Payloads) > useSize {
+		msg.Payloads = nil
+	} else {
+		msg.Payloads = msg.Payloads[:0]
+	}
+	if resetOther {
+		*(*uint32)(unsafe.Pointer(&msg.Scope)) = 0
+		*(*uint64)(unsafe.Pointer(&msg.NameLayout)) = 0
+		msg.MsgId = 0
+		msg.Timestamp = 0
+		msg.InstanceName = ""
+		msg.MethodName = ""
+	}
 }
