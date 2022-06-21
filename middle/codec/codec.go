@@ -1,8 +1,9 @@
-package protocol
+package codec
 
 import (
 	"encoding/json"
 	"errors"
+	"github.com/nyan233/littlerpc/protocol"
 	"sync"
 )
 
@@ -18,33 +19,37 @@ type Codec interface {
 
 var (
 	manager = &codecManager{
-		codecCollection: map[string]Codec{},
-		indexCodecCollection: []Codec{},
+		codecCollection: map[string]Wrapper{},
+		indexCodecCollection: []Wrapper{},
 	}
 )
 
 type codecManager struct {
 	mu sync.Mutex
-	codecCollection map[string]Codec
-	indexCodecCollection []Codec
+	codecCollection map[string]Wrapper
+	indexCodecCollection []Wrapper
 }
 
 func (m *codecManager) registerCodec(c Codec) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.codecCollection[c.Scheme()] = c
-	m.indexCodecCollection = append(m.indexCodecCollection,c)
+	wrapper := newCodecWrapper(len(m.indexCodecCollection),c)
+	m.codecCollection[c.Scheme()] = wrapper
+	m.indexCodecCollection = append(m.indexCodecCollection,wrapper)
 }
 
-func (m *codecManager) getCodecFromScheme(scheme string) Codec {
+func (m *codecManager) getCodecFromScheme(scheme string) Wrapper {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.codecCollection[scheme]
 }
 
-func (m *codecManager) getCodecFromIndex(index int) Codec {
+func (m *codecManager) getCodecFromIndex(index int) Wrapper {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if index >= len(m.indexCodecCollection) {
+		return nil
+	}
 	return m.indexCodecCollection[index]
 }
 
@@ -54,12 +59,12 @@ func RegisterCodec(c Codec) {
 }
 
 // GetCodecFromScheme 该调用是线程安全的
-func GetCodecFromScheme(scheme string) Codec {
+func GetCodecFromScheme(scheme string) Wrapper {
 	return manager.getCodecFromScheme(scheme)
 }
 
-// GetCodecFromIndex 该调用是线程安全的
-func GetCodecFromIndex(index int) Codec {
+// GetCodecFromIndex 该调用是线程安全的,且可以安全的使用任何数值来作为索引
+func GetCodecFromIndex(index int) Wrapper {
 	return manager.getCodecFromIndex(index)
 }
 
@@ -83,7 +88,7 @@ func (j JsonCodec) UnmarshalError(data []byte, v interface{}) error {
 		return nil
 	}
 	switch v.(type) {
-	case *Error:
+	case *protocol.Error:
 		return json.Unmarshal(data, v)
 	case *error:
 		var str string
@@ -100,7 +105,7 @@ func (j JsonCodec) UnmarshalError(data []byte, v interface{}) error {
 
 func (j JsonCodec) MarshalError(v interface{}) ([]byte, error) {
 	switch v.(type) {
-	case *Error:
+	case *protocol.Error:
 		return json.Marshal(v)
 	case error:
 		var str = v.(error).Error()
