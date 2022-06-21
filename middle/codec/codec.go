@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/json"
 	"errors"
+	"sync"
 )
 
 type Codec interface {
@@ -16,17 +17,50 @@ type Codec interface {
 }
 
 var (
-	codecCollection = make(map[string]Codec)
+	manager = &codecManager{
+		codecCollection: map[string]Codec{},
+		indexCodecCollection: []Codec{},
+	}
 )
 
-// RegisterCodec 该调用不是线程安全的
-func RegisterCodec(c Codec) {
-	codecCollection[c.Scheme()] = c
+type codecManager struct {
+	mu sync.Mutex
+	codecCollection map[string]Codec
+	indexCodecCollection []Codec
 }
 
-// GetCodec 该调用不是线程安全的
-func GetCodec(scheme string) Codec {
-	return codecCollection[scheme]
+func (m *codecManager) registerCodec(c Codec) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.codecCollection[c.Scheme()] = c
+	m.indexCodecCollection = append(m.indexCodecCollection,c)
+}
+
+func (m *codecManager) getCodecFromScheme(scheme string) Codec {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.codecCollection[scheme]
+}
+
+func (m *codecManager) getCodecFromIndex(index int) Codec {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.indexCodecCollection[index]
+}
+
+// RegisterCodec 该调用是线程安全的
+func RegisterCodec(c Codec) {
+	manager.registerCodec(c)
+}
+
+// GetCodecFromScheme 该调用是线程安全的
+func GetCodecFromScheme(scheme string) Codec {
+	return manager.getCodecFromScheme(scheme)
+}
+
+// GetCodecFromIndex 该调用是线程安全的
+func GetCodecFromIndex(index int) Codec {
+	return manager.getCodecFromIndex(index)
 }
 
 type JsonCodec struct{}
