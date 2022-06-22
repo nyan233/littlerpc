@@ -28,6 +28,9 @@ func (c *Client) handleProcessRetErr(errBytes []byte, i interface{}) (interface{
 func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, method reflect.Value, rep *[]interface{}) error {
 	// 接收服务器返回的调用结果并将header反序列化
 	buffer, err := c.conn.RecvData()
+	if err != nil {
+		return err
+	}
 	// read header
 	c.mop.Reset(msg,false,false,true,4096)
 	payloadStart,err := c.mop.UnmarshalHeader(msg,buffer)

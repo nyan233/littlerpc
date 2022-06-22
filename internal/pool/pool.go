@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	MaxTaskPoolSize = 1024 * 1024 * 1024
+	MaxTaskPoolSize = 1024 * 1024
 	MaxDelay        = time.Nanosecond * 100000
 	MinDelay        = time.Nanosecond * 10
 )
