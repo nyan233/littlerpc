@@ -50,7 +50,7 @@ func wsOnMessage(conn ServerConnAdapter, data []byte) {
 func TestWebSocketTransport(t *testing.T) {
 	config := nbhttp.Config{
 		Network:                 "tcp",
-		Addrs:                   []string{":1234"},
+		Addrs:                   []string{":25564"},
 		NPoller:                 runtime.NumCPU() * 4,
 		ReleaseWebsocketPayload: true,
 	}
@@ -65,7 +65,7 @@ func TestWebSocketTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	client, err := NewWebSocketTransClient(nil, ":1234")
+	client, err := NewWebSocketTransClient(nil, ":25564")
 	if err != nil {
 		t.Fatal(err)
 	}

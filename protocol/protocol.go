@@ -211,6 +211,11 @@ func (m messageOperationImpl) UnmarshalHeader(msg *Message, p []byte) (payloadSt
 		payloadStart += int(keySize+valueSize) + 8
 	}
 	nArgs := binary.BigEndian.Uint32(p[payloadStart:])
+	// 为了保证更好的反序列化体验，如果不将layout置0的话
+	// 会导致与Marshal/Unmarshal的结果重叠
+	if msg.PayloadLayout != nil {
+		msg.PayloadLayout = msg.PayloadLayout[:0]
+	}
 	payloadStart += 4
 	for i := 0; i < int(nArgs); i++ {
 		argsSize := binary.BigEndian.Uint64(p[payloadStart:])
