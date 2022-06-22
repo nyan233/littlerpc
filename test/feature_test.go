@@ -143,7 +143,10 @@ func TestTlsConnect(t *testing.T) {
 }
 
 func TestBalance(t *testing.T) {
-	server := lserver.NewServer(lserver.WithAddressServer("127.0.0.1:9090", "127.0.0.1:8080"))
+	// 关闭服务器烦人的日志
+	common.SetOpenLogger(false)
+	server := lserver.NewServer(lserver.WithAddressServer("127.0.0.1:9090", "127.0.0.1:8080"),
+		lserver.WithOpenLogger(false))
 	err := server.Elem(new(HelloTest))
 	if err != nil {
 		t.Fatal(err)

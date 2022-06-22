@@ -28,8 +28,6 @@ func TestHashBalance(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	t.Log(len(addrs))
-	t.Log(len(countMap))
 }
 
 func TestRoundRobin(t *testing.T) {
@@ -51,6 +49,4 @@ func TestRoundRobin(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	t.Log(len(addrs))
-	t.Log(len(countMap))
 }

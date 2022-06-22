@@ -3,6 +3,7 @@ package transport
 import (
 	"github.com/lesismal/nbio"
 	"github.com/lesismal/nbio/nbhttp"
+	"github.com/nyan233/littlerpc/impl/common"
 	"runtime"
 	"testing"
 )
@@ -12,6 +13,8 @@ func tcpOnMessage(conn ServerConnAdapter, data []byte) {
 }
 
 func TestTcpTransport(t *testing.T) {
+	// 关闭服务器烦人的日志
+	common.SetOpenLogger(false)
 	config := nbio.Config{
 		Network: "tcp",
 		Addrs:   []string{":1234"},
@@ -36,11 +39,10 @@ func TestTcpTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := client.RecvData()
+	_, err = client.RecvData()
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log(string(data))
 }
 
 func wsOnMessage(conn ServerConnAdapter, data []byte) {
@@ -48,6 +50,8 @@ func wsOnMessage(conn ServerConnAdapter, data []byte) {
 }
 
 func TestWebSocketTransport(t *testing.T) {
+	// 关闭服务器烦人的日志
+	common.SetOpenLogger(false)
 	config := nbhttp.Config{
 		Network:                 "tcp",
 		Addrs:                   []string{":25564"},
@@ -74,9 +78,8 @@ func TestWebSocketTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := client.RecvData()
+	_, err = client.RecvData()
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log(string(data))
 }
