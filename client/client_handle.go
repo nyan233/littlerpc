@@ -2,7 +2,7 @@ package client
 
 import (
 	"errors"
-	"github.com/nyan233/littlerpc/impl/internal"
+	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"math/rand"
@@ -60,7 +60,7 @@ func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, method reflect.Val
 		var returnV interface{}
 		var err2 error
 		if !endBefore {
-			returnV, err2 = internal.CheckCoderType(c.codecWp.Instance(), p, eface)
+			returnV, err2 = common.CheckCoderType(c.codecWp.Instance(), p, eface)
 			if err2 != nil {
 				err = err2
 				return false
@@ -87,22 +87,22 @@ func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, method reflect.Val
 func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, args []interface{}) (reflect.Value, error) {
 	methodData := strings.SplitN(processName, ".", 2)
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
-		panic("the illegal type name and method name")
+		panic(interface{}("the illegal type name and method name"))
 	}
 	msg.SetInstanceName(methodData[0])
 	msg.SetMethodName(methodData[1])
 	method, ok := c.elem.Methods[msg.MethodName]
 	if !ok {
-		panic("the method no register or is private method")
+		panic(interface{}("the method no register or is private method"))
 	}
 	for _, v := range args {
-		argType := internal.CheckIType(v)
+		argType := common.CheckIType(v)
 		// 参数为指针类型则找出Elem的类型
 		if argType == protocol.Pointer {
-			argType = internal.CheckIType(reflect.ValueOf(v).Elem().Interface())
+			argType = common.CheckIType(reflect.ValueOf(v).Elem().Interface())
 			// 不支持多重指针的数据结构
 			if argType == protocol.Pointer {
-				panic("multiple pointer no support")
+				panic(interface{}("multiple pointer no support"))
 			}
 		}
 		bytes,err := c.codecWp.Instance().Marshal(v)

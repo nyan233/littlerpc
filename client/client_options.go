@@ -2,7 +2,7 @@ package client
 
 import (
 	"crypto/tls"
-	"github.com/nyan233/littlerpc/impl/common"
+	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"

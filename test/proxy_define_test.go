@@ -3,10 +3,10 @@
 	@CreateTime  : 2022-06-21 01:27:42.687126 +0800 CST m=+0.000631628
 	@Author      : littlerpc-generator
 */
-package test
+package main
 
 import (
-	"github.com/nyan233/littlerpc/impl/client"
+	"github.com/nyan233/littlerpc/client"
 )
 
 type HelloTestInterface interface {
@@ -26,7 +26,7 @@ func NewHelloTestProxy(client *client.Client) HelloTestInterface {
 	proxy := &HelloTestProxy{}
 	err := client.BindFunc(proxy)
 	if err != nil {
-		panic(err)
+		panic(interface{}(err))
 	}
 	proxy.Client = client
 	return proxy

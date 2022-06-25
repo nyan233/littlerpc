@@ -37,7 +37,7 @@ func TestTypeTo(t *testing.T) {
 	// Type No New
 	eface = typeToEfaceNoNew(reflect.TypeOf(*new(int)), 10)
 	if eface != 10 {
-		panic("typeToEfaceNoNew return value failed")
+		panic(interface{}("typeToEfaceNoNew return value failed"))
 	}
 }
 

@@ -3,8 +3,8 @@ package server
 import (
 	"errors"
 	"fmt"
-	"github.com/nyan233/littlerpc/impl/common"
-	"github.com/nyan233/littlerpc/impl/transport"
+	"github.com/nyan233/littlerpc/common"
+	"github.com/nyan233/littlerpc/common/transport"
 	"github.com/nyan233/littlerpc/internal/pool"
 	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"

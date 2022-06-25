@@ -2,7 +2,7 @@ package server
 
 import (
 	"github.com/lesismal/llib/std/crypto/tls"
-	"github.com/nyan233/littlerpc/impl/common"
+	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"

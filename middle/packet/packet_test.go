@@ -29,7 +29,7 @@ func TestText(t *testing.T) {
 	// text encoder并不允许真实的调用
 	defer func() {
 		err := recover()
-		if err == nil {
+		if err == interface{}(nil) {
 			t.Fatal("text encoder call no panic")
 		}
 	}()

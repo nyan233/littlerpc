@@ -16,7 +16,7 @@ func handleAstType(expr ast.Expr, file *os.File) string {
 		buf := []byte{0}
 		_, err := file.ReadAt(buf, int64(pos.Offset))
 		if err != nil {
-			panic(err)
+			panic(interface{}(err))
 		}
 		if buf[0] == '*' {
 			return "*map[" + handleAstType(typ.Key, file) + "]" + handleAstType(typ.Value, file)
@@ -28,7 +28,7 @@ func handleAstType(expr ast.Expr, file *os.File) string {
 		buf := []byte{0}
 		_, err := file.ReadAt(buf, int64(pos.Offset))
 		if err != nil {
-			panic(err)
+			panic(interface{}(err))
 		}
 		if buf[0] == '*' {
 			return "*" + ident.Name
@@ -40,7 +40,7 @@ func handleAstType(expr ast.Expr, file *os.File) string {
 		buf := []byte{0}
 		_, err := file.ReadAt(buf, int64(pos.Offset))
 		if err != nil {
-			panic(err)
+			panic(interface{}(err))
 		}
 		if buf[0] == '*' {
 			return "*" + handleAstType(s.X, file)
@@ -52,7 +52,7 @@ func handleAstType(expr ast.Expr, file *os.File) string {
 		buf := []byte{0}
 		_, err := file.ReadAt(buf, int64(pos.Offset))
 		if err != nil {
-			panic(err)
+			panic(interface{}(err))
 		}
 		if buf[0] == '*' {
 			return "*[]" + handleAstType(at.Elt, file)
@@ -62,7 +62,7 @@ func handleAstType(expr ast.Expr, file *os.File) string {
 		se := expr.(*ast.SelectorExpr)
 		return handleAstType(se.X, file) + "." + handleAstType(se.Sel, file)
 	default:
-		panic("type is no supported")
+		panic(interface{}("type is no supported"))
 	}
 }
 

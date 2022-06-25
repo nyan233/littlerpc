@@ -3,7 +3,7 @@ package transport
 import (
 	"github.com/lesismal/nbio"
 	"github.com/lesismal/nbio/nbhttp"
-	"github.com/nyan233/littlerpc/impl/common"
+	"github.com/nyan233/littlerpc/common"
 	"runtime"
 	"testing"
 )

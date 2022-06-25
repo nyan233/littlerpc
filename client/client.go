@@ -2,8 +2,8 @@ package client
 
 import (
 	"errors"
-	"github.com/nyan233/littlerpc/impl/common"
-	"github.com/nyan233/littlerpc/impl/transport"
+	"github.com/nyan233/littlerpc/common"
+	"github.com/nyan233/littlerpc/common/transport"
 	"github.com/nyan233/littlerpc/middle/balance"
 	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
@@ -67,7 +67,7 @@ func NewClient(opts ...clientOption) (*Client, error) {
 		mu.Lock()
 		balancer := balance.GetBalancer(config.BalanceScheme)
 		if balancer == nil {
-			panic("no balancer scheme")
+			panic(interface{}("no balancer scheme"))
 		}
 		addr := balancer.Target(addrCollection)
 		mu.Unlock()

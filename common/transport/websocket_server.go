@@ -37,7 +37,7 @@ func NewWebSocketServer(tlsC *tls.Config, nConfig nbhttp.Config) ServerTransport
 	server := &WebSocketTransServer{server: nbhttp.NewServer(nConfig)}
 	// set default function
 	server.onErr = func(err error) {
-		panic(err)
+		panic(interface{}(err))
 	}
 	server.onOpen = func(conn ServerConnAdapter) {
 		return

@@ -1,4 +1,4 @@
-package internal
+package common
 
 import (
 	"errors"
@@ -57,7 +57,7 @@ func CheckIType(i interface{}) protocol.Type {
 	case reflect.Interface:
 		return protocol.Interface
 	default:
-		panic("the type error")
+		panic(interface{}("the type error"))
 	}
 }
 

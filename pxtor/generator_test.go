@@ -16,7 +16,7 @@ func TestFutures(t *testing.T) {
 func TestH(t *testing.T) {
 	file, err := os.OpenFile("./test/Test_proxy.go", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
-		panic(err)
+		panic(interface{}(err))
 	}
 	_, _ = file.Write([]byte("hello world!"))
 	_ = os.Remove("./test/Test_proxy.go")

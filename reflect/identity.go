@@ -27,7 +27,7 @@ func IdentArrayOrSliceType(value interface{}) interface{} {
 	}
 	typ := reflect.TypeOf(value)
 	if !(typ.Kind() == reflect.Slice || typ.Kind() == reflect.Array) {
-		panic("value type is not a slice or array")
+		panic(interface{}("value type is not a slice or array"))
 	}
 	val := reflect.ValueOf(value)
 	// 为0则动态创建再判断类型

@@ -3,10 +3,10 @@
 	@CreateTime  : 2022-06-21 12:29:22.462385 +0800 CST m=+0.000873164
 	@Author      : littlerpc-generator
 */
-package test
+package main
 
 import (
-	"github.com/nyan233/littlerpc/impl/client"
+	"github.com/nyan233/littlerpc/client"
 )
 
 type BenchAllocInterface interface {
@@ -23,7 +23,7 @@ func NewBenchAllocProxy(client *client.Client) BenchAllocInterface {
 	proxy := &BenchAllocProxy{}
 	err := client.BindFunc(proxy)
 	if err != nil {
-		panic(err)
+		panic(interface{}(err))
 	}
 	proxy.Client = client
 	return proxy

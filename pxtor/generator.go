@@ -26,7 +26,7 @@ var (
 func main() {
 	flag.Parse()
 	if *receiver == "" {
-		panic("no receiver specified")
+		panic(interface{}("no receiver specified"))
 	}
 	genCode()
 }
@@ -41,12 +41,12 @@ func genCode() {
 	fileSet = token.NewFileSet()
 	parseDir, err := parser.ParseDir(fileSet, *dir, nil, 0)
 	if err != nil {
-		panic(err)
+		panic(interface{}(err))
 	}
 	// 等文件集解析完再打开文件
 	file, err := os.OpenFile(*dir+"/"+*outName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0755)
 	if err != nil {
-		panic(err)
+		panic(interface{}(err))
 	}
 	// ast.Print(fileSet,parseDir[pkgName].Files["test/proxy_2.go"])
 	// 创建
@@ -58,7 +58,7 @@ func genCode() {
 	for k, v := range pkgDir.Files {
 		rawFile, err := os.Open(path.Dir(*dir) + "/" + k)
 		if err != nil {
-			panic(err)
+			panic(interface{}(err))
 		}
 		tmp := getAllFunc(v, rawFile, recvName+"Proxy", func(recvT string) bool {
 			if recvT == recvName {
@@ -82,10 +82,10 @@ func genCode() {
 	}
 	writeN, err := file.Write(fmtBytes)
 	if err != nil {
-		panic(err)
+		panic(interface{}(err))
 	}
 	if writeN != len(fmtBytes) {
-		panic(errors.New("write format bytes no equal"))
+		panic(interface{}(errors.New("write format bytes no equal")))
 	}
 }
 
@@ -178,7 +178,7 @@ func getAllFunc(file *ast.File, rawFile *os.File, proxyRecvName string, filter f
 		sb.WriteString(" {\n\t")
 		// littlerpc规定的合法的过程中至少需要一个error类型的返回值
 		if funcDecl.Type.Results == nil {
-			panic("generate function no return value")
+			panic(interface{}("generate function no return value"))
 		} else {
 			sb.WriteString("inter,err := proxy.Call(")
 		}
@@ -193,7 +193,7 @@ func getAllFunc(file *ast.File, rawFile *os.File, proxyRecvName string, filter f
 		for _,v := range rTypes[:len(rTypes) - 1] {
 			s,err := writeDefaultValue(v)
 			if err != nil {
-				panic(err)
+				panic(interface{}(err))
 			}
 			sb.WriteString(s)
 			sb.WriteString(",")

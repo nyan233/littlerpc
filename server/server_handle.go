@@ -2,8 +2,7 @@ package server
 
 import (
 	"fmt"
-	"github.com/nyan233/littlerpc/impl/common"
-	"github.com/nyan233/littlerpc/impl/internal"
+	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"reflect"
@@ -73,7 +72,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	var e error
 	s.mop.RangePayloads(msg,msg.Payloads, func(p []byte,endBefore bool) bool {
 		eface := inputTypeList[i]
-		callArg, err := internal.CheckCoderType(sArg.Codec, p, eface)
+		callArg, err := common.CheckCoderType(sArg.Codec, p, eface)
 		if err != nil {
 			s.handleError(sArg, msg.MsgId, *common.ErrServer, err.Error())
 			e = err
@@ -90,7 +89,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	}
 	// 验证客户端传来的栈帧中每个参数的类型是否与服务器需要的一致？
 	// receiver(接收器)参与验证
-	ok, noMatch := internal.CheckInputTypeList(callArgs, append([]interface{}{receiver.Interface()}, inputTypeList...))
+	ok, noMatch := common.CheckInputTypeList(callArgs, append([]interface{}{receiver.Interface()}, inputTypeList...))
 	if !ok {
 		if noMatch != nil {
 			s.handleError(sArg, msg.MsgId, *common.ErrCallArgsType,

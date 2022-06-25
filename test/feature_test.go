@@ -1,9 +1,9 @@
-package test
+package main
 
 import (
-	lclient "github.com/nyan233/littlerpc/impl/client"
-	"github.com/nyan233/littlerpc/impl/common"
-	lserver "github.com/nyan233/littlerpc/impl/server"
+	lclient "github.com/nyan233/littlerpc/client"
+	"github.com/nyan233/littlerpc/common"
+	lserver "github.com/nyan233/littlerpc/server"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -54,7 +54,7 @@ func (t *HelloTest) ModifyUser(uid int, user User) (bool, error) {
 }
 
 
-func TestNoTlsConnect(t *testing.T) {
+func TestNoTlsServerAndClient(t *testing.T) {
 	// 关闭服务器烦人的日志
 	common.SetOpenLogger(false)
 	server := lserver.NewServer(
@@ -105,10 +105,10 @@ func TestNoTlsConnect(t *testing.T) {
 				})
 				user, ok, _ := proxy.SelectUser(j + 100)
 				if !ok {
-					panic("the no value")
+					panic(interface{}("the no value"))
 				}
 				if user.Name != "Jeni" {
-					panic("the no value")
+					panic(interface{}("the no value"))
 				}
 				_, _ = proxy.ModifyUser(j+100, User{
 					Id:   j + 100,
@@ -138,9 +138,6 @@ func TestNoTlsConnect(t *testing.T) {
 	}
 }
 
-func TestTlsConnect(t *testing.T) {
-
-}
 
 func TestBalance(t *testing.T) {
 	// 关闭服务器烦人的日志

@@ -59,11 +59,11 @@ func (t TextPacket) Scheme() string {
 }
 
 func (t TextPacket) EnPacket(p []byte) ([]byte, error) {
-	panic("text packet not able call")
+	panic(interface{}("text packet not able call"))
 }
 
 func (t TextPacket) UnPacket(p []byte) ([]byte, error) {
-	panic("text packet not able call")
+	panic(interface{}("text packet not able call"))
 }
 
 // RegisterEncoder 该调用是线程安全的

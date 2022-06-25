@@ -1,9 +1,9 @@
-package test
+package main
 
 import (
-	"github.com/nyan233/littlerpc/impl/client"
-	"github.com/nyan233/littlerpc/impl/common"
-	"github.com/nyan233/littlerpc/impl/server"
+	"github.com/nyan233/littlerpc/client"
+	"github.com/nyan233/littlerpc/common"
+	"github.com/nyan233/littlerpc/server"
 	"math/rand"
 	"testing"
 )

@@ -30,7 +30,7 @@ func NewTcpTransServer(tlsC *tls.Config, nConfig nbio.Config) ServerTransportBui
 	server.server = eng
 	// set default function
 	server.onErr = func(err error) {
-		panic(err)
+		panic(interface{}(err))
 	}
 	server.onMsg = func(conn ServerConnAdapter, bytes []byte) {
 		return
