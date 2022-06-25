@@ -1,0 +1,26 @@
+name: Analyse
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  mutli-system-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest,macos-latest]
+        go_version: ["1.17","1.18"]
+    runs-on: ${{matrix.os}}
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{matrix.go_version}}
+      - name: CheckOut Code
+        uses: actions/checkout@v2
+      - name: Lint
+        run:  echo go-lint-analyse
+      - name: Cycle
+        run:  echo go-cycle-analyse
