@@ -60,7 +60,7 @@ func genCode() {
 		if err != nil {
 			panic(interface{}(err))
 		}
-		tmp := getAllFunc(v, rawFile, recvName+"Proxy", func(recvT string) bool {
+		tmp := getAllFunc(v, rawFile, func(recvT string) bool {
 			if recvT == recvName {
 				return true
 			}
@@ -68,18 +68,15 @@ func genCode() {
 		})
 		funcStrs = append(funcStrs, tmp...)
 	}
-	fileBuffer.WriteString(createBeforeCode(pkgName, recvName+"Proxy",recvName+"Interface",funcStrs))
+	fileBuffer.WriteString(createBeforeCode(pkgName, recvName+"Proxy", recvName+"Interface", funcStrs))
 	for _, v := range funcStrs {
-		fileBuffer.WriteString("\n")
+		fileBuffer.WriteString("\n\n")
 		fileBuffer.WriteString(v)
 	}
 	if string(fileBuffer.Bytes()[fileBuffer.Len()-4:]) == "}\n}\n" {
 		fmt.Println("double }")
 	}
 	fmtBytes, err := format.Source(fileBuffer.Bytes())
-	if string(fmtBytes[len(fmtBytes)-4:]) == "}\n}\n" {
-		fmt.Println("double }")
-	}
 	writeN, err := file.Write(fmtBytes)
 	if err != nil {
 		panic(interface{}(err))
@@ -89,7 +86,7 @@ func genCode() {
 	}
 }
 
-func getAllFunc(file *ast.File, rawFile *os.File, proxyRecvName string, filter func(recvT string) bool) []string {
+func getAllFunc(file *ast.File, rawFile *os.File, filter func(recvT string) bool) []string {
 	funcStrs := make([]string, 0)
 	for _, v := range file.Decls {
 		funcDecl, ok := v.(*ast.FuncDecl)
@@ -119,138 +116,202 @@ func getAllFunc(file *ast.File, rawFile *os.File, proxyRecvName string, filter f
 		if !filter(receiver.Name) {
 			continue
 		}
-		var sb strings.Builder
-		sb.Grow(128)
-		// funcStr
-		sb.WriteString("func(proxy ")
-		// 判断是否指针
-		if handleAstType(receiver, rawFile)[0] == '*' {
-			sb.WriteByte('*')
-		}
-		sb.WriteString(proxyRecvName)
-		sb.WriteString(") ")
-		// 拼接函数名
-		// func(proxy Test) Proxy2(
-		sb.WriteString(funcDecl.Name.Name)
-		sb.WriteString("(")
-		// 参数名称的列表
-		params := make([]string, 0, len(funcDecl.Type.Params.List))
+		// 被代理对象的类型名
+		recvName := receiver.Name
+		// 被代理对应持有的方法名
+		funName := funcDecl.Name.Name
+		// 输入参数名字列表
+		inNameList := make([]string, 0, 4)
+		// 输入参数类型列表
+		inTypeList := make([]string, 0, 4)
+		// 输出参数类型列表
+		outTypeList := make([]string, 0, 4)
 		// 处理参数的序列化
 		for _, pv := range funcDecl.Type.Params.List {
 			// 多个参数同一类型的时候可能参数列表会是这样的: s1,s2 string
 			// 这种情况要处理
 			for _, pvName := range pv.Names {
-				sb.WriteString(pvName.Name)
-				params = append(params, pvName.Name)
-
+				// 添加到输入参数名字列表
+				inNameList = append(inNameList, pvName.Name)
 				// 类型肯定只有一个，不可能多个参数多个类型
-				sb.WriteString(" ")
-				sb.WriteString(handleAstType(pv.Type, rawFile))
-				sb.WriteString(",")
+				// 添加到输入参数类型列表
+				inTypeList = append(inTypeList, handleAstType(pv.Type, rawFile))
 			}
 		}
-		// 处理参数列表的结束符
-		sb.WriteString(") ")
-		// result types
-		rTypes := make([]string, 0, 4)
-		if funcDecl.Type.Results == nil {
-			goto handleBody
-		}
-		// 开始根据返回值类型注入littlerpc client的代码
+		// 找出所有的返回值类型
 		for _, rv := range funcDecl.Type.Results.List {
-			rTypes = append(rTypes, handleAstType(rv.Type, rawFile))
+			outTypeList = append(outTypeList, handleAstType(rv.Type, rawFile))
 		}
-		// 返回值列表
-		if len(rTypes) > 1 {
-			sb.WriteByte('(')
+		syncApi, err := genSyncApi(recvName, funName, inNameList, inTypeList, outTypeList)
+		if err != nil {
+			return nil
 		}
-		for k, v := range rTypes {
-			sb.WriteString(v)
-			if k < len(rTypes)-1 {
-				sb.WriteByte(',')
-			}
+		asyncApi, err := genAsyncApi(recvName, funName, inNameList, inTypeList, outTypeList)
+		if err != nil {
+			return nil
 		}
-		if len(rTypes) > 1 {
-			sb.WriteByte(')')
-		}
-	handleBody:
-		// inject call
-		sb.WriteString(" {\n\t")
-		// littlerpc规定的合法的过程中至少需要一个error类型的返回值
-		if funcDecl.Type.Results == nil {
-			panic(interface{}("generate function no return value"))
-		} else {
-			sb.WriteString("inter,err := proxy.Call(")
-		}
-		sb.WriteString(fmt.Sprintf("\"%s.%s\",", receiver.Name, funcDecl.Name.Name))
-		for _, v := range params {
-			sb.WriteString(v)
-			sb.WriteByte(',')
-		}
-		sb.WriteString(")\n\t")
-		// 注入判断Call err的代码
-		sb.WriteString("if err != nil { return ")
-		for _,v := range rTypes[:len(rTypes) - 1] {
-			s,err := writeDefaultValue(v)
-			if err != nil {
-				panic(interface{}(err))
-			}
-			sb.WriteString(s)
-			sb.WriteString(",")
-		}
-		sb.WriteString("err }\n\t")
-		// inject function body
-		for k, v := range rTypes {
-			// error == nil时默认的断言会panic
-			// 为了不panic必须使用带成功与否返回的类型断言
-			if k == len(rTypes) - 1 {
-				sb.WriteString(fmt.Sprintf("r%d,_ := inter[%d].(%s)\n\t",k,k,v))
-				continue
-			}
-			sb.WriteString(fmt.Sprintf("r%d := inter[%d].(%s)\n\t", k, k, v))
-		}
-		sb.WriteString("return ")
-		for k := range rTypes {
-			// 返回值最后一个是error
-			sb.WriteString("r")
-			sb.WriteString(strconv.Itoa(k))
-			if k < len(rTypes)-1 {
-				sb.WriteByte(',')
-			}
-		}
-		sb.WriteString("\n}\n")
-		funcStrs = append(funcStrs, sb.String())
+		funcStrs = append(funcStrs, syncApi)
+		funcStrs = append(funcStrs, asyncApi[0])
+		funcStrs = append(funcStrs, asyncApi[1])
 	}
 	return funcStrs
 }
 
+// 生成同步调用的Api
+func genSyncApi(recvName, funName string, inNameList, inTypeList, outList []string) (string, error) {
+	if len(inNameList) != len(inTypeList) {
+		return "", errors.New("inNameList and inTypeList length not equal")
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "func (p %sProxy) %s(", recvName, funName)
+	for i := 0; i < len(inNameList); i++ {
+		fmt.Fprintf(&sb, "%s %s,", inNameList[i], inTypeList[i])
+	}
+	sb.WriteString(") ")
+	for k, v := range outList {
+		// 多返回值的情况
+		if len(outList) > 1 && k == 0 {
+			sb.WriteString("(")
+		}
+		sb.WriteString(v)
+		// 不是最后一个返回值才添加分隔符
+		if len(outList) > 1 && len(outList)-1 != k {
+			sb.WriteString(",")
+		}
+		// 多返回值的情况
+		if len(outList) > 1 && k == len(outList)-1 {
+			sb.WriteString(")")
+		}
+	}
+	fmt.Fprintf(&sb, "{rep,err := p.Call(\"%s.%s\",", recvName, funName)
+	for _, v := range inNameList {
+		sb.WriteString(v)
+		sb.WriteString(",")
+	}
+	sb.WriteString(");")
+	sb.WriteString("if err != nil {return ")
+	for k, v := range outList {
+		if k == len(outList)-1 {
+			sb.WriteString("err};")
+			continue
+		}
+		str, err := writeDefaultValue(v)
+		if err != nil {
+			return "", err
+		}
+		sb.WriteString(str)
+		if len(outList) > 1 {
+			sb.WriteString(",")
+		}
+	}
+	// 生成其余断言的代码
+	for k, v := range outList {
+		// 对error类型的返回值使用安全断言
+		if v == "error" {
+			fmt.Fprintf(&sb, "r%d,_ := rep[%d].(%s);", k, k, v)
+			continue
+		}
+		fmt.Fprintf(&sb, "r%d := rep[%d].(%s);", k, k, v)
+	}
+	// 生成最终返回的代码
+	sb.WriteString("return ")
+	for k := range outList {
+		if k == len(outList)-1 {
+			fmt.Fprintf(&sb, "r%d", k)
+			continue
+		}
+		fmt.Fprintf(&sb, "r%d,", k)
+	}
+	sb.WriteString(";}")
+	return sb.String(), nil
+}
+
+// 生成异步调用的Api
+func genAsyncApi(recvName, funName string, inNameList, inTypeList, outList []string) (asyncApi [2]string, err error) {
+	if len(inNameList) != len(inTypeList) {
+		return [2]string{}, errors.New("inNameList and inTypeList length not equal")
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "func (p %sProxy) Async%s(", recvName, funName)
+	for i := 0; i < len(inNameList); i++ {
+		fmt.Fprintf(&sb, "%s %s,", inNameList[i], inTypeList[i])
+	}
+	fmt.Fprintf(&sb, ") error {return p.AsyncCall(\"%s.%s\",", recvName, funName)
+	for _, v := range inNameList {
+		sb.WriteString(v)
+		sb.WriteByte(',')
+	}
+	sb.WriteString(")}")
+	asyncApi[0] = sb.String()
+	sb.Reset()
+	fmt.Fprintf(&sb, "func (p %sProxy) Register%sCallBack(fn func(", recvName, funName)
+	for k, v := range outList {
+		fmt.Fprintf(&sb, "r%s %s,", strconv.Itoa(k), v)
+	}
+	sb.WriteString("))")
+	fmt.Fprintf(&sb, "{p.RegisterCallBack(\"%s.%s\",func(rep []interface{}, err error) {", recvName, funName)
+	// gen error check
+	sb.WriteString("if err != nil {fn(")
+	for k, v := range outList {
+		// 关于error的生成必须独立处理，否则则会被替换为nil作为默认值
+		if k == len(outList)-1 {
+			// 一定要注入return,否则过程在出错的时候也会调用无错才会调用的回调函数
+			sb.WriteString("err);return};")
+			continue
+		}
+		str, err := writeDefaultValue(v)
+		if err != nil {
+			return [2]string{}, err
+		}
+		sb.WriteString(str)
+		sb.WriteString(",")
+	}
+	// 生成断言的代码
+	for k, v := range outList {
+		// error类型的返回值使用安全断言
+		if v == "error" {
+			fmt.Fprintf(&sb, "r%d,_ := rep[%d].(%s);", k, k, v)
+			continue
+		}
+		fmt.Fprintf(&sb, "r%d := rep[%d].(%s);", k, k, v)
+	}
+	// 最后生成调用的代码
+	sb.WriteString("fn(")
+	for k := range outList {
+		fmt.Fprintf(&sb, "r%d,", k)
+	}
+	sb.WriteString(");})}")
+	asyncApi[1] = sb.String()
+	return
+}
 
 // 在这里生成包注释、导入、工厂函数、各种需要的类型
-func createBeforeCode(pkgName string, typeName,interName string,allFunc []string) string {
+func createBeforeCode(pkgName string, typeName, interName string, allFunc []string) string {
 	var sb strings.Builder
 	sb.Grow(1024)
 	// 生成包注释
-	fmt.Fprintf(&sb,"/*\n\t%-12s : littlerpc-generator", "@Generator")
-	fmt.Fprintf(&sb,"\n\t%-12s : %s", "@CreateTime", time.Now().String())
-	fmt.Fprintf(&sb,"\n\t%-12s : littlerpc-generator\n*/\n", "@Author")
+	fmt.Fprintf(&sb, "/*\n\t%-12s : littlerpc-generator", "@Generator")
+	fmt.Fprintf(&sb, "\n\t%-12s : %s", "@CreateTime", time.Now().String())
+	fmt.Fprintf(&sb, "\n\t%-12s : littlerpc-generator", "@Author")
+	fmt.Fprintf(&sb, "\n\t%-12s : code is auto generate do not edit\n*/\n", "@Comment")
 	// 生成包名和导入文件
-	fmt.Fprintf(&sb,"package " + pkgName + "\n")
-	fmt.Fprintf(&sb,"import (\n\t")
-	fmt.Fprintf(&sb,"\"github.com/nyan233/littlerpc/impl/client\"\n)\n")
+	fmt.Fprintf(&sb, "package "+pkgName+"\n")
+	fmt.Fprintf(&sb, "import (\n\t")
+	fmt.Fprintf(&sb, "\"github.com/nyan233/littlerpc/client\"\n)\n")
 	// 生成被代理对象方法集的接口描述
-	fmt.Fprintf(&sb,"type %s interface {",interName)
-	for _,v := range allFunc {
+	fmt.Fprintf(&sb, "type %s interface {", interName)
+	for _, v := range allFunc {
 		// func (x receiver) Say(i int) error {...
-		methodMeta := strings.SplitN(v,")",2)[1]
-		methodMeta = strings.SplitN(methodMeta,"{",2)[0]
+		methodMeta := strings.SplitN(v, ")", 2)[1]
+		methodMeta = strings.SplitN(methodMeta, "{", 2)[0]
 		sb.WriteString(methodMeta)
 		sb.WriteString(";")
 	}
 	sb.WriteString("}\n\n")
 	// 生成类型名和工厂函数
-	fmt.Fprintf(&sb,"type %s struct {\n\t*client.Client\n}\n", typeName)
-	fmt.Fprintf(&sb,"func New%s(client *client.Client) %s {", typeName, interName)
-	fmt.Fprintf(&sb,"\n\tproxy := &%s{}\n\terr := client.BindFunc(proxy)\n\t", typeName)
+	fmt.Fprintf(&sb, "type %s struct {\n\t*client.Client\n}\n", typeName)
+	fmt.Fprintf(&sb, "func New%s(client *client.Client) %s {", typeName, interName)
+	fmt.Fprintf(&sb, "\n\tproxy := &%s{}\n\terr := client.BindFunc(proxy)\n\t", typeName)
 	sb.WriteString("if err != nil {\n\tpanic(err)\n\t}\n\tproxy.Client = client\n\treturn proxy\n}\n")
 	return sb.String()
 }

@@ -21,3 +21,14 @@ func TestH(t *testing.T) {
 	_, _ = file.Write([]byte("hello world!"))
 	_ = os.Remove("./test/Test_proxy.go")
 }
+
+func TestGenApi(t *testing.T) {
+	_, err := genSyncApi("Hello", "Add", []string{"s1", "d1"}, []string{"string", "int"}, []string{"string", "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = genAsyncApi("Hello", "Add", []string{"s1", "d1"}, []string{"string", "int"}, []string{"string", "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
