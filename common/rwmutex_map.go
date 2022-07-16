@@ -1,3 +1,5 @@
+//go:build go1.18 || go.19 || go.1.20
+
 package common
 
 import "sync"
