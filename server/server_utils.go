@@ -5,7 +5,7 @@ import (
 	"github.com/nyan233/littlerpc/middle/packet"
 )
 
-func safeIndexCodecWps(s []codec.Wrapper,index int) codec.Wrapper {
+func safeIndexCodecWps(s []codec.Wrapper, index int) codec.Wrapper {
 	if s == nil {
 		return nil
 	}
@@ -15,7 +15,7 @@ func safeIndexCodecWps(s []codec.Wrapper,index int) codec.Wrapper {
 	return s[index]
 }
 
-func safeIndexEncoderWps(s []packet.Wrapper,index int) packet.Wrapper {
+func safeIndexEncoderWps(s []packet.Wrapper, index int) packet.Wrapper {
 	if s == nil {
 		return nil
 	}

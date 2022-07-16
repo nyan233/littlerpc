@@ -12,16 +12,16 @@ func CheckCoderType(codec codec.Codec, data []byte, structPtr interface{}) (inte
 	if structPtr == nil || data == nil || len(data) == 0 {
 		return nil, errors.New("no satisfy unmarshal case")
 	}
-	val,_ := lreflect.ToTypePtr(structPtr)
+	val, _ := lreflect.ToTypePtr(structPtr)
 	err := codec.Unmarshal(data, val)
 	if err != nil {
 		return nil, err
 	}
 	// 指针类型和非指针类型的返回值不同
 	if reflect.TypeOf(structPtr).Kind() == reflect.Ptr {
-		return structPtr,nil
+		return structPtr, nil
 	} else {
-		return reflect.ValueOf(val).Elem().Interface(),nil
+		return reflect.ValueOf(val).Elem().Interface(), nil
 	}
 }
 

@@ -25,7 +25,7 @@ func (c *codecWrapper) Instance() Codec {
 	return c.codec
 }
 
-func newCodecWrapper(index int,codec Codec) Wrapper {
+func newCodecWrapper(index int, codec Codec) Wrapper {
 	return &codecWrapper{
 		index: index,
 		codec: codec,

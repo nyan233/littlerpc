@@ -68,7 +68,7 @@ func genCode() {
 		})
 		funcStrs = append(funcStrs, tmp...)
 	}
-	fileBuffer.WriteString(createBeforeCode(pkgName, recvName+"Proxy", recvName+"Interface", funcStrs))
+	fileBuffer.WriteString(createBeforeCode(pkgName, recvName, recvName+"Proxy", recvName+"Interface", funcStrs))
 	for _, v := range funcStrs {
 		fileBuffer.WriteString("\n\n")
 		fileBuffer.WriteString(v)
@@ -286,7 +286,7 @@ func genAsyncApi(recvName, funName string, inNameList, inTypeList, outList []str
 }
 
 // 在这里生成包注释、导入、工厂函数、各种需要的类型
-func createBeforeCode(pkgName string, typeName, interName string, allFunc []string) string {
+func createBeforeCode(pkgName, recvName string, typeName, interName string, allFunc []string) string {
 	var sb strings.Builder
 	sb.Grow(1024)
 	// 生成包注释
@@ -311,7 +311,7 @@ func createBeforeCode(pkgName string, typeName, interName string, allFunc []stri
 	// 生成类型名和工厂函数
 	fmt.Fprintf(&sb, "type %s struct {\n\t*client.Client\n}\n", typeName)
 	fmt.Fprintf(&sb, "func New%s(client *client.Client) %s {", typeName, interName)
-	fmt.Fprintf(&sb, "\n\tproxy := &%s{}\n\terr := client.BindFunc(proxy)\n\t", typeName)
+	fmt.Fprintf(&sb, "\n\tproxy := &%s{}\n\terr := client.BindFunc(\"%s\",proxy)\n\t", typeName, recvName)
 	sb.WriteString("if err != nil {\n\tpanic(err)\n\t}\n\tproxy.Client = client\n\treturn proxy\n}\n")
 	return sb.String()
 }

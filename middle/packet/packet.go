@@ -21,17 +21,17 @@ var (
 )
 
 type encoderManager struct {
-	mu sync.Mutex
+	mu                     sync.Mutex
 	packetSchemeCollection map[string]Wrapper
-	packetIndexCollection []Wrapper
+	packetIndexCollection  []Wrapper
 }
 
 func (e *encoderManager) registerEncoder(encoder Encoder) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	wrapper := newEncoderWrapper(len(e.packetIndexCollection),encoder)
+	wrapper := newEncoderWrapper(len(e.packetIndexCollection), encoder)
 	e.packetSchemeCollection[wrapper.Scheme()] = wrapper
-	e.packetIndexCollection = append(e.packetIndexCollection,wrapper)
+	e.packetIndexCollection = append(e.packetIndexCollection, wrapper)
 }
 
 func (e *encoderManager) getCodecFromScheme(scheme string) Wrapper {
@@ -80,7 +80,6 @@ func GetEncoderFromScheme(scheme string) Wrapper {
 func GetEncoderFromIndex(index int) Wrapper {
 	return manager.getCodecFromIndex(index)
 }
-
 
 func init() {
 	RegisterEncoder(new(TextPacket))

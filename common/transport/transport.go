@@ -44,4 +44,3 @@ type ServerTransportBuilder interface {
 	SetOnOpen(_ func(conn ServerConnAdapter))
 	SetOnErr(_ func(err error))
 }
-

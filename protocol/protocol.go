@@ -36,11 +36,11 @@ type MessageOperation interface {
 	UnmarshalHeader(msg *Message, p []byte) (payloadStart int, err error)
 	// RangePayloads 根据头提供的信息逐个遍历所有载荷数据
 	// endAf指示是否是payloads中最后一个参数
-	RangePayloads(msg *Message, p []byte, fn func(p []byte,endBefore bool) bool)
+	RangePayloads(msg *Message, p []byte, fn func(p []byte, endBefore bool) bool)
 	// MarshalHeader 根据Msg Header编码出对应的字节Slice
 	MarshalHeader(msg *Message, p *[]byte)
 	// MarshalAll 序列化Header&Payloads
-	MarshalAll(msg *Message,p *[]byte)
+	MarshalAll(msg *Message, p *[]byte)
 	// SetMetaData 设置对应的元数据
 	SetMetaData(msg *Message, key, value string)
 	// RangeMetaData 遍历所有元数据
@@ -51,7 +51,7 @@ type MessageOperation interface {
 	// usePayload指示是否要复用载荷数据
 	// useSize指示复用的slice类型长度的上限，即使指定了usePayload
 	// payload数据超过这个长度还是会被释放
-	Reset(msg *Message, resetOther,freeMetaData, usePayload bool, useSize int)
+	Reset(msg *Message, resetOther, freeMetaData, usePayload bool, useSize int)
 }
 
 func NewMessageOperation() MessageOperation {
@@ -163,8 +163,8 @@ func (m *Message) SetTimestamp(t uint64) {
 }
 
 func (m *Message) AppendPayloads(p []byte) {
-	m.Payloads = append(m.Payloads,p...)
-	m.PayloadLayout = append(m.PayloadLayout,uint64(len(p)))
+	m.Payloads = append(m.Payloads, p...)
+	m.PayloadLayout = append(m.PayloadLayout, uint64(len(p)))
 }
 
 // Reset 给内存复用的操作提供一致性的语义
@@ -186,7 +186,7 @@ type messageOperationImpl struct{}
 func (m messageOperationImpl) UnmarshalHeader(msg *Message, p []byte) (payloadStart int, err error) {
 	*(*uint32)(unsafe.Pointer(&msg.Scope)) = *(*uint32)(unsafe.Pointer(&p[0]))
 	if msg.Scope[0] != MagicNumber {
-		return -1,errors.New("not littlerpc protocol")
+		return -1, errors.New("not littlerpc protocol")
 	}
 	msg.NameLayout[0] = binary.BigEndian.Uint32(p[4:8])
 	msg.NameLayout[1] = binary.BigEndian.Uint32(p[8:12])
@@ -225,15 +225,15 @@ func (m messageOperationImpl) UnmarshalHeader(msg *Message, p []byte) (payloadSt
 	return payloadStart, nil
 }
 
-func (m messageOperationImpl) RangePayloads(msg *Message, p []byte, fn func(p []byte,endBefore bool) bool) {
+func (m messageOperationImpl) RangePayloads(msg *Message, p []byte, fn func(p []byte, endBefore bool) bool) {
 	var i int
 	nPayload := len(msg.PayloadLayout)
-	for k,v := range msg.PayloadLayout {
+	for k, v := range msg.PayloadLayout {
 		endAf := false
-		if k == nPayload - 1 {
+		if k == nPayload-1 {
 			endAf = true
 		}
-		if !fn(p[i : i+int(v)],endAf) {
+		if !fn(p[i:i+int(v)], endAf) {
 			return
 		}
 		i += int(v)
@@ -276,8 +276,8 @@ func (m messageOperationImpl) MarshalHeader(msg *Message, p *[]byte) {
 }
 
 func (m messageOperationImpl) MarshalAll(msg *Message, p *[]byte) {
-	m.MarshalHeader(msg,p)
-	*p = append(*p,msg.Payloads...)
+	m.MarshalHeader(msg, p)
+	*p = append(*p, msg.Payloads...)
 }
 
 func (m messageOperationImpl) SetMetaData(msg *Message, key, value string) {
@@ -296,7 +296,7 @@ func (m messageOperationImpl) RangeMetaData(msg *Message, fn func(key string, va
 	}
 }
 
-func (m messageOperationImpl) Reset(msg *Message, resetOther,freeMetaData, usePayload bool, useSize int) {
+func (m messageOperationImpl) Reset(msg *Message, resetOther, freeMetaData, usePayload bool, useSize int) {
 	if freeMetaData {
 		msg.MetaData = nil
 	}

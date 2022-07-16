@@ -18,14 +18,14 @@ func BenchmarkProtocol(b *testing.B) {
 		MsgId:         rand.Uint64(),
 		Timestamp:     uint64(time.Now().Unix()),
 		MetaData:      nil,
-		PayloadLayout: []uint64{1 << 10,1 << 11,1 << 12,1 << 13},
+		PayloadLayout: []uint64{1 << 10, 1 << 11, 1 << 12, 1 << 13},
 		Payloads:      nil,
 	}
 	op := NewMessageOperation()
-	op.SetMetaData(msg,"Error","My is Error")
+	op.SetMetaData(msg, "Error", "My is Error")
 	pool := &sync.Pool{
 		New: func() interface{} {
-			tmp := make([]byte,0,128)
+			tmp := make([]byte, 0, 128)
 			return &tmp
 		},
 	}
@@ -39,16 +39,16 @@ func BenchmarkProtocol(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			bp := pool.Get().(*[]byte)
-			op.MarshalHeader(msg,bp)
+			op.MarshalHeader(msg, bp)
 			pool.Put(bp)
 		}
 	})
-	headerData := make([]byte,128)
-	op.MarshalHeader(msg,&headerData)
+	headerData := make([]byte, 128)
+	op.MarshalHeader(msg, &headerData)
 	b.Run("ProtocolHeaderUnmarshal", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			op.Reset(msg,true,false,true,1024)
+			op.Reset(msg, true, false, true, 1024)
 			_, _ = op.UnmarshalHeader(msg, headerData)
 		}
 	})
@@ -68,28 +68,28 @@ func TestProtocol(t *testing.T) {
 	msg.AppendPayloads([]byte("1378q285y45q"))
 
 	op := NewMessageOperation()
-	op.SetMetaData(msg,"Error","My is Error")
-	op.SetMetaData(msg,"Hehe","heheda")
+	op.SetMetaData(msg, "Error", "My is Error")
+	op.SetMetaData(msg, "Hehe", "heheda")
 	pool := &sync.Pool{
 		New: func() interface{} {
-			tmp := make([]byte,0,128)
+			tmp := make([]byte, 0, 128)
 			return &tmp
 		},
 	}
 	bytes := pool.Get().(*[]byte)
 	defer pool.Put(bytes)
-	op.MarshalHeader(msg,bytes)
-	_, err := op.UnmarshalHeader(msg,*bytes)
+	op.MarshalHeader(msg, bytes)
+	_, err := op.UnmarshalHeader(msg, *bytes)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var i int
-	op.RangePayloads(msg,msg.Payloads, func(p []byte, endBefore bool) bool {
+	op.RangePayloads(msg, msg.Payloads, func(p []byte, endBefore bool) bool {
 		i++
 		return true
 	})
 	if i != len(msg.PayloadLayout) {
 		t.Fatal(errors.New("payload layout failed"))
 	}
-	op.Reset(msg,true,true,true,1024)
+	op.Reset(msg, true, true, true, 1024)
 }

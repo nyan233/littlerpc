@@ -19,23 +19,23 @@ type Codec interface {
 
 var (
 	manager = &codecManager{
-		codecCollection: map[string]Wrapper{},
+		codecCollection:      map[string]Wrapper{},
 		indexCodecCollection: []Wrapper{},
 	}
 )
 
 type codecManager struct {
-	mu sync.Mutex
-	codecCollection map[string]Wrapper
+	mu                   sync.Mutex
+	codecCollection      map[string]Wrapper
 	indexCodecCollection []Wrapper
 }
 
 func (m *codecManager) registerCodec(c Codec) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	wrapper := newCodecWrapper(len(m.indexCodecCollection),c)
+	wrapper := newCodecWrapper(len(m.indexCodecCollection), c)
 	m.codecCollection[c.Scheme()] = wrapper
-	m.indexCodecCollection = append(m.indexCodecCollection,wrapper)
+	m.indexCodecCollection = append(m.indexCodecCollection, wrapper)
 }
 
 func (m *codecManager) getCodecFromScheme(scheme string) Wrapper {

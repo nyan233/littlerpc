@@ -1,6 +1,6 @@
 package common
 
-type nilLogger struct {}
+type nilLogger struct{}
 
 func (n nilLogger) Level() int {
 	return 0
@@ -37,4 +37,3 @@ func (n nilLogger) PanicFromString(s string) {
 func (n nilLogger) Flush() {
 	return
 }
-

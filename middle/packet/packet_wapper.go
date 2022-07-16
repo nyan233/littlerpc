@@ -8,7 +8,7 @@ type Wrapper interface {
 }
 
 type encoderWrapper struct {
-	index int
+	index   int
 	encoder Encoder
 }
 

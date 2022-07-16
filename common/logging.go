@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	OpenLogger int64 = 1 << 10
+	OpenLogger  int64 = 1 << 10
 	CloseLogger int64 = 1 << 11
 )
 
@@ -58,9 +58,9 @@ func (c CustomLogger) Error(format string, v ...interface{}) {
 
 func SetOpenLogger(ok bool) {
 	if ok {
-		atomic.StoreInt64(&loggerOpen,OpenLogger)
+		atomic.StoreInt64(&loggerOpen, OpenLogger)
 	} else {
-		atomic.StoreInt64(&loggerOpen,CloseLogger)
+		atomic.StoreInt64(&loggerOpen, CloseLogger)
 	}
 }
 
