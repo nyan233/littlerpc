@@ -1,7 +1,8 @@
 /*
 	@Generator   : littlerpc-generator
-	@CreateTime  : 2022-06-21 12:29:22.462385 +0800 CST m=+0.000873164
+	@CreateTime  : 2022-07-05 19:41:33.539463 +0800 CST m=+0.003528107
 	@Author      : littlerpc-generator
+	@Comment     : code is auto generate do not edit
 */
 package main
 
@@ -11,8 +12,14 @@ import (
 
 type BenchAllocInterface interface {
 	AllocBigBytes(size int) ([]byte, error)
+	AsyncAllocBigBytes(size int) error
+	RegisterAllocBigBytesCallBack(fn func(r0 []byte, r1 error))
 	AllocLittleNBytesInit(n int, size int) ([][]byte, error)
+	AsyncAllocLittleNBytesInit(n int, size int) error
+	RegisterAllocLittleNBytesInitCallBack(fn func(r0 [][]byte, r1 error))
 	AllocLittleNBytesNoInit(n int, size int) ([][]byte, error)
+	AsyncAllocLittleNBytesNoInit(n int, size int) error
+	RegisterAllocLittleNBytesNoInitCallBack(fn func(r0 [][]byte, r1 error))
 }
 
 type BenchAllocProxy struct {
@@ -21,40 +28,88 @@ type BenchAllocProxy struct {
 
 func NewBenchAllocProxy(client *client.Client) BenchAllocInterface {
 	proxy := &BenchAllocProxy{}
-	err := client.BindFunc(proxy)
+	err := client.BindFunc("BenchAlloc", proxy)
 	if err != nil {
-		panic(interface{}(err))
+		panic(err)
 	}
 	proxy.Client = client
 	return proxy
 }
 
-func (proxy BenchAllocProxy) AllocBigBytes(size int) ([]byte, error) {
-	inter, err := proxy.Call("BenchAlloc.AllocBigBytes", size)
+func (p BenchAllocProxy) AllocBigBytes(size int) ([]byte, error) {
+	rep, err := p.Call("BenchAlloc.AllocBigBytes", size)
 	if err != nil {
 		return nil, err
 	}
-	r0 := inter[0].([]byte)
-	r1, _ := inter[1].(error)
+	r0 := rep[0].([]byte)
+	r1, _ := rep[1].(error)
 	return r0, r1
 }
 
-func (proxy BenchAllocProxy) AllocLittleNBytesInit(n int, size int) ([][]byte, error) {
-	inter, err := proxy.Call("BenchAlloc.AllocLittleNBytesInit", n, size)
+func (p BenchAllocProxy) AsyncAllocBigBytes(size int) error {
+	return p.AsyncCall("BenchAlloc.AllocBigBytes", size)
+}
+
+func (p BenchAllocProxy) RegisterAllocBigBytesCallBack(fn func(r0 []byte, r1 error)) {
+	p.RegisterCallBack("BenchAlloc.AllocBigBytes", func(rep []interface{}, err error) {
+		if err != nil {
+			fn(nil, err)
+			return
+		}
+		r0 := rep[0].([]byte)
+		r1, _ := rep[1].(error)
+		fn(r0, r1)
+	})
+}
+
+func (p BenchAllocProxy) AllocLittleNBytesInit(n int, size int) ([][]byte, error) {
+	rep, err := p.Call("BenchAlloc.AllocLittleNBytesInit", n, size)
 	if err != nil {
 		return nil, err
 	}
-	r0 := inter[0].([][]byte)
-	r1, _ := inter[1].(error)
+	r0 := rep[0].([][]byte)
+	r1, _ := rep[1].(error)
 	return r0, r1
 }
 
-func (proxy BenchAllocProxy) AllocLittleNBytesNoInit(n int, size int) ([][]byte, error) {
-	inter, err := proxy.Call("BenchAlloc.AllocLittleNBytesNoInit", n, size)
+func (p BenchAllocProxy) AsyncAllocLittleNBytesInit(n int, size int) error {
+	return p.AsyncCall("BenchAlloc.AllocLittleNBytesInit", n, size)
+}
+
+func (p BenchAllocProxy) RegisterAllocLittleNBytesInitCallBack(fn func(r0 [][]byte, r1 error)) {
+	p.RegisterCallBack("BenchAlloc.AllocLittleNBytesInit", func(rep []interface{}, err error) {
+		if err != nil {
+			fn(nil, err)
+			return
+		}
+		r0 := rep[0].([][]byte)
+		r1, _ := rep[1].(error)
+		fn(r0, r1)
+	})
+}
+
+func (p BenchAllocProxy) AllocLittleNBytesNoInit(n int, size int) ([][]byte, error) {
+	rep, err := p.Call("BenchAlloc.AllocLittleNBytesNoInit", n, size)
 	if err != nil {
 		return nil, err
 	}
-	r0 := inter[0].([][]byte)
-	r1, _ := inter[1].(error)
+	r0 := rep[0].([][]byte)
+	r1, _ := rep[1].(error)
 	return r0, r1
+}
+
+func (p BenchAllocProxy) AsyncAllocLittleNBytesNoInit(n int, size int) error {
+	return p.AsyncCall("BenchAlloc.AllocLittleNBytesNoInit", n, size)
+}
+
+func (p BenchAllocProxy) RegisterAllocLittleNBytesNoInitCallBack(fn func(r0 [][]byte, r1 error)) {
+	p.RegisterCallBack("BenchAlloc.AllocLittleNBytesNoInit", func(rep []interface{}, err error) {
+		if err != nil {
+			fn(nil, err)
+			return
+		}
+		r0 := rep[0].([][]byte)
+		r1, _ := rep[1].(error)
+		fn(r0, r1)
+	})
 }

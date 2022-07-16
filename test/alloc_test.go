@@ -8,39 +8,39 @@ import (
 	"testing"
 )
 
-type BenchAlloc struct {}
+type BenchAlloc struct{}
 
-func (b *BenchAlloc) AllocBigBytes(size int) ([]byte,error) {
-	tmp := make([]byte,size)
+func (b *BenchAlloc) AllocBigBytes(size int) ([]byte, error) {
+	tmp := make([]byte, size)
 	for i := range tmp {
 		tmp[i] = byte(rand.Int31n(255))
 	}
-	return tmp,nil
+	return tmp, nil
 }
 
-func (b *BenchAlloc) AllocLittleNBytesInit(n,size int) ([][]byte,error) {
-	nBytes := make([][]byte,n)
+func (b *BenchAlloc) AllocLittleNBytesInit(n, size int) ([][]byte, error) {
+	nBytes := make([][]byte, n)
 	for k := range nBytes {
-		nBytes[k] = make([]byte,size)
+		nBytes[k] = make([]byte, size)
 		for j := range nBytes[k] {
 			nBytes[k][j] = byte(rand.Int31n(255))
 		}
 	}
-	return nBytes,nil
+	return nBytes, nil
 }
 
-func (b *BenchAlloc) AllocLittleNBytesNoInit(n,size int) ([][]byte,error) {
-	nBytes := make([][]byte,n)
+func (b *BenchAlloc) AllocLittleNBytesNoInit(n, size int) ([][]byte, error) {
+	nBytes := make([][]byte, n)
 	for k := range nBytes {
-		nBytes[k] = make([]byte,size)
+		nBytes[k] = make([]byte, size)
 	}
-	return nBytes,nil
+	return nBytes, nil
 }
 
 func BenchmarkClientAlloc(b *testing.B) {
 	// 关闭服务器烦人的日志
 	common.SetOpenLogger(false)
-	s1 := server.NewServer(server.WithAddressServer(":1234"),server.WithOpenLogger(false))
+	s1 := server.NewServer(server.WithAddressServer(":1234"), server.WithOpenLogger(false))
 	err := s1.Elem(new(BenchAlloc))
 	if err != nil {
 		b.Fatal(err)
@@ -50,7 +50,7 @@ func BenchmarkClientAlloc(b *testing.B) {
 		b.Fatal(err)
 	}
 	defer s1.Stop()
-	c1,err := client.NewClient(client.WithAddressClient(":1234"))
+	c1, err := client.NewClient(client.WithAddressClient(":1234"))
 	if err != nil {
 		b.Fatal(err)
 	}
