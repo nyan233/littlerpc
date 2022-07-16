@@ -5,7 +5,6 @@ import (
 )
 
 var (
-	ErrJsonUnMarshal      = protocol.NewError("json unmarshal failed", "")
 	ErrMethodNoRegister   = protocol.NewError("method no register", "")
 	ErrElemTypeNoRegister = protocol.NewError("elem type no register : ", "")
 	ErrMessageFormat      = protocol.NewError("message format invalid", "")
@@ -13,5 +12,7 @@ var (
 	ErrServer             = protocol.NewError("server error: ", "")
 	ErrCallArgsType       = protocol.NewError("call arguments type error : ", "")
 	ErrCodecMarshalError  = protocol.NewError("codec.MarshalError return one error : ", "")
+	ErrNoInstance         = protocol.NewError("instance not found : ", "")
+	ErrNoMethod           = protocol.NewError("method not found : ", "")
 	Nil                   = protocol.NewError("the error is nil", "")
 )
