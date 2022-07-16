@@ -3,6 +3,7 @@ package client
 import (
 	"errors"
 	"github.com/nyan233/littlerpc/common"
+	"github.com/nyan233/littlerpc/common/transport"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"math/rand"
@@ -25,15 +26,15 @@ func (c *Client) handleProcessRetErr(errBytes []byte, i interface{}) (interface{
 	return i, nil
 }
 
-func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, method reflect.Value, rep *[]interface{}) error {
+func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, conn transport.ClientTransport, method reflect.Value, rep *[]interface{}) error {
 	// 接收服务器返回的调用结果并将header反序列化
-	buffer, err := c.conn.RecvData()
+	buffer, err := conn.RecvData()
 	if err != nil {
 		return err
 	}
 	// read header
-	c.mop.Reset(msg,false,false,true,4096)
-	payloadStart,err := c.mop.UnmarshalHeader(msg,buffer)
+	c.mop.Reset(msg, false, false, true, 4096)
+	payloadStart, err := c.mop.UnmarshalHeader(msg, buffer)
 	if err != nil {
 		return err
 	}
@@ -50,12 +51,12 @@ func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, method reflect.Val
 		if err != nil {
 			return err
 		}
-		msg.Payloads = append(msg.Payloads[:0],buffer...)
+		msg.Payloads = append(msg.Payloads[:0], buffer...)
 	}
 	// 处理服务端传回的参数
 	outputTypeList := lreflect.FuncOutputTypeList(method, false)
 	var i int
-	c.mop.RangePayloads(msg,msg.Payloads, func(p []byte,endBefore bool) bool {
+	c.mop.RangePayloads(msg, msg.Payloads, func(p []byte, endBefore bool) bool {
 		eface := outputTypeList[i]
 		var returnV interface{}
 		var err2 error
@@ -91,9 +92,13 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 	}
 	msg.SetInstanceName(methodData[0])
 	msg.SetMethodName(methodData[1])
-	method, ok := c.elem.Methods[msg.MethodName]
+	instance, ok := loadElems(c, msg.GetInstanceName())
 	if !ok {
-		panic(interface{}("the method no register or is private method"))
+		return reflect.ValueOf(nil), common.ErrNoInstance
+	}
+	method, ok := instance.Methods[msg.GetMethodName()]
+	if !ok {
+		return reflect.ValueOf(nil), common.ErrNoMethod
 	}
 	for _, v := range args {
 		argType := common.CheckIType(v)
@@ -105,7 +110,7 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 				panic(interface{}("multiple pointer no support"))
 			}
 		}
-		bytes,err := c.codecWp.Instance().Marshal(v)
+		bytes, err := c.codecWp.Instance().Marshal(v)
 		if err != nil {
 			return reflect.ValueOf(nil), err
 		}
@@ -114,7 +119,7 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 	return method, nil
 }
 
-func (c *Client) sendCallMsg(msg *protocol.Message) error {
+func (c *Client) sendCallMsg(msg *protocol.Message, conn transport.ClientTransport) error {
 	// init header
 	msg.SetMsgId(rand.Uint64())
 	msg.SetMsgType(protocol.MessageCall)
@@ -132,11 +137,11 @@ func (c *Client) sendCallMsg(msg *protocol.Message) error {
 		if err != nil {
 			return err
 		}
-		msg.Payloads = append(msg.Payloads[:0],bodyBytes...)
+		msg.Payloads = append(msg.Payloads[:0], bodyBytes...)
 	}
-	c.mop.MarshalAll(msg,memBuffer)
+	c.mop.MarshalAll(msg, memBuffer)
 	// write data
-	_, err := c.conn.SendData(*memBuffer)
+	_, err := conn.SendData(*memBuffer)
 	if err != nil {
 		return err
 	}

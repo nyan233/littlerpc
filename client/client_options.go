@@ -26,6 +26,7 @@ func WithDefaultClient() clientOption {
 		config.Encoder = packet.GetEncoderFromIndex(int(protocol.DefaultEncodingType))
 		config.Codec = codec.GetCodecFromIndex(int(protocol.DefaultCodecType))
 		config.NetWork = "tcp"
+		config.MuxConnection = 8
 	}
 }
 
@@ -74,6 +75,20 @@ func WithClientEncoder(scheme string) clientOption {
 func WithClientCodec(scheme string) clientOption {
 	return func(config *Config) {
 		config.Codec = codec.GetCodecFromScheme(scheme)
+	}
+}
+
+func WithMuxConnection(ok bool) clientOption {
+	return func(config *Config) {
+		if !ok {
+			config.MuxConnection = 1
+		}
+	}
+}
+
+func WithMuxConnectionNumber(n int) clientOption {
+	return func(config *Config) {
+		config.MuxConnection = n
 	}
 }
 

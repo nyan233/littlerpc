@@ -25,6 +25,8 @@ type Config struct {
 	Encoder packet.Wrapper
 	// 结构化数据编码器
 	Codec codec.Wrapper
+	// 用于连接复用的连接数量
+	MuxConnection int
 }
 
 type NewProtocolSupport func(config Config) (transport.ClientTransport, error)
