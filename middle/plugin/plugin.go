@@ -1,0 +1,39 @@
+package plugin
+
+import (
+	"github.com/nyan233/littlerpc/protocol"
+	"reflect"
+)
+
+const (
+	COMPLEX = 1 ^ 4 // 按照插件的功能区分,complex代表这个插件可以支持自定义的控制参数
+	NORMAL  = 1 ^ 8 // 按照插件的功能区分,normal代表这个插件并不支持自定义的控制参数
+)
+
+type ClientPlugin interface {
+	// OnCall 指Client.Call() | Client.AsyncCall() 开始
+	OnCall(args *[]interface{}) error
+	OnSendMessage(msg *protocol.Message, bytes *[]byte) error
+	// OnReceiveMessage 调用该阶段时Msg必须是Reset之后的消息
+	OnReceiveMessage(msg *protocol.Message, bytes *[]byte) error
+	// OnResult 客户端将正确的结果返回客户端之前调用
+	// 如果服务器的返回并不是正确的结果，那么err != nil
+	OnResult(msg *protocol.Message, results *[]interface{}, err error)
+}
+
+type ServerPlugin interface {
+	// OnMessage 消息刚刚到来时的值,bytes必须为一个完整的消息帧
+	OnMessage(msg *protocol.Message, bytes *[]byte) error
+	// OnCallBefore 在经过其他组件对消息的处理完成之后，此处流程是在reflect.Call()之前调用的
+	OnCallBefore(msg *protocol.Message, args *[]reflect.Value, err error) error
+	OnCallResult(msg *protocol.Message, results *[]reflect.Value) error
+	OnReplyMessage(msg *protocol.Message, bytes *[]byte, err error) error
+	// OnComplete 在调用消息发送的接口完成之后调用的过程,如果消息发送失败或者完成之前调用的接口
+	// 返回了错误的话,err != nil
+	OnComplete(msg *protocol.Message, err error) error
+}
+
+type Plugin interface {
+	ClientPlugin
+	ServerPlugin
+}
