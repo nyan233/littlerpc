@@ -5,14 +5,11 @@ import (
 	"fmt"
 	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/common/transport"
-	"github.com/nyan233/littlerpc/internal/pool"
 	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
-	"github.com/zbh255/bilog"
 	"math"
 	"reflect"
-	"runtime"
 	"strconv"
 	"sync"
 	"syscall"
@@ -23,26 +20,6 @@ type serverCallContext struct {
 	Codec   codec.Codec
 	Encoder packet.Encoder
 	Conn    transport.ServerConnAdapter
-}
-
-type Server struct {
-	// 存储绑定的实例的集合
-	// Map[TypeName]:[ElemMeta]
-	elems sync.Map
-	// Server Engine
-	server transport.ServerTransport
-	// 任务池
-	taskPool *pool.TaskPool
-	// 简单的缓冲内存池
-	bufferPool sync.Pool
-	// logger
-	logger bilog.Logger
-	// 用于操作protocol.Message
-	mop protocol.MessageOperation
-	// 缓存一些Codec以加速索引
-	cacheCodec []codec.Wrapper
-	// 缓存一些Encoder以加速索引
-	cacheEncoder []packet.Wrapper
 }
 
 func NewServer(opts ...serverOption) *Server {
@@ -75,16 +52,16 @@ func NewServer(opts ...serverOption) *Server {
 	for i := 0; i < math.MaxUint8; i++ {
 		wp := packet.GetEncoderFromIndex(i)
 		if wp != nil {
-			server.cacheEncoder = append(server.cacheEncoder,wp)
+			server.cacheEncoder = append(server.cacheEncoder, wp)
 		} else {
 			break
 		}
 	}
 	// init codec cache
-	for i := 0; i < math.MaxUint8;i++ {
+	for i := 0; i < math.MaxUint8; i++ {
 		wp := codec.GetCodecFromIndex(i)
 		if wp != nil {
-			server.cacheCodec = append(server.cacheCodec,wp)
+			server.cacheCodec = append(server.cacheCodec, wp)
 		} else {
 			break
 		}
@@ -92,7 +69,7 @@ func NewServer(opts ...serverOption) *Server {
 	// init message operations
 	server.mop = protocol.NewMessageOperation()
 	// New TaskPool
-	server.taskPool = pool.NewTaskPool(pool.MaxTaskPoolSize, runtime.NumCPU()*4)
+	//server.taskPool = pool.NewTaskPool(pool.MaxTaskPoolSize, runtime.NumCPU()*4)
 	return server
 }
 
@@ -128,14 +105,14 @@ func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 	// TODO : Handle Ping-Pong Message
 	// TODO : Handle Control Header
 	msg := protocol.NewMessage()
-	pyloadStart,err := s.mop.UnmarshalHeader(msg,data)
+	pyloadStart, err := s.mop.UnmarshalHeader(msg, data)
 	// 根据读取的头信息初始化一些需要的Codec/Encoder
 	cwp := safeIndexCodecWps(s.cacheCodec, int(msg.GetCodecType()))
-	ewp := safeIndexEncoderWps(s.cacheEncoder,int(msg.GetEncoderType()))
+	ewp := safeIndexEncoderWps(s.cacheEncoder, int(msg.GetEncoderType()))
 	var sArg serverCallContext
 	if cwp == nil || ewp == nil {
-		sArg.Codec = safeIndexCodecWps(s.cacheCodec,int(protocol.DefaultCodecType)).Instance()
-		sArg.Encoder = safeIndexEncoderWps(s.cacheEncoder,int(protocol.DefaultEncodingType)).Instance()
+		sArg.Codec = safeIndexCodecWps(s.cacheCodec, int(protocol.DefaultCodecType)).Instance()
+		sArg.Encoder = safeIndexEncoderWps(s.cacheEncoder, int(protocol.DefaultEncodingType)).Instance()
 	} else {
 		sArg = serverCallContext{
 			Codec:   cwp.Instance(),
@@ -178,15 +155,18 @@ func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 	}
 	// 从完整的data中解码Body
 	msg.Payloads = data
-
+	// Plugin OnMessage
+	err = s.pManager.OnMessage(msg, &msg.Payloads)
+	if err != nil {
+		s.logger.ErrorFromErr(err)
+	}
 	// 序列化完之后才确定调用名
 	// MethodName : Hello.Hello : receiver:methodName
-	eTmp, ok := s.elems.Load(msg.InstanceName)
+	elemData, ok := loadElemMeta(s, msg.InstanceName)
 	if !ok {
 		s.handleError(sArg, msg.MsgId, *common.ErrElemTypeNoRegister, msg.InstanceName)
 		return
 	}
-	elemData := eTmp.(common.ElemMeta)
 	method, ok := elemData.Methods[msg.MethodName]
 	if !ok {
 		s.handleError(sArg, msg.MsgId, *common.ErrMethodNoRegister, "")
@@ -196,7 +176,15 @@ func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 	callArgs, ok := s.getCallArgsFromClient(sArg, msg, elemData.Data, method)
 	// 参数校验为不合法
 	if !ok {
+		if err := s.pManager.OnCallBefore(msg, &callArgs, errors.New("arguments check failed")); err != nil {
+			s.logger.ErrorFromErr(err)
+		}
+		s.handleError(sArg, msg.MsgId, *common.ErrServer, "arguments check failed")
 		return
+	}
+	// Plugin
+	if err := s.pManager.OnCallBefore(msg, &callArgs, nil); err != nil {
+		s.logger.ErrorFromErr(err)
 	}
 	// 向任务池提交调用用户过程的任务
 	s.callHandleUnit(sArg, msg, method, callArgs)
@@ -220,7 +208,11 @@ func (s *Server) callHandleUnit(sArg serverCallContext, msg *protocol.Message, m
 	msg.SetMsgType(protocol.MessageReturn)
 	msg.Timestamp = uint64(time.Now().Unix())
 	msg.MsgId = msgId
-	s.mop.Reset(msg,false,true,true,1024)
+	s.mop.Reset(msg, false, true, true, 1024)
+	// OnCallResult Plugin
+	if err := s.pManager.OnCallResult(msg, &callResult); err != nil {
+		s.logger.ErrorFromErr(err)
+	}
 	s.handleResult(sArg, msg, callResult)
 	// 处理用户过程返回的错误，v0.30开始规定每个符合规范的API最后一个返回值是error接口
 	s.handleErrAndRepResult(sArg, msg, callResult)
@@ -245,6 +237,6 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Stop() error {
-	s.taskPool.Stop()
+	//s.taskPool.Stop()
 	return s.server.Stop()
 }

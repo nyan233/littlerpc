@@ -35,12 +35,15 @@ func (s *Server) sendMsg(sArg serverCallContext, msg *protocol.Message) {
 			s.handleError(sArg, msg.MsgId, *common.ErrServer, err.Error())
 			return
 		}
-		msg.Payloads = append(msg.Payloads[:0],bytes...)
+		msg.Payloads = append(msg.Payloads[:0], bytes...)
 	}
-	s.mop.MarshalAll(msg,bp)
+	s.mop.MarshalAll(msg, bp)
 	// write data
 	_, err := sArg.Conn.Write(*bp)
 	if err != nil {
+		s.logger.ErrorFromErr(err)
+	}
+	if err := s.pManager.OnComplete(msg, err); err != nil {
 		s.logger.ErrorFromErr(err)
 	}
 }
@@ -70,7 +73,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	inputTypeList := lreflect.FuncInputTypeList(method, true)
 	var i int
 	var e error
-	s.mop.RangePayloads(msg,msg.Payloads, func(p []byte,endBefore bool) bool {
+	s.mop.RangePayloads(msg, msg.Payloads, func(p []byte, endBefore bool) bool {
 		eface := inputTypeList[i]
 		callArg, err := common.CheckCoderType(sArg.Codec, p, eface)
 		if err != nil {
@@ -85,7 +88,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 		return true
 	})
 	if e != nil {
-		return nil,false
+		return nil, false
 	}
 	// 验证客户端传来的栈帧中每个参数的类型是否与服务器需要的一致？
 	// receiver(接收器)参与验证
@@ -119,7 +122,7 @@ func (s *Server) handleError(sArg serverCallContext, msgId uint64, errNo protoco
 	bp := s.bufferPool.Get().(*[]byte)
 	*bp = (*bp)[:0]
 	defer s.bufferPool.Put(bp)
-	s.mop.MarshalHeader(msg,bp)
+	s.mop.MarshalHeader(msg, bp)
 	_, err := conn.Write(*bp)
 	if err != nil {
 		s.logger.ErrorFromErr(err)
