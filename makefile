@@ -8,6 +8,7 @@ cover-test:
 	# 合并测试覆盖率
 	sh merge_cover.sh
 
+.PHONY:test
 test:
 	go test -v ./...
 
