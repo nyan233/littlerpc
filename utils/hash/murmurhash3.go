@@ -28,7 +28,10 @@ func Murmurhash3Onx8632(key []byte, seed uint32) uint32 {
 		hash = (hash << R2) | (hash >> (32 - R2))
 		hash = hash*M + N
 	}
-	tail := (*[3]byte)(unsafe.Pointer(&key[keyLen-keyLen%ChunkSize]))
+	if nBlock*ChunkSize == keyLen {
+		return hash
+	}
+	tail := (*[3]byte)(unsafe.Pointer(&key[nBlock*ChunkSize]))
 	var k1 uint32
 	switch keyLen & 3 {
 	case 3:
