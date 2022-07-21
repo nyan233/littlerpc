@@ -28,30 +28,40 @@ func (c *Client) handleProcessRetErr(errBytes []byte, i interface{}) (interface{
 
 func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, conn transport.ClientTransport, method reflect.Value, rep *[]interface{}) error {
 	// 接收服务器返回的调用结果并将header反序列化
-	buffer, err := conn.RecvData()
+	buf := c.memPool.Get().(*[]byte)
+	defer c.memPool.Put(buf)
+	*buf = (*buf)[:cap(*buf)]
+	readN, err := conn.Read(*buf)
 	if err != nil {
 		return err
 	}
+	*buf = (*buf)[:readN]
 	// read header
 	c.mop.Reset(msg, false, false, true, 4096)
-	payloadStart, err := c.mop.UnmarshalHeader(msg, buffer)
+	payloadStart, err := c.mop.UnmarshalHeader(msg, *buf)
 	if err != nil {
 		return err
 	}
 	// 处理服务器的错误返回
 	if msg.GetMsgType() == protocol.MessageErrorReturn {
-		return errors.New(string(buffer[payloadStart:]))
+		return errors.New(string((*buf)[payloadStart:]))
 	}
-	msg.Payloads = buffer[payloadStart:]
+	msg.Payloads = (*buf)[payloadStart:]
 	// TODO : Client Handle Ping&Pong
 	// encoder类型为text时不需要额外的内存拷贝
 	// 默认的encoder即text
 	if msg.GetEncoderType() != protocol.DefaultEncodingType {
-		buffer, err = c.encoderWp.Instance().UnPacket(msg.Payloads)
+		packet, err := c.encoderWp.Instance().UnPacket(msg.Payloads)
 		if err != nil {
 			return err
 		}
-		msg.Payloads = append(msg.Payloads[:0], buffer...)
+		msg.Payloads = append(msg.Payloads[:0], packet...)
+	}
+	// OnReceiveMessage 接收完消息之后调用的插件过程
+	for _, plg := range c.plugins {
+		if err := plg.OnReceiveMessage(msg, buf); err != nil {
+			c.logger.ErrorFromErr(err)
+		}
 	}
 	// 处理服务端传回的参数
 	outputTypeList := lreflect.FuncOutputTypeList(method, false)
@@ -140,8 +150,14 @@ func (c *Client) sendCallMsg(msg *protocol.Message, conn transport.ClientTranspo
 		msg.Payloads = append(msg.Payloads[:0], bodyBytes...)
 	}
 	c.mop.MarshalAll(msg, memBuffer)
+	// 插件的
+	for _, plg := range c.plugins {
+		if err := plg.OnSendMessage(msg, memBuffer); err != nil {
+			c.logger.ErrorFromErr(err)
+		}
+	}
 	// write data
-	_, err := conn.SendData(*memBuffer)
+	_, err := conn.Write(*memBuffer)
 	if err != nil {
 		return err
 	}

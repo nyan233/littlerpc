@@ -79,11 +79,20 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	if err != nil {
 		return nil, err
 	}
+	// 插件的OnCall阶段
+	for _, plg := range c.plugins {
+		if err := plg.OnCall(msg, &args); err != nil {
+			c.logger.ErrorFromErr(err)
+		}
+	}
 	err = c.sendCallMsg(msg, conn.conn)
 	if err != nil {
 		return nil, err
 	}
 	err = c.readMsgAndDecodeReply(msg, conn.conn, method, &rep)
+	for _, plg := range c.plugins {
+		plg.OnResult(msg, &rep, err)
+	}
 	if err != nil {
 		return nil, err
 	}

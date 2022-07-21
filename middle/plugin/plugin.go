@@ -10,17 +10,24 @@ const (
 	NORMAL  = 1 ^ 8 // 按照插件的功能区分,normal代表这个插件并不支持自定义的控制参数
 )
 
+// ClientPlugin 指针类型的数据均不能被多个Goroutine安全的使用
+// 如果你要这么做的话，那么请将其拷贝一份
 type ClientPlugin interface {
-	// OnCall 指Client.Call() | Client.AsyncCall() 开始
-	OnCall(args *[]interface{}) error
+	//	OnCall Client.Call() | Client.AsyncCall() 找到绑定的方法并完成Codec后开始
+	OnCall(msg *protocol.Message, args *[]interface{}) error
+	//	OnSendMessage Bytes并不能被多个Goroutine安全的使用,如果需要跨context传递
+	//	请将Bytes指向的数据拷贝一份,littlerpc内部对bytes会有内存复用的行为，所以在将其跨Goroutine传递时可能会看到
+	//	奇怪的数据
 	OnSendMessage(msg *protocol.Message, bytes *[]byte) error
-	// OnReceiveMessage 调用该阶段时Msg必须是Reset之后的消息
+	// OnReceiveMessage 调用该阶段时Msg必须是Reset过的消息,该阶段在接收完服务器消息，并在使用Codec解码数据之前调用
 	OnReceiveMessage(msg *protocol.Message, bytes *[]byte) error
 	// OnResult 客户端将正确的结果返回客户端之前调用
 	// 如果服务器的返回并不是正确的结果，那么err != nil
 	OnResult(msg *protocol.Message, results *[]interface{}, err error)
 }
 
+// ServerPlugin 指针类型的数据均不能被多个Goroutine安全的使用
+// 如果你要这么做的话，那么请将其拷贝一份
 type ServerPlugin interface {
 	// OnMessage 消息刚刚到来时的值,bytes必须为一个完整的消息帧
 	OnMessage(msg *protocol.Message, bytes *[]byte) error
