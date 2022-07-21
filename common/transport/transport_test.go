@@ -35,11 +35,12 @@ func TestTcpTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.SendData([]byte("hello world!"))
+	_, err = client.Write([]byte("hello world!"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.RecvData()
+	var buf [256]byte
+	_, err = client.Read(buf[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,11 +75,12 @@ func TestWebSocketTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	_, err = client.SendData([]byte("hello world!"))
+	_, err = client.Write([]byte("hello world!"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.RecvData()
+	var buf [256]byte
+	_, err = client.Read(buf[:])
 	if err != nil {
 		t.Fatal(err)
 	}

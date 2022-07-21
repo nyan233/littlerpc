@@ -3,14 +3,16 @@ package transport
 import (
 	"crypto/tls"
 	"github.com/gorilla/websocket"
+	"net"
 	"net/url"
+	"time"
 )
 
 type WebSocketTransClient struct {
 	conn *websocket.Conn
 }
 
-func NewWebSocketTransClient(tlsC *tls.Config, addr string) (*WebSocketTransClient, error) {
+func NewWebSocketTransClient(tlsC *tls.Config, addr string) (ClientTransport, error) {
 	dialer := websocket.Dialer{
 		TLSClientConfig: tlsC,
 	}
@@ -29,19 +31,38 @@ func NewWebSocketTransClient(tlsC *tls.Config, addr string) (*WebSocketTransClie
 	return &WebSocketTransClient{conn: conn}, nil
 }
 
-func (c *WebSocketTransClient) Close() error {
-	return c.conn.Close()
-}
-
-func (c *WebSocketTransClient) SendData(p []byte) (n int, err error) {
-	err = c.conn.WriteMessage(websocket.BinaryMessage, p)
+func (w *WebSocketTransClient) Read(b []byte) (n int, err error) {
+	_, bytes, err := w.conn.ReadMessage()
 	if err != nil {
 		return -1, err
 	}
-	return len(p), err
+	return copy(b, bytes), nil
 }
 
-func (c *WebSocketTransClient) RecvData() (p []byte, err error) {
-	_, p, err = c.conn.ReadMessage()
-	return
+func (w *WebSocketTransClient) Write(b []byte) (n int, err error) {
+	return len(b), w.conn.WriteMessage(websocket.BinaryMessage, b)
+}
+
+func (w *WebSocketTransClient) Close() error {
+	return w.conn.Close()
+}
+
+func (w *WebSocketTransClient) LocalAddr() net.Addr {
+	return w.conn.LocalAddr()
+}
+
+func (w *WebSocketTransClient) RemoteAddr() net.Addr {
+	return w.conn.RemoteAddr()
+}
+
+func (w *WebSocketTransClient) SetDeadline(t time.Time) error {
+	return w.conn.SetReadDeadline(t)
+}
+
+func (w *WebSocketTransClient) SetReadDeadline(t time.Time) error {
+	return w.conn.SetReadDeadline(t)
+}
+
+func (w *WebSocketTransClient) SetWriteDeadline(t time.Time) error {
+	return w.conn.SetWriteDeadline(t)
 }

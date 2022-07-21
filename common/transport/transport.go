@@ -23,9 +23,7 @@ const (
 
 // ClientTransport 抽象了不同的通信协议
 type ClientTransport interface {
-	SendData(p []byte) (n int, err error)
-	RecvData() (p []byte, err error)
-	Close() error
+	net.Conn
 }
 
 type ServerTransport interface {
