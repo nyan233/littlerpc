@@ -46,6 +46,8 @@ type Client struct {
 	listenReady context.CancelFunc
 	// 用于模拟异步调用的goroutine池
 	sendGPool *pool.TaskPool
+	// 用于客户端的插件
+	plugins []plugin.ClientPlugin
 }
 
 func addReadyBuffer(c *Client, msgId uint64, msg protocol.Message) {
