@@ -1,8 +1,10 @@
 package balance
 
 import (
+	"github.com/nyan233/littlerpc/utils/hash"
+	"math"
 	"sync/atomic"
-	"time"
+	"unsafe"
 )
 
 // 自带的默认负载均衡器
@@ -30,13 +32,10 @@ func (h *hashBalance) Scheme() string {
 }
 
 func (h *hashBalance) Target(addrs []string) string {
-	i := getHashCode(time.Now().UnixNano(), len(addrs)+1)
+	uRand := hash.FastRandN(math.MaxUint32)
+	i := hash.Murmurhash3Onx8632((*(*[6]byte)(unsafe.Pointer(&uRand)))[:], hash.FastRandN(math.MaxUint32)) % uint32(len(addrs))
 	if i > 0 {
 		return addrs[i-1]
 	}
 	return addrs[i]
-}
-
-func getHashCode(key int64, len int) int {
-	return int(key%int64(len)<<16) % len
 }

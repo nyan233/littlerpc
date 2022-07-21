@@ -1,6 +1,7 @@
 package balance
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 )
@@ -28,6 +29,9 @@ func TestHashBalance(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+	for k, v := range countMap {
+		t.Log(fmt.Sprintf("%s --> %d", k, v))
+	}
 }
 
 func TestRoundRobin(t *testing.T) {
