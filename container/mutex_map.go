@@ -1,6 +1,6 @@
 //go:build go1.18 || go.19 || go.1.20
 
-package common
+package container
 
 import "sync"
 
@@ -35,6 +35,19 @@ func (m *MutexMap[Key, Value]) Store(k Key, v Value) {
 		m.mp = make(map[Key]Value)
 	}
 	m.mp[k] = v
+}
+
+func (m *MutexMap[Key, Value]) Range(fn func(key Key, v Value) bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.mp == nil {
+		return
+	}
+	for k, v := range m.mp {
+		if !fn(k, v) {
+			break
+		}
+	}
 }
 
 func (m *MutexMap[Key, Value]) Delete(k Key) {
