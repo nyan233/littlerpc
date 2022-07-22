@@ -9,14 +9,21 @@ import (
 	"time"
 )
 
+const (
+	DEFAULT_POOL_SIZE = 1024 * 16
+)
+
 type Config struct {
-	TlsConfig         *tls.Config
-	ServerAddr        string
-	KeepAlive         bool
-	Logger            bilog.Logger
-	BalanceScheme     string // 负载均衡器规则
+	TlsConfig  *tls.Config
+	ServerAddr string
+	KeepAlive  bool
+	Logger     bilog.Logger
+	// 负载均衡器规则
+	BalanceScheme     string
 	ClientPPTimeout   time.Duration
 	ClientConnTimeout time.Duration
+	// 底层使用的Goroutine池的大小
+	PoolSize int32
 	// 客户端使用的传输协议
 	NetWork string
 	// 客户端Call错误处理的回调函数

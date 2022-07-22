@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/common/transport"
+	"github.com/nyan233/littlerpc/container"
 	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
+	"github.com/zbh255/bilog"
 	"math"
 	"reflect"
 	"strconv"
@@ -20,6 +22,28 @@ type serverCallContext struct {
 	Codec   codec.Codec
 	Encoder packet.Encoder
 	Conn    transport.ServerConnAdapter
+}
+
+type Server struct {
+	// 存储绑定的实例的集合
+	// Map[TypeName]:[ElemMeta]
+	elems container.SyncMap118[string, common.ElemMeta]
+	// Server Engine
+	server transport.ServerTransport
+	// 任务池
+	//taskPool *pool.TaskPool
+	// 简单的缓冲内存池
+	bufferPool sync.Pool
+	// logger
+	logger bilog.Logger
+	// 用于操作protocol.Message
+	mop protocol.MessageOperation
+	// 缓存一些Codec以加速索引
+	cacheCodec []codec.Wrapper
+	// 缓存一些Encoder以加速索引
+	cacheEncoder []packet.Wrapper
+	// 注册的插件的管理器
+	pManager *pluginManager
 }
 
 func NewServer(opts ...serverOption) *Server {
@@ -162,7 +186,7 @@ func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
 	}
 	// 序列化完之后才确定调用名
 	// MethodName : Hello.Hello : receiver:methodName
-	elemData, ok := loadElemMeta(s, msg.InstanceName)
+	elemData, ok := s.elems.Load(msg.GetInstanceName())
 	if !ok {
 		s.handleError(sArg, msg.MsgId, *common.ErrElemTypeNoRegister, msg.InstanceName)
 		return

@@ -97,3 +97,11 @@ func WithProtocol(scheme string) clientOption {
 		config.NetWork = scheme
 	}
 }
+
+func WithPoolSize(size int) clientOption {
+	return func(config *Config) {
+		if size == 0 {
+			config.PoolSize = DEFAULT_POOL_SIZE
+		}
+	}
+}
