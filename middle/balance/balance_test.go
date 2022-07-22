@@ -2,55 +2,66 @@ package balance
 
 import (
 	"fmt"
+	"github.com/nyan233/littlerpc/container"
+	hash2 "github.com/nyan233/littlerpc/utils/hash"
+	"math"
+	"net"
 	"sync"
 	"testing"
 )
 
-var addrs = []string{"127.0.0.1", "192.168.1.1", "192.168.1.2", "192.168.1.3", "192.168.1.4", "192.168.1.5",
-	"220.227.0.1", "220.227.0.2", "220.227.0.3", "220.227.0.4", "220.227.0.5",
-	"20.34.45.94", "20.34.45.95", "20.34.45.78", "20.34.45.79", "20.34.45.43", "20.34.45.33"}
+const (
+	NAddr              = 20000
+	NGoroutine         = 200
+	NCallTarget        = 8
+	MaxByte     uint32 = math.MaxUint8
+)
 
 func TestHashBalance(t *testing.T) {
-	tmp, _ := balancerCollection.Load("hash")
-	hash := tmp.(*hashBalance)
-	var wg sync.WaitGroup
-	nGoroutine := 2000
-	wg.Add(nGoroutine)
-	countMap := map[string]int{}
-	var mu sync.Mutex
-	for i := 0; i < nGoroutine; i++ {
-		go func() {
-			defer wg.Done()
-			mu.Lock()
-			addr := hash.Target(addrs)
-			num := countMap[addr]
-			countMap[addr] = num + 1
-			mu.Unlock()
-		}()
+	var addrs container.Slice[string] = make([]string, 0, NAddr)
+	for i := 0; i < NAddr; i++ {
+		ip := net.IPv4(byte(hash2.FastRandN(MaxByte)), byte(hash2.FastRandN(MaxByte)),
+			byte(hash2.FastRandN(MaxByte)), byte(hash2.FastRandN(MaxByte)))
+		addrs = append(addrs, ip.String())
 	}
-	wg.Wait()
-	for k, v := range countMap {
-		t.Log(fmt.Sprintf("%s --> %d", k, v))
-	}
+	// 去重
+	addrs.Unique()
+	t.Run("HashBalance", func(t *testing.T) {
+		testBalance(t, "hash", addrs)
+	})
+	t.Run("RoundRobbinBalance", func(t *testing.T) {
+		testBalance(t, "roundRobin", addrs)
+	})
 }
 
-func TestRoundRobin(t *testing.T) {
-	tmp, _ := balancerCollection.Load("roundRobin")
-	roundRobbin := tmp.(*roundRobbin)
+func testBalance(t *testing.T, scheme string, addrs []string) {
+	b := GetBalancer(scheme)
+	if b == nil {
+		t.Fatal("no balance scheme")
+	}
+	b.InitTable(addrs)
 	var wg sync.WaitGroup
-	nGoroutine := 100
-	wg.Add(nGoroutine)
-	countMap := map[string]int{}
-	var mu sync.Mutex
-	for i := 0; i < nGoroutine; i++ {
+	wg.Add(NGoroutine)
+	countMap := container.MutexMap[string, int]{}
+	for i := 0; i < NGoroutine; i++ {
 		go func() {
 			defer wg.Done()
-			mu.Lock()
-			addr := roundRobbin.Target(addrs)
-			num := countMap[addr]
-			countMap[addr] = num + 1
-			mu.Unlock()
+			for j := 0; j < NCallTarget; j++ {
+				addr := b.Target([]byte("123456"))
+				num := countMap.Load(addr)
+				countMap.Store(addr, num+1)
+			}
 		}()
 	}
 	wg.Wait()
+	var maxV int
+	var maxK string
+	countMap.Range(func(k string, v int) bool {
+		if maxV < v {
+			maxV = v
+			maxK = k
+		}
+		return true
+	})
+	t.Log(fmt.Sprintf("Scheme(%s) %s --> MaxCount(%d)", scheme, maxK, maxV))
 }
