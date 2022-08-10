@@ -1,8 +1,7 @@
-//go:build go1.18 || go.19 || go.1.20
-
-package common
+package container
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
@@ -15,6 +14,13 @@ func BenchmarkGenericsMap(b *testing.B) {
 	mu := MutexMap[string, int]{}
 	rwMu := RWMutexMap[string, int]{}
 	writeTime := 100 * time.Nanosecond
+	sMap := NewSliceMap[string, int](100)
+	b.Run("SliceMap", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			sMap.Store(strconv.Itoa(i%100), i)
+		}
+	})
 	b.Run("MutexBackgroundWrite", func(b *testing.B) {
 		go func() {
 			for {

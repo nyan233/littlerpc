@@ -26,3 +26,7 @@ func (s *Slice[V]) Append(v []V) {
 func (s *Slice[V]) AppendS(vs ...V) {
 	*s = append(*s, vs...)
 }
+
+func (s *Slice[V]) Reset() {
+	*s = (*s)[:0]
+}
