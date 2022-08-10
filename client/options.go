@@ -3,8 +3,11 @@ package client
 import (
 	"crypto/tls"
 	"github.com/nyan233/littlerpc/common"
+	"github.com/nyan233/littlerpc/middle/balance"
 	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
+	"github.com/nyan233/littlerpc/middle/plugin"
+	"github.com/nyan233/littlerpc/middle/resolver"
 	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
 	"time"
@@ -32,13 +35,13 @@ func WithDefaultClient() clientOption {
 
 func WithResolver(bScheme string) clientOption {
 	return func(config *Config) {
-		config.BalanceScheme = bScheme
+		config.Resolver = resolver.GetResolver(bScheme)
 	}
 }
 
 func WithBalance(scheme string) clientOption {
 	return func(config *Config) {
-		config.BalanceScheme = scheme
+		config.Balancer = balance.GetBalancer(scheme)
 	}
 }
 
@@ -103,5 +106,11 @@ func WithPoolSize(size int) clientOption {
 		if size == 0 {
 			config.PoolSize = DEFAULT_POOL_SIZE
 		}
+	}
+}
+
+func WithPlugin(plugin plugin.ClientPlugin) clientOption {
+	return func(config *Config) {
+		config.Plugins = append(config.Plugins, plugin)
 	}
 }

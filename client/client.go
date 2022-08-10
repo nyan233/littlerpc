@@ -5,12 +5,10 @@ import (
 	"errors"
 	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/common/transport"
+	"github.com/nyan233/littlerpc/container"
 	"github.com/nyan233/littlerpc/internal/pool"
-	"github.com/nyan233/littlerpc/middle/balance"
 	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
-	"github.com/nyan233/littlerpc/middle/plugin"
-	"github.com/nyan233/littlerpc/middle/resolver"
 	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
 	"reflect"
@@ -18,31 +16,13 @@ import (
 	"time"
 )
 
-var (
-	addrCollection []string
-	mu             sync.Mutex
+const (
+	Default_Conn_Timeout = time.Second * 10
 )
 
 type lockConn struct {
 	mu   *sync.Mutex
 	conn transport.ClientTransport
-}
-
-func OpenBalance(scheme, url string, updateT time.Duration) error {
-	mu.Lock()
-	defer mu.Unlock()
-	rb := resolver.GetResolver(scheme)
-	if rb == nil {
-		return errors.New("no this resolver scheme")
-	}
-	rb.SetOpen(true)
-	rb.SetUpdateTime(updateT)
-	addrC, err := rb.Instance().Parse(url)
-	if err != nil {
-		return err
-	}
-	addrCollection = addrC
-	return nil
 }
 
 // Client 在Client中同时使用同步调用和异步调用将导致同步调用阻塞某一连接上的所有异步调用
@@ -54,7 +34,7 @@ type Client struct {
 	concurrentConnCount int64
 	// elems 可以支持不同实例的调用
 	// 所有的操作都是线程安全的
-	elems  common.SyncMap118[string, common.ElemMeta]
+	elems  container.SyncMap118[string, common.ElemMeta]
 	logger bilog.Logger
 	// 简单的内存池
 	memPool sync.Pool
@@ -66,16 +46,18 @@ type Client struct {
 	mop protocol.MessageOperation
 	// 注册的所有异步调用的回调函数
 	// processName:func(rep []interface{},err error)
-	callBacks common.SyncMap118[string, func(rep []interface{}, err error)]
+	callBacks container.SyncMap118[string, func(rep []interface{}, err error)]
 	// MessageId : Message
 	// 使用到的操作均是线程安全的
-	readyBuffer common.RWMutexMap[uint64, protocol.Message]
+	readyBuffer container.RWMutexMap[uint64, protocol.Message]
 	// 用于取消后台正在监听消息的goroutine
 	listenReady context.CancelFunc
 	// 用于超时管理和异步调用模拟的goroutine池
 	gp *pool.CounterPool
 	// 用于客户端的插件
-	plugins []plugin.ClientPlugin
+	pluginManager *pluginManager
+	// 地址管理器
+	addrManager *addrManager
 }
 
 func NewClient(opts ...clientOption) (*Client, error) {
@@ -86,18 +68,15 @@ func NewClient(opts ...clientOption) (*Client, error) {
 	}
 	client := &Client{}
 	client.logger = config.Logger
-	// TODO 配置解析器和负载均衡器
-	if config.BalanceScheme != "" {
-		mu.Lock()
-		balancer := balance.GetBalancer(config.BalanceScheme)
-		if balancer == nil {
-			panic(interface{}("no balancer scheme"))
-		}
-		addr := balancer.Target(addrCollection)
-		mu.Unlock()
-		config.ServerAddr = addr
+	// 配置解析器和负载均衡器
+	manager, err := newAddrManager(config.Balancer, config.Resolver, config.ResolverParseUrl)
+	if err != nil {
+		return nil, err
 	}
-	// init mux connection
+	client.addrManager = manager
+	// 使用负载均衡器选出一个地址
+	config.ServerAddr = client.addrManager.Target()
+	// init multi connection
 	client.concurrentConnect = make([]lockConn, config.MuxConnection)
 	for k := range client.concurrentConnect {
 		conn, err := clientSupportCollection[config.NetWork](*config)
@@ -118,6 +97,8 @@ func NewClient(opts ...clientOption) (*Client, error) {
 			return &tmp
 		},
 	}
+	// plugins
+	client.pluginManager = &pluginManager{plugins: config.Plugins}
 	// encoderWp
 	client.encoderWp = config.Encoder
 	// codec
@@ -125,7 +106,7 @@ func NewClient(opts ...clientOption) (*Client, error) {
 	// init message operations
 	client.mop = protocol.NewMessageOperation()
 	// init callBacks register map
-	client.callBacks = common.SyncMap118[string, func(rep []interface{}, err error)]{
+	client.callBacks = container.SyncMap118[string, func(rep []interface{}, err error)]{
 		SMap: sync.Map{},
 	}
 	return client, nil
@@ -168,24 +149,20 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 	msg := protocol.NewMessage()
-	method, err := c.identArgAndEncode(processName, msg, args)
+	method, ctx, err := c.identArgAndEncode(processName, msg, args)
 	if err != nil {
 		return nil, err
 	}
 	// 插件的OnCall阶段
-	for _, plg := range c.plugins {
-		if err := plg.OnCall(msg, &args); err != nil {
-			c.logger.ErrorFromErr(err)
-		}
+	if err := c.pluginManager.OnCall(msg, &args); err != nil {
+		c.logger.ErrorFromErr(err)
 	}
-	err = c.sendCallMsg(msg, conn.conn)
+	err = c.sendCallMsg(ctx, msg, conn.conn)
 	if err != nil {
 		return nil, err
 	}
 	err = c.readMsgAndDecodeReply(msg, conn.conn, method, &rep)
-	for _, plg := range c.plugins {
-		plg.OnResult(msg, &rep, err)
-	}
+	c.pluginManager.OnResult(msg, &rep, err)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +177,7 @@ func (c *Client) AsyncCall(processName string, args ...interface{}) error {
 	if err != nil {
 		return err
 	}
-	go func() {
+	return c.gp.GOGO(func() {
 		// 查找对应的回调函数
 		var callBackIsOk bool
 		cbFn, ok := c.callBacks.Load(processName)
@@ -208,7 +185,7 @@ func (c *Client) AsyncCall(processName string, args ...interface{}) error {
 		// 在池中获取一个底层传输的连接
 		conn := getConnFromMux(c)
 		conn.mu.Lock()
-		defer mu.Unlock()
+		defer conn.mu.Unlock()
 		err := c.sendCallMsg(msg, conn.conn)
 		if err != nil && callBackIsOk {
 			cbFn(nil, err)
@@ -227,7 +204,7 @@ func (c *Client) AsyncCall(processName string, args ...interface{}) error {
 		if callBackIsOk {
 			cbFn(rep, nil)
 		}
-	}()
+	})
 	return nil
 }
 

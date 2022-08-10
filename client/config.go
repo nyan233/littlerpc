@@ -3,8 +3,11 @@ package client
 import (
 	"crypto/tls"
 	"github.com/nyan233/littlerpc/common/transport"
+	"github.com/nyan233/littlerpc/middle/balance"
 	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
+	"github.com/nyan233/littlerpc/middle/plugin"
+	"github.com/nyan233/littlerpc/middle/resolver"
 	"github.com/zbh255/bilog"
 	"time"
 )
@@ -14,12 +17,15 @@ const (
 )
 
 type Config struct {
-	TlsConfig  *tls.Config
+	// Tls相关的配置
+	TlsConfig *tls.Config
+	// 服务器的地址
+	// 当配置了地址解析器和负载均衡器的时候，此项将被忽略
 	ServerAddr string
-	KeepAlive  bool
-	Logger     bilog.Logger
-	// 负载均衡器规则
-	BalanceScheme     string
+	// 连接池中的连接是否使用KeepAlive
+	KeepAlive bool
+	// 使用的日志器
+	Logger            bilog.Logger
 	ClientPPTimeout   time.Duration
 	ClientConnTimeout time.Duration
 	// 底层使用的Goroutine池的大小
@@ -34,6 +40,14 @@ type Config struct {
 	Codec codec.Wrapper
 	// 用于连接复用的连接数量
 	MuxConnection int
+	// 使用的负载均衡器
+	Balancer balance.Balancer
+	// 使用的地址解析器
+	Resolver resolver.Builder
+	// 地址解析器解析地址时需要用到的Url
+	ResolverParseUrl string
+	// 安装的插件
+	Plugins []plugin.ClientPlugin
 }
 
 type NewProtocolSupport func(config Config) (transport.ClientTransport, error)

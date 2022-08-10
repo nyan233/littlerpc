@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/common/transport"
@@ -95,7 +96,7 @@ func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, conn transport.Cli
 }
 
 // return method
-func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, args []interface{}) (reflect.Value, error) {
+func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, args []interface{}) (reflect.Value, context.Context, error) {
 	methodData := strings.SplitN(processName, ".", 2)
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
 		panic(interface{}("the illegal type name and method name"))
@@ -104,11 +105,19 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 	msg.SetMethodName(methodData[1])
 	instance, ok := c.elems.Load(msg.GetInstanceName())
 	if !ok {
-		return reflect.ValueOf(nil), common.ErrNoInstance
+		return reflect.ValueOf(nil), nil, common.ErrNoInstance
 	}
 	method, ok := instance.Methods[msg.GetMethodName()]
 	if !ok {
-		return reflect.ValueOf(nil), common.ErrNoMethod
+		return reflect.ValueOf(nil), nil, common.ErrNoMethod
+	}
+	var rCtx context.Context
+	// 检查是否携带context.Context
+	if ctx, ok := args[0].(context.Context); ok {
+		rCtx = ctx
+		args = args[1:]
+	} else {
+		rCtx, _ = context.WithTimeout(context.Background(), Default_Conn_Timeout)
 	}
 	for _, v := range args {
 		argType := common.CheckIType(v)
@@ -122,14 +131,14 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 		}
 		bytes, err := c.codecWp.Instance().Marshal(v)
 		if err != nil {
-			return reflect.ValueOf(nil), err
+			return reflect.ValueOf(nil), nil, err
 		}
 		msg.AppendPayloads(bytes)
 	}
-	return method, nil
+	return method, rCtx, nil
 }
 
-func (c *Client) sendCallMsg(msg *protocol.Message, conn transport.ClientTransport) error {
+func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, conn transport.ClientTransport) error {
 	// init header
 	msg.SetMsgId(rand.Uint64())
 	msg.SetMsgType(protocol.MessageCall)
@@ -157,9 +166,20 @@ func (c *Client) sendCallMsg(msg *protocol.Message, conn transport.ClientTranspo
 		}
 	}
 	// write data
-	_, err := conn.Write(*memBuffer)
-	if err != nil {
-		return err
+	done := make(chan struct{})
+	var err error
+	err2 := c.gp.GOGO(func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-done:
+			return
+		}
+	})
+	if err2 != nil {
+		return err2
 	}
-	return nil
+	_, err = conn.Write(*memBuffer)
+	done <- struct{}{}
+	return err
 }
