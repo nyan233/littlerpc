@@ -2,11 +2,11 @@ package protocol
 
 import (
 	"errors"
+	"github.com/nyan233/littlerpc/container"
 	"math"
 	"math/rand"
 	"sync"
 	"testing"
-	"time"
 )
 
 func BenchmarkProtocol(b *testing.B) {
@@ -16,16 +16,14 @@ func BenchmarkProtocol(b *testing.B) {
 		InstanceName:  "Hello",
 		MethodName:    "Add",
 		MsgId:         rand.Uint64(),
-		Timestamp:     uint64(time.Now().Unix()),
-		MetaData:      nil,
-		PayloadLayout: []uint64{1 << 10, 1 << 11, 1 << 12, 1 << 13},
+		MetaData:      container.NewSliceMap[string, string](10),
+		PayloadLayout: []uint32{1 << 10, 1 << 11, 1 << 12, 1 << 13},
 		Payloads:      nil,
 	}
-	op := NewMessageOperation()
-	op.SetMetaData(msg, "Error", "My is Error")
+	msg.SetMetaData("Error", "My is Error")
 	pool := &sync.Pool{
 		New: func() interface{} {
-			tmp := make([]byte, 0, 128)
+			var tmp container.Slice[byte] = make([]byte, 0, 128)
 			return &tmp
 		},
 	}
@@ -38,18 +36,18 @@ func BenchmarkProtocol(b *testing.B) {
 	b.Run("ProtocolHeaderMarshal", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			bp := pool.Get().(*[]byte)
-			op.MarshalHeader(msg, bp)
+			bp := pool.Get().(*container.Slice[byte])
+			MarshalMessage(msg, bp)
 			pool.Put(bp)
 		}
 	})
-	headerData := make([]byte, 128)
-	op.MarshalHeader(msg, &headerData)
+	var headerData container.Slice[byte] = make([]byte, 128)
+	MarshalMessage(msg, &headerData)
 	b.Run("ProtocolHeaderUnmarshal", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			op.Reset(msg, true, false, true, 1024)
-			_, _ = op.UnmarshalHeader(msg, headerData)
+			ResetMsg(msg, true, false, true, 1024)
+			_ = UnmarshalMessage(headerData, msg)
 		}
 	})
 }
@@ -61,35 +59,37 @@ func TestProtocol(t *testing.T) {
 	msg.SetCodecType(DefaultCodecType)
 	msg.SetEncoderType(DefaultEncodingType)
 	msg.SetMsgId(math.MaxUint64)
-	msg.SetTimestamp(math.MaxUint64)
 	msg.SetInstanceName("Hello")
 	msg.SetMethodName("Add")
 	msg.AppendPayloads([]byte("hello world"))
 	msg.AppendPayloads([]byte("1378q285y45q"))
 
-	op := NewMessageOperation()
-	op.SetMetaData(msg, "Error", "My is Error")
-	op.SetMetaData(msg, "Hehe", "heheda")
+	msg.SetMetaData("Error", "My is Error")
+	msg.SetMetaData("Hehe", "heheda")
 	pool := &sync.Pool{
 		New: func() interface{} {
-			tmp := make([]byte, 0, 128)
+			var tmp container.Slice[byte] = make([]byte, 0, 128)
 			return &tmp
 		},
 	}
-	bytes := pool.Get().(*[]byte)
+	bytes := pool.Get().(*container.Slice[byte])
 	defer pool.Put(bytes)
-	op.MarshalHeader(msg, bytes)
-	_, err := op.UnmarshalHeader(msg, *bytes)
+	MarshalMessage(msg, bytes)
+	err := UnmarshalMessage(*bytes, msg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var i int
-	op.RangePayloads(msg, msg.Payloads, func(p []byte, endBefore bool) bool {
+	RangePayloads(msg, msg.Payloads, func(p []byte, endBefore bool) bool {
 		i++
 		return true
 	})
 	if i != len(msg.PayloadLayout) {
 		t.Fatal(errors.New("payload layout failed"))
 	}
-	op.Reset(msg, true, true, true, 1024)
+	MarshalMessage(msg, bytes)
+	if msg.GetLength() != len(*bytes) {
+		t.Fatal("MarshalAll bytes not equal")
+	}
+	ResetMsg(msg, true, true, true, 1024)
 }
