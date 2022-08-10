@@ -37,7 +37,7 @@ func TestAllResolver(t *testing.T) {
 	}
 	go http.Serve(listener, http.DefaultServeMux)
 	tmp, _ := resolverCollection.Load("live")
-	lrb := tmp.(*liveResolverBuilder)
+	lrb := tmp.(*liveResolver)
 	addrs, err := lrb.Instance().Parse("live://127.0.0.1")
 	if err != nil {
 		t.Fatal(err)

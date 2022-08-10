@@ -1,7 +1,7 @@
 package resolver
 
 import (
-	"sync"
+	"github.com/nyan233/littlerpc/container"
 	"time"
 )
 
@@ -9,40 +9,36 @@ const (
 	DefaultResolverUpdateTime = 30 * time.Second
 )
 
-type resolverFn func(addr string) ([]string, error)
-
-func (r resolverFn) Parse(addr string) ([]string, error) {
-	return r(addr)
-}
-
 var (
-	resolverCollection sync.Map
+	resolverCollection container.SyncMap118[string, Builder]
 )
 
-type ResolverBuilder interface {
+type Builder interface {
 	Instance() Resolver
-	SetUpdateTime(_ time.Duration)
-	SetOpen(_ bool)
-	Scheme() string
-	IsOpen() bool
+	SetUpdateTime(t time.Duration)
+	SetOnUpdate(fn func(addr []string))
+	SetOnModify(fn func(keys []int, values []string))
+	SetOpen(ok bool)
 }
 
 // Resolver 解析器，负责从一个url中解析出需要负载均衡的地址
 type Resolver interface {
 	Parse(addr string) ([]string, error)
+	Scheme() string
+	IsOpen() bool
 }
 
 // RegisterResolver 根据规则注册解析器，调用是线程安全的
-func RegisterResolver(scheme string, resolver ResolverBuilder) {
+func RegisterResolver(scheme string, resolver Builder) {
 	resolverCollection.Store(scheme, resolver)
 }
 
-func GetResolver(scheme string) ResolverBuilder {
+func GetResolver(scheme string) Builder {
 	r, ok := resolverCollection.Load(scheme)
 	if !ok {
 		return nil
 	}
-	return r.(ResolverBuilder)
+	return r.(Builder)
 }
 
 func init() {
