@@ -16,8 +16,35 @@ var (
 	ErrBadMessage = errors.New("bad message")
 )
 
-// MarshalMux 此API只会序列化Mux功能需要的数据
-func MarshalMux(msg *Message, payloads *container.Slice[byte]) error {
+func MarshalMuxBlock(msg *MuxBlock, payloads *container.Slice[byte]) error {
+	payloads.Reset()
+	payloads.Append(make([]byte, MuxBlockBaseLen))
+	(*payloads)[0] = msg.Flags
+	binary.BigEndian.PutUint32((*payloads)[1:5], msg.StreamId)
+	binary.BigEndian.PutUint64((*payloads)[5:13], msg.MsgId)
+	binary.BigEndian.PutUint16((*payloads)[13:15], msg.PayloadLength)
+	payloads.Append(msg.Payloads)
+	return nil
+}
+
+func UnmarshalMuxBlock(data container.Slice[byte], msg *MuxBlock) error {
+	if data.Len() < MuxBlockBaseLen {
+		return ErrBadMessage
+	}
+	msg.Flags = data[0]
+	data = data[1:]
+	msg.StreamId = binary.BigEndian.Uint32(data[:4])
+	data = data[4:]
+	msg.MsgId = binary.BigEndian.Uint64(data[:8])
+	data = data[8:]
+	msg.PayloadLength = binary.BigEndian.Uint16(data[:2])
+	msg.Payloads.Reset()
+	msg.Payloads.Append(data[MuxBlockBaseLen:])
+	return nil
+}
+
+// MarshaMessageOnMux 此API只会序列化Mux功能需要的数据
+func MarshaMessageOnMux(msg *Message, payloads *container.Slice[byte]) error {
 	*payloads = (*payloads)[:msg.MinMux()]
 	*payloads = append(*payloads, msg.Scope[:]...)
 	binary.BigEndian.PutUint64((*payloads)[4:12], msg.MsgId)
@@ -25,8 +52,8 @@ func MarshalMux(msg *Message, payloads *container.Slice[byte]) error {
 	return nil
 }
 
-// UnmarshalMux 此API之后反序列化Mux功能所需要的数据
-func UnmarshalMux(data container.Slice[byte], msg *Message) error {
+// UnmarshalMessageOnMux 此API之后反序列化Mux功能所需要的数据
+func UnmarshalMessageOnMux(data container.Slice[byte], msg *Message) error {
 	if data.Len() < msg.MinMux() {
 		return errors.New("mux message is bad")
 	}
@@ -98,20 +125,16 @@ func UnmarshalMessage(p container.Slice[byte], msg *Message) error {
 	if msg.PayloadLayout != nil {
 		msg.PayloadLayout.Reset()
 	}
-	var argBytesCount uint32
 	for i := 0; i < int(nArgs); i++ {
 		if p.Len() < 4 {
 			return ErrBadMessage
 		}
 		argsSize := binary.BigEndian.Uint32(p[:4])
 		p = p[4:]
-		argBytesCount += argsSize
 		msg.PayloadLayout = append(msg.PayloadLayout, argsSize)
 	}
-	// 计算得出的参数Bytes长度与实际的不一致
-	if int(argBytesCount) != p.Len() {
-		return ErrBadMessage
-	}
+	// 不根据参数布局计算所有参数的载荷数据长度, 因为参数载荷数据可能会被压缩
+	// 导致了长度不一致的情况
 	msg.Payloads.Reset()
 	// 剩余的数据是载荷数据
 	msg.Payloads.Append(p)

@@ -91,7 +91,9 @@ type Message struct {
 	// OutPut:
 	//	0x00000002|0x00000014|0x00000014
 	PayloadLayout container.Slice[uint32]
-	Payloads      container.Slice[byte]
+	// 调用参数序列化后的载荷数据
+	// 如果被压缩了那么在反序列化时,最后剩下的数据均为参数载荷
+	Payloads container.Slice[byte]
 }
 
 // BaseLength 获取基本数据的长度防止输入过短的数据导致panic

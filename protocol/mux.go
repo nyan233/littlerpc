@@ -1,6 +1,8 @@
 package protocol
 
-import "github.com/nyan233/littlerpc/container"
+import (
+	"github.com/nyan233/littlerpc/container"
+)
 
 const (
 	// MuxEnabled 指示在Stream中开启Mux的功能
@@ -14,6 +16,10 @@ const (
 	// Client应该去设置这个值,否则LittleRpc将丢弃后续的数据,未发送完的数据可能会被解析失败并返回错误
 	NoComplete uint8 = 0b00011
 )
+
+// MuxBlockBaseLen 基本长度, 不包含载荷数据, 因为载荷数据的长度可变
+// - (3 + 6) 是因为考虑到了Struct的对齐
+const MuxBlockBaseLen = 1 + 4 + 8 + 2
 
 // MuxBlock 对一次Mux中的消息帧描述
 // StreamId必须确保Server和多个Client之间唯一
