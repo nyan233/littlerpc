@@ -21,9 +21,9 @@ type WebSocketTransServer struct {
 	started int32
 	closed  int32
 	server  *nbhttp.Server
-	onMsg   func(conn ServerConnAdapter, bytes []byte)
-	onClose func(conn ServerConnAdapter, err error)
-	onOpen  func(conn ServerConnAdapter)
+	onMsg   func(conn ConnAdapter, bytes []byte)
+	onClose func(conn ConnAdapter, err error)
+	onOpen  func(conn ConnAdapter)
 	onErr   func(err error)
 }
 
@@ -32,20 +32,20 @@ func NewWebSocketServer(tlsC *tls.Config, nConfig nbhttp.Config) ServerTransport
 	nConfig.Name = "LittleRpc-Server-WebSocket"
 	nConfig.Network = "tcp"
 	nConfig.ReleaseWebsocketPayload = true
-	nConfig.ReadBufferSize = READ_BUFFER_SIZE
-	nConfig.MaxWriteBufferSize = MAX_WRITE_BUFFER_SIZE
+	nConfig.ReadBufferSize = ReadBufferSize
+	nConfig.MaxWriteBufferSize = MaxWriteBufferSize
 	server := &WebSocketTransServer{server: nbhttp.NewServer(nConfig)}
 	// set default function
 	server.onErr = func(err error) {
 		panic(interface{}(err))
 	}
-	server.onOpen = func(conn ServerConnAdapter) {
+	server.onOpen = func(conn ConnAdapter) {
 		return
 	}
-	server.onMsg = func(conn ServerConnAdapter, bytes []byte) {
+	server.onMsg = func(conn ConnAdapter, bytes []byte) {
 		return
 	}
-	server.onClose = func(conn ServerConnAdapter, err error) {
+	server.onClose = func(conn ConnAdapter, err error) {
 		return
 	}
 	return server
@@ -55,15 +55,15 @@ func (server *WebSocketTransServer) Instance() ServerTransport {
 	return server
 }
 
-func (server *WebSocketTransServer) SetOnMessage(fn func(conn ServerConnAdapter, data []byte)) {
+func (server *WebSocketTransServer) SetOnMessage(fn func(conn ConnAdapter, data []byte)) {
 	server.onMsg = fn
 }
 
-func (server *WebSocketTransServer) SetOnClose(fn func(conn ServerConnAdapter, err error)) {
+func (server *WebSocketTransServer) SetOnClose(fn func(conn ConnAdapter, err error)) {
 	server.onClose = fn
 }
 
-func (server *WebSocketTransServer) SetOnOpen(fn func(conn ServerConnAdapter)) {
+func (server *WebSocketTransServer) SetOnOpen(fn func(conn ConnAdapter)) {
 	server.onOpen = fn
 }
 

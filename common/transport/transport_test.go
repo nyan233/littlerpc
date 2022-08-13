@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func tcpOnMessage(conn ServerConnAdapter, data []byte) {
+func tcpOnMessage(conn ConnAdapter, data []byte) {
 	_, _ = conn.Write(data)
 }
 
@@ -46,7 +46,7 @@ func TestTcpTransport(t *testing.T) {
 	}
 }
 
-func wsOnMessage(conn ServerConnAdapter, data []byte) {
+func wsOnMessage(conn ConnAdapter, data []byte) {
 	_, _ = conn.Write(data)
 }
 

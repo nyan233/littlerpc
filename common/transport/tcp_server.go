@@ -13,17 +13,17 @@ type TcpTransServer struct {
 	closed  int32
 	tlsC    *tls.Config
 	server  *nbio.Engine
-	onMsg   func(conn ServerConnAdapter, bytes []byte)
-	onClose func(conn ServerConnAdapter, err error)
-	onOpen  func(conn ServerConnAdapter)
+	onMsg   func(conn ConnAdapter, bytes []byte)
+	onClose func(conn ConnAdapter, err error)
+	onOpen  func(conn ConnAdapter)
 	onErr   func(err error)
 }
 
 func NewTcpTransServer(tlsC *tls.Config, nConfig nbio.Config) ServerTransportBuilder {
 	nConfig.Name = "LittleRpc-Server-Tcp"
 	nConfig.Network = "tcp"
-	nConfig.ReadBufferSize = READ_BUFFER_SIZE
-	nConfig.MaxWriteBufferSize = MAX_WRITE_BUFFER_SIZE
+	nConfig.ReadBufferSize = ReadBufferSize
+	nConfig.MaxWriteBufferSize = MaxWriteBufferSize
 	eng := nbio.NewEngine(nConfig)
 	server := &TcpTransServer{}
 	server.tlsC = tlsC
@@ -32,13 +32,13 @@ func NewTcpTransServer(tlsC *tls.Config, nConfig nbio.Config) ServerTransportBui
 	server.onErr = func(err error) {
 		panic(interface{}(err))
 	}
-	server.onMsg = func(conn ServerConnAdapter, bytes []byte) {
+	server.onMsg = func(conn ConnAdapter, bytes []byte) {
 		return
 	}
-	server.onOpen = func(conn ServerConnAdapter) {
+	server.onOpen = func(conn ConnAdapter) {
 		return
 	}
-	server.onClose = func(conn ServerConnAdapter, err error) {
+	server.onClose = func(conn ConnAdapter, err error) {
 		return
 	}
 	return server
@@ -48,15 +48,15 @@ func (t *TcpTransServer) Instance() ServerTransport {
 	return t
 }
 
-func (t *TcpTransServer) SetOnMessage(fn func(conn ServerConnAdapter, data []byte)) {
+func (t *TcpTransServer) SetOnMessage(fn func(conn ConnAdapter, data []byte)) {
 	t.onMsg = fn
 }
 
-func (t *TcpTransServer) SetOnClose(fn func(conn ServerConnAdapter, err error)) {
+func (t *TcpTransServer) SetOnClose(fn func(conn ConnAdapter, err error)) {
 	t.onClose = fn
 }
 
-func (t *TcpTransServer) SetOnOpen(fn func(conn ServerConnAdapter)) {
+func (t *TcpTransServer) SetOnOpen(fn func(conn ConnAdapter)) {
 	t.onOpen = fn
 }
 
