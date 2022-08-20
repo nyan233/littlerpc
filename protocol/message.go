@@ -26,9 +26,6 @@ const (
 	// MessagePong Pong消息
 	MessagePong uint8 = 0x35
 
-	// MuxMessageBlockSize Mux模式下Server一次接收多少长度的消息
-	MuxMessageBlockSize = 4096
-
 	DefaultEncodingType uint8 = 0 // text == json
 	DefaultCodecType    uint8 = 0 // encoding == text
 )
@@ -113,9 +110,9 @@ func (m *Message) GetLength() int {
 	baseLen += len(m.NameLayout) * 4
 	// InstanceName & MethodName
 	baseLen += int(m.NameLayout[0] + m.NameLayout[1])
+	// NMetaData
+	baseLen += 4
 	if m.MetaData != nil && m.MetaData.Len() > 0 {
-		// NMetaData
-		baseLen += 4
 		// Key&Value Struct MetaData
 		baseLen += (m.MetaData.Len() * 4) * 2
 		// Key & Value Size
@@ -124,9 +121,9 @@ func (m *Message) GetLength() int {
 			return true
 		})
 	}
+	// NArgs
+	baseLen += 4
 	if m.PayloadLayout != nil && m.PayloadLayout.Len() > 0 {
-		// NArgs
-		baseLen += 4
 		// PayloadLayout
 		baseLen += len(m.PayloadLayout) * 4
 		// Payloads

@@ -39,7 +39,7 @@ func UnmarshalMuxBlock(data container.Slice[byte], msg *MuxBlock) error {
 	data = data[8:]
 	msg.PayloadLength = binary.BigEndian.Uint16(data[:2])
 	msg.Payloads.Reset()
-	msg.Payloads.Append(data[MuxBlockBaseLen:])
+	msg.Payloads = data[2:]
 	return nil
 }
 

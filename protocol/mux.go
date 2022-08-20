@@ -17,9 +17,15 @@ const (
 	NoComplete uint8 = 0b00011
 )
 
-// MuxBlockBaseLen 基本长度, 不包含载荷数据, 因为载荷数据的长度可变
-// - (3 + 6) 是因为考虑到了Struct的对齐
-const MuxBlockBaseLen = 1 + 4 + 8 + 2
+const (
+	// MuxBlockBaseLen 基本长度, 不包含载荷数据, 因为载荷数据的长度可变
+	// - (3 + 6) 是因为考虑到了Struct的对齐
+	MuxBlockBaseLen = 1 + 4 + 8 + 2
+	// MuxMessageBlockSize Mux模式下Server一次接收多少长度的消息
+	MuxMessageBlockSize = 4096
+	// MaxPayloadSizeOnMux 在Mux模式上发送的消息一次最多携带多少属于Message的数据
+	MaxPayloadSizeOnMux = MuxMessageBlockSize - MuxBlockBaseLen
+)
 
 // MuxBlock 对一次Mux中的消息帧描述
 // StreamId必须确保Server和多个Client之间唯一
