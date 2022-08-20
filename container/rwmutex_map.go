@@ -2,11 +2,13 @@
 
 package container
 
-import "sync"
+import (
+	"sync"
+)
 
-type RWMutexMap[Key comparable, Value any] struct {
+type RWMutexMap[Key any, Value any] struct {
 	mu sync.RWMutex
-	mp map[Key]Value
+	mp map[any]Value
 }
 
 func (m *RWMutexMap[Key, Value]) LoadOk(k Key) (Value, bool) {
@@ -32,7 +34,7 @@ func (m *RWMutexMap[Key, Value]) Store(k Key, v Value) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.mp == nil {
-		m.mp = make(map[Key]Value)
+		m.mp = make(map[any]Value)
 	}
 	m.mp[k] = v
 }
