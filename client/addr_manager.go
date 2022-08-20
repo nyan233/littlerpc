@@ -8,6 +8,10 @@ import (
 	"unsafe"
 )
 
+type AddrManager interface {
+	Target() string
+}
+
 // 负责维护客户端地址相关的逻辑
 // 该实例能安全地被多个goroutine所使用
 type addrManager struct {
@@ -26,6 +30,10 @@ func newAddrManager(balance balance.Balancer, resolver resolver.Builder, resolve
 	}
 	m.resolver.SetOpen(true)
 	return m, nil
+}
+
+func newimmutabAddrManager(immutabAddr string) (*immutabAddrManager, error) {
+	return &immutabAddrManager{immutabAddr: immutabAddr}, nil
 }
 
 func (m *addrManager) init(resolverAddr string) error {
@@ -48,4 +56,12 @@ func (m *addrManager) resolverOnModify(keys []int, values []string) {
 func (m *addrManager) Target() string {
 	r := hash.FastRandN(math.MaxUint32)
 	return m.balance.Target((*(*[4]byte)(unsafe.Pointer(&r)))[:])
+}
+
+type immutabAddrManager struct {
+	immutabAddr string
+}
+
+func (m immutabAddrManager) Target() string {
+	return m.immutabAddr
 }

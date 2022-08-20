@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"github.com/nyan233/littlerpc/common"
-	"github.com/nyan233/littlerpc/common/transport"
+	"github.com/nyan233/littlerpc/container"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
-	"math/rand"
+	"github.com/nyan233/littlerpc/utils/hash"
 	"reflect"
 	"strings"
-	"time"
 )
 
 func (c *Client) handleProcessRetErr(errBytes []byte, i interface{}) (interface{}, error) {
@@ -27,27 +26,72 @@ func (c *Client) handleProcessRetErr(errBytes []byte, i interface{}) (interface{
 	return i, nil
 }
 
-func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, conn transport.ClientTransport, method reflect.Value, rep *[]interface{}) error {
+func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Message, lc *lockConn, method reflect.Value, rep *[]interface{}) error {
 	// 接收服务器返回的调用结果并将header反序列化
-	buf := c.memPool.Get().(*[]byte)
-	defer c.memPool.Put(buf)
-	*buf = (*buf)[:cap(*buf)]
-	readN, err := conn.Read(*buf)
+	readBuf := lc.bytesBuffer.Get().(*container.Slice[byte])
+	readBuf.Reset()
+	defer lc.bytesBuffer.Put(readBuf)
+	// 容量不够则扩容
+	if readBuf.Cap() < protocol.MuxMessageBlockSize {
+		*readBuf = make([]byte, 0, protocol.MuxMessageBlockSize)
+	}
+	var msgBytes []byte
+	var muxMsg protocol.MuxBlock
+	var iErr error
+	err := common.MuxReadAll(lc, *readBuf, func(c common.ReadLocker) bool {
+		// 检查context有无被取消
+		select {
+		case <-ctx.Done():
+			// TODO 发送取消指令
+		default:
+			// 没有被取消则继续
+		}
+		// 检查其它过程是否将属于自己的数据读取完毕
+		if p, ok := lc.noReadyBuffer[msg.MsgId]; ok && len(p) == cap(p) {
+			msgBytes = p
+			delete(lc.noReadyBuffer, msg.MsgId)
+			lc.Unlock()
+			return false
+		}
+		return true
+	}, func(mm protocol.MuxBlock) bool {
+		// 将数据直接添加到缓冲区中,在到达检查点时检查其是否完成
+		buf, ok := lc.noReadyBuffer[muxMsg.MsgId]
+		if !ok {
+			// 缓冲区没有MsgId对应的数据说明该数据对应的MuxBlock是首次到来
+			// 如果消息的长度在MuxBlock能承载的载荷大小之内就不用加入缓冲区了,前提是自己的数据
+			var baseMsg protocol.Message
+			err := protocol.UnmarshalMessageOnMux(mm.Payloads, &baseMsg)
+			if err != nil {
+				iErr = err
+				return false
+			}
+			// 检查是否是自己的消息
+			if baseMsg.PayloadLength <= protocol.MaxPayloadSizeOnMux && msg.MsgId == baseMsg.MsgId {
+				msgBytes = append(msgBytes, mm.Payloads...)
+				return false
+			}
+		}
+		buf = append(buf, mm.Payloads...)
+		lc.noReadyBuffer[muxMsg.MsgId] = buf
+		return true
+	})
+	if iErr != nil {
+		return err
+	}
 	if err != nil {
 		return err
 	}
-	*buf = (*buf)[:readN]
 	// read header
-	c.mop.Reset(msg, false, false, true, 4096)
-	payloadStart, err := c.mop.UnmarshalHeader(msg, *buf)
+	protocol.ResetMsg(msg, false, false, true, 4096)
+	err = protocol.UnmarshalMessage(msgBytes, msg)
 	if err != nil {
 		return err
 	}
 	// 处理服务器的错误返回
 	if msg.GetMsgType() == protocol.MessageErrorReturn {
-		return errors.New(string((*buf)[payloadStart:]))
+		return errors.New(string(msg.Payloads))
 	}
-	msg.Payloads = (*buf)[payloadStart:]
 	// TODO : Client Handle Ping&Pong
 	// encoder类型为text时不需要额外的内存拷贝
 	// 默认的encoder即text
@@ -59,15 +103,14 @@ func (c *Client) readMsgAndDecodeReply(msg *protocol.Message, conn transport.Cli
 		msg.Payloads = append(msg.Payloads[:0], packet...)
 	}
 	// OnReceiveMessage 接收完消息之后调用的插件过程
-	for _, plg := range c.plugins {
-		if err := plg.OnReceiveMessage(msg, buf); err != nil {
-			c.logger.ErrorFromErr(err)
-		}
+	err = c.pluginManager.OnReceiveMessage(msg, &msgBytes)
+	if err != nil {
+		c.logger.ErrorFromErr(err)
 	}
 	// 处理服务端传回的参数
 	outputTypeList := lreflect.FuncOutputTypeList(method, false)
 	var i int
-	c.mop.RangePayloads(msg, msg.Payloads, func(p []byte, endBefore bool) bool {
+	protocol.RangePayloads(msg, msg.Payloads, func(p []byte, endBefore bool) bool {
 		eface := outputTypeList[i]
 		var returnV interface{}
 		var err2 error
@@ -138,17 +181,15 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 	return method, rCtx, nil
 }
 
-func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, conn transport.ClientTransport) error {
+func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *lockConn) error {
 	// init header
-	msg.SetMsgId(rand.Uint64())
+	msg.SetMsgId(lc.GetMsgId())
 	msg.SetMsgType(protocol.MessageCall)
-	msg.SetTimestamp(uint64(time.Now().Unix()))
 	msg.SetCodecType(uint8(c.codecWp.Index()))
 	msg.SetEncoderType(uint8(c.encoderWp.Index()))
 	// request body
-	memBuffer := c.memPool.Get().(*[]byte)
-	*memBuffer = (*memBuffer)[:0]
-	defer c.memPool.Put(memBuffer)
+	memBuffer := lc.bytesBuffer.Get().(*container.Slice[byte])
+	defer lc.bytesBuffer.Put(memBuffer)
 	// write header
 	// encoder类型为text不需要额外拷贝内存
 	if c.encoderWp.Index() != int(protocol.DefaultEncodingType) {
@@ -158,28 +199,28 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, conn tr
 		}
 		msg.Payloads = append(msg.Payloads[:0], bodyBytes...)
 	}
-	c.mop.MarshalAll(msg, memBuffer)
+	msg.PayloadLength = uint32(msg.GetLength())
+	protocol.MarshalMessage(msg, memBuffer)
 	// 插件的
-	for _, plg := range c.plugins {
-		if err := plg.OnSendMessage(msg, memBuffer); err != nil {
-			c.logger.ErrorFromErr(err)
-		}
+	if err := c.pluginManager.OnSendMessage(msg, (*[]byte)(memBuffer)); err != nil {
+		c.logger.ErrorFromErr(err)
 	}
-	// write data
-	done := make(chan struct{})
-	var err error
-	err2 := c.gp.GOGO(func() {
+	muxMsg := &protocol.MuxBlock{
+		Flags:    protocol.MuxEnabled,
+		StreamId: hash.FastRand(),
+		MsgId:    msg.MsgId,
+	}
+	// 要发送的数据小于一个MuxBlock的长度则直接发送
+	// 大于一个MuxBlock时则分片发送
+	sendBuf := lc.bytesBuffer.Get().(*container.Slice[byte])
+	defer lc.bytesBuffer.Put(sendBuf)
+	return common.MuxWriteAll(lc, muxMsg, sendBuf, *memBuffer, func() {
 		select {
 		case <-ctx.Done():
-			_ = conn.Close()
-		case <-done:
-			return
+			// 发送取消消息之后退出
+			break
+		default:
+			// 非阻塞
 		}
 	})
-	if err2 != nil {
-		return err2
-	}
-	_, err = conn.Write(*memBuffer)
-	done <- struct{}{}
-	return err
 }

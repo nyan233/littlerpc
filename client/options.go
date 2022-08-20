@@ -33,9 +33,10 @@ func WithDefaultClient() clientOption {
 	}
 }
 
-func WithResolver(bScheme string) clientOption {
+func WithResolver(bScheme, url string) clientOption {
 	return func(config *Config) {
 		config.Resolver = resolver.GetResolver(bScheme)
+		config.ResolverParseUrl = url
 	}
 }
 
