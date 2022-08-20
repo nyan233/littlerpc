@@ -6,6 +6,7 @@ import (
 	"github.com/lesismal/nbio/nbhttp"
 	"github.com/nyan233/littlerpc/common/transport"
 	"github.com/nyan233/littlerpc/middle/packet"
+	"github.com/nyan233/littlerpc/middle/plugin"
 	"github.com/zbh255/bilog"
 	"runtime"
 	"time"
@@ -23,6 +24,8 @@ type Config struct {
 	// 编码器
 	Encoder packet.Wrapper
 	Logger  bilog.Logger
+	// 使用的插件
+	Plugins []plugin.ServerPlugin
 }
 
 type NewProtocolSupport func(config Config) transport.ServerTransportBuilder

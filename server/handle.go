@@ -3,10 +3,11 @@ package server
 import (
 	"fmt"
 	"github.com/nyan233/littlerpc/common"
+	"github.com/nyan233/littlerpc/container"
 	"github.com/nyan233/littlerpc/protocol"
 	lreflect "github.com/nyan233/littlerpc/reflect"
+	"github.com/nyan233/littlerpc/utils/hash"
 	"reflect"
-	"time"
 )
 
 // try 指示是否需要重入处理结果的逻辑
@@ -25,9 +26,14 @@ func (s *Server) sendMsg(sArg serverCallContext, msg *protocol.Message) {
 	// TODO : implement text encoding and gzip encoding
 	// rep Header已经被调用者提前设置好内容，所以这里发送消息的逻辑不用设置
 	// write header
-	bp := s.bufferPool.Get().(*[]byte)
-	*bp = (*bp)[:0]
-	defer s.bufferPool.Put(bp)
+	muxMsg := &protocol.MuxBlock{
+		Flags:    protocol.MuxEnabled,
+		StreamId: hash.FastRand(),
+		MsgId:    msg.MsgId,
+	}
+	bp := sArg.Desc.bytesBuffer.Get().(*container.Slice[byte])
+	bp.Reset()
+	defer sArg.Desc.bytesBuffer.Put(bp)
 	// write body
 	if sArg.Encoder.Scheme() != "text" {
 		bytes, err := sArg.Encoder.EnPacket(msg.Payloads)
@@ -37,13 +43,19 @@ func (s *Server) sendMsg(sArg serverCallContext, msg *protocol.Message) {
 		}
 		msg.Payloads = append(msg.Payloads[:0], bytes...)
 	}
-	s.mop.MarshalAll(msg, bp)
+	// 计算真实长度
+	msg.PayloadLength = uint32(msg.GetLength())
+	protocol.MarshalMessage(msg, bp)
 	// write data
-	_, err := sArg.Conn.Write(*bp)
+	// 大于一个MuxBlock时则分片发送
+	sendBuf := sArg.Desc.bytesBuffer.Get().(*container.Slice[byte])
+	defer sArg.Desc.bytesBuffer.Put(sendBuf)
+	err := common.MuxWriteAll(sArg.Desc, muxMsg, sendBuf, *bp, nil)
 	if err != nil {
-		s.logger.ErrorFromErr(err)
+		s.logger.ErrorFromString(fmt.Sprintf("Marshal MuxBlock failed: %v", sArg.Desc.Close()))
+		return
 	}
-	if err := s.pManager.OnComplete(msg, err); err != nil {
+	if err := s.pManager.OnComplete(msg, nil); err != nil {
 		s.logger.ErrorFromErr(err)
 	}
 }
@@ -73,7 +85,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	inputTypeList := lreflect.FuncInputTypeList(method, true)
 	var i int
 	var e error
-	s.mop.RangePayloads(msg, msg.Payloads, func(p []byte, endBefore bool) bool {
+	protocol.RangePayloads(msg, msg.Payloads, func(p []byte, endBefore bool) bool {
 		eface := inputTypeList[i]
 		callArg, err := common.CheckCoderType(sArg.Codec, p, eface)
 		if err != nil {
@@ -109,21 +121,23 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	return callArgs, true
 }
 
+// TODO 需要修改兼容Mux的逻辑
 func (s *Server) handleError(sArg serverCallContext, msgId uint64, errNo protocol.Error, appendInfo string) {
-	conn := sArg.Conn
+	desc := sArg.Desc
 	msg := protocol.NewMessage()
-	msg.Timestamp = uint64(time.Now().Unix())
 	// 表示该消息类型是服务器的错误返回
 	msg.SetMsgType(protocol.MessageErrorReturn)
 	msg.MsgId = msgId
 	// 设置error
 	errNo.Trace = appendInfo
 	msg.Payloads = []byte(errNo.Error())
-	bp := s.bufferPool.Get().(*[]byte)
-	*bp = (*bp)[:0]
-	defer s.bufferPool.Put(bp)
-	s.mop.MarshalHeader(msg, bp)
-	_, err := conn.Write(*bp)
+	bp := desc.bytesBuffer.Get().(*container.Slice[byte])
+	bp.Reset()
+	defer desc.bytesBuffer.Put(bp)
+	protocol.MarshalMessage(msg, bp)
+	desc.Lock()
+	defer desc.Unlock()
+	_, err := desc.Write(*bp)
 	if err != nil {
 		s.logger.ErrorFromErr(err)
 		return

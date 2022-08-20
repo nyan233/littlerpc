@@ -4,6 +4,7 @@ import (
 	"github.com/lesismal/llib/std/crypto/tls"
 	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/middle/packet"
+	"github.com/nyan233/littlerpc/middle/plugin"
 	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
 	"time"
@@ -62,5 +63,11 @@ func WithOpenLogger(ok bool) serverOption {
 		if !ok {
 			config.Logger = common.NilLogger
 		}
+	}
+}
+
+func WithPlugin(plg plugin.ServerPlugin) serverOption {
+	return func(config *Config) {
+		config.Plugins = append(config.Plugins, plg)
 	}
 }

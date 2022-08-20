@@ -11,17 +11,23 @@ import (
 	"github.com/nyan233/littlerpc/protocol"
 	"github.com/zbh255/bilog"
 	"math"
+	"net"
 	"reflect"
-	"strconv"
 	"sync"
-	"syscall"
-	"time"
 )
 
 type serverCallContext struct {
 	Codec   codec.Codec
 	Encoder packet.Encoder
-	Conn    transport.ServerConnAdapter
+	Desc    *bufferDesc
+}
+
+type bufferDesc struct {
+	sync.Mutex
+	net.Conn
+	muxNoReady  map[uint64][]byte
+	msgBuffer   sync.Pool
+	bytesBuffer sync.Pool
 }
 
 type Server struct {
@@ -33,11 +39,9 @@ type Server struct {
 	// 任务池
 	//taskPool *pool.TaskPool
 	// 简单的缓冲内存池
-	bufferPool sync.Pool
+	noReadyBufferDesc container.RWMutexMap[transport.ConnAdapter, *bufferDesc]
 	// logger
 	logger bilog.Logger
-	// 用于操作protocol.Message
-	mop protocol.MessageOperation
 	// 缓存一些Codec以加速索引
 	cacheCodec []codec.Wrapper
 	// 缓存一些Encoder以加速索引
@@ -65,13 +69,6 @@ func NewServer(opts ...serverOption) *Server {
 	builder.SetOnOpen(server.onOpen)
 	// server engine
 	server.server = builder.Instance()
-	// New Buffer Pool
-	server.bufferPool = sync.Pool{
-		New: func() interface{} {
-			tmp := make([]byte, 0, 4096)
-			return &tmp
-		},
-	}
 	// init encoder cache
 	for i := 0; i < math.MaxUint8; i++ {
 		wp := packet.GetEncoderFromIndex(i)
@@ -90,8 +87,8 @@ func NewServer(opts ...serverOption) *Server {
 			break
 		}
 	}
-	// init message operations
-	server.mop = protocol.NewMessageOperation()
+	// init plugin manager
+	server.pManager = &pluginManager{plugins: sc.Plugins}
 	// New TaskPool
 	//server.taskPool = pool.NewTaskPool(pool.MaxTaskPoolSize, runtime.NumCPU()*4)
 	return server
@@ -125,93 +122,122 @@ func (s *Server) Elem(i interface{}) error {
 	return nil
 }
 
-func (s *Server) onMessage(c transport.ServerConnAdapter, data []byte) {
+func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 	// TODO : Handle Ping-Pong Message
 	// TODO : Handle Control Header
-	msg := protocol.NewMessage()
-	pyloadStart, err := s.mop.UnmarshalHeader(msg, data)
-	// 根据读取的头信息初始化一些需要的Codec/Encoder
-	cwp := safeIndexCodecWps(s.cacheCodec, int(msg.GetCodecType()))
-	ewp := safeIndexEncoderWps(s.cacheEncoder, int(msg.GetEncoderType()))
-	var sArg serverCallContext
-	if cwp == nil || ewp == nil {
-		sArg.Codec = safeIndexCodecWps(s.cacheCodec, int(protocol.DefaultCodecType)).Instance()
-		sArg.Encoder = safeIndexEncoderWps(s.cacheEncoder, int(protocol.DefaultEncodingType)).Instance()
-	} else {
-		sArg = serverCallContext{
-			Codec:   cwp.Instance(),
-			Encoder: ewp.Instance(),
-		}
-	}
-	sArg.Conn = c
-	if err != nil {
-		s.handleError(sArg, msg.MsgId, *common.ErrMessageFormat, "")
+	connBuffer, ok := s.noReadyBufferDesc.LoadOk(c)
+	if !ok {
+		s.logger.ErrorFromErr(errors.New("no register conn bufferDesc"))
 		return
 	}
-
-	// TODO : Read All Messages Data
-	offset := len(data)
-	for len(data) == transport.READ_BUFFER_SIZE {
-		data = append(data, []byte{0, 0, 0, 0}...)
-		readN, err := c.Read(data[offset:])
-		if errors.Is(err, syscall.EAGAIN) {
-			break
+	var completes [][]byte
+	var internalErr error
+	err := common.MuxReadAll(connBuffer, data, nil, func(mm protocol.MuxBlock) bool {
+		nrBuf, ok := connBuffer.muxNoReady[mm.MsgId]
+		if !ok {
+			// 读取到该消息的第一个块
+			nrBuf = append(nrBuf, mm.Payloads...)
 		}
-		offset += readN
+		var baseMsg protocol.Message
+		err := protocol.UnmarshalMessageOnMux(nrBuf, &baseMsg)
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, *common.ErrBodyRead, strconv.Itoa(offset))
+			internalErr = err
+			return false
+		}
+		// 载荷的长度小于MuxBlock规定的大小表示一定在这次读取之内被完成
+		if baseMsg.PayloadLength <= protocol.MaxPayloadSizeOnMux {
+			// 载荷小于一个最大载荷大小的数据包肯定是一次即被读取完成的
+			completes = append(completes, nrBuf)
+		} else {
+			// 载荷大于一次能发完的大小才有可能进缓冲区
+			// 长度相同表示读取完毕
+			if len(nrBuf) == int(baseMsg.PayloadLength) {
+				delete(connBuffer.muxNoReady, mm.MsgId)
+				completes = append(completes, nrBuf)
+			} else {
+				connBuffer.muxNoReady[mm.MsgId] = nrBuf
+			}
+		}
+		return true
+	})
+	// TODO Handle Error
+	if internalErr != nil {
+		return
+	}
+	// TODO Handle Error
+	if err != nil {
+		return
+	}
+	// 没有读取完毕的数据
+	if completes == nil {
+		return
+	}
+	msg := connBuffer.msgBuffer.Get().(*protocol.Message)
+	defer connBuffer.msgBuffer.Put(msg)
+	for _, complete := range completes {
+		msg.Reset()
+		err := protocol.UnmarshalMessage(complete, msg)
+		// 根据读取的头信息初始化一些需要的Codec/Encoder
+		cwp := safeIndexCodecWps(s.cacheCodec, int(msg.GetCodecType()))
+		ewp := safeIndexEncoderWps(s.cacheEncoder, int(msg.GetEncoderType()))
+		var sArg serverCallContext
+		if cwp == nil || ewp == nil {
+			sArg.Codec = safeIndexCodecWps(s.cacheCodec, int(protocol.DefaultCodecType)).Instance()
+			sArg.Encoder = safeIndexEncoderWps(s.cacheEncoder, int(protocol.DefaultEncodingType)).Instance()
+		} else {
+			sArg = serverCallContext{
+				Desc:    connBuffer,
+				Codec:   cwp.Instance(),
+				Encoder: ewp.Instance(),
+			}
+		}
+		if err != nil {
+			s.handleError(sArg, msg.MsgId, *common.ErrMessageFormat, "")
 			return
 		}
-		if offset != len(data) {
-			break
+		// 调用编码器解包
+		// 优化text类型的编码器
+		encoder := sArg.Encoder
+		if encoder.Scheme() != "text" {
+			msg.Payloads, err = encoder.UnPacket(msg.Payloads)
+			if err != nil {
+				s.handleError(sArg, msg.MsgId, *common.ErrServer, "")
+				return
+			}
 		}
-	}
-	data = data[pyloadStart:offset]
-	// 调用编码器解包
-	// 优化text类型的编码器
-	encoder := sArg.Encoder
-	if encoder.Scheme() != "text" {
-		data, err = encoder.UnPacket(data)
+		// Plugin OnMessage
+		err = s.pManager.OnMessage(msg, &data)
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, *common.ErrServer, "")
-			return
-		}
-	}
-	// 从完整的data中解码Body
-	msg.Payloads = data
-	// Plugin OnMessage
-	err = s.pManager.OnMessage(msg, &msg.Payloads)
-	if err != nil {
-		s.logger.ErrorFromErr(err)
-	}
-	// 序列化完之后才确定调用名
-	// MethodName : Hello.Hello : receiver:methodName
-	elemData, ok := s.elems.Load(msg.GetInstanceName())
-	if !ok {
-		s.handleError(sArg, msg.MsgId, *common.ErrElemTypeNoRegister, msg.InstanceName)
-		return
-	}
-	method, ok := elemData.Methods[msg.MethodName]
-	if !ok {
-		s.handleError(sArg, msg.MsgId, *common.ErrMethodNoRegister, "")
-		return
-	}
-	// 从客户端校验并获得合法的调用参数
-	callArgs, ok := s.getCallArgsFromClient(sArg, msg, elemData.Data, method)
-	// 参数校验为不合法
-	if !ok {
-		if err := s.pManager.OnCallBefore(msg, &callArgs, errors.New("arguments check failed")); err != nil {
 			s.logger.ErrorFromErr(err)
 		}
-		s.handleError(sArg, msg.MsgId, *common.ErrServer, "arguments check failed")
-		return
+		// 序列化完之后才确定调用名
+		// MethodName : Hello.Hello : receiver:methodName
+		elemData, ok := s.elems.Load(msg.GetInstanceName())
+		if !ok {
+			s.handleError(sArg, msg.MsgId, *common.ErrElemTypeNoRegister, msg.InstanceName)
+			return
+		}
+		method, ok := elemData.Methods[msg.MethodName]
+		if !ok {
+			s.handleError(sArg, msg.MsgId, *common.ErrMethodNoRegister, "")
+			return
+		}
+		// 从客户端校验并获得合法的调用参数
+		callArgs, ok := s.getCallArgsFromClient(sArg, msg, elemData.Data, method)
+		// 参数校验为不合法
+		if !ok {
+			if err := s.pManager.OnCallBefore(msg, &callArgs, errors.New("arguments check failed")); err != nil {
+				s.logger.ErrorFromErr(err)
+			}
+			s.handleError(sArg, msg.MsgId, *common.ErrServer, "arguments check failed")
+			return
+		}
+		// Plugin
+		if err := s.pManager.OnCallBefore(msg, &callArgs, nil); err != nil {
+			s.logger.ErrorFromErr(err)
+		}
+		s.callHandleUnit(sArg, msg, method, callArgs)
 	}
-	// Plugin
-	if err := s.pManager.OnCallBefore(msg, &callArgs, nil); err != nil {
-		s.logger.ErrorFromErr(err)
-	}
-	// 向任务池提交调用用户过程的任务
-	s.callHandleUnit(sArg, msg, method, callArgs)
 }
 
 // 提供用于任务池的处理调用用户过程的单元
@@ -230,9 +256,8 @@ func (s *Server) callHandleUnit(sArg serverCallContext, msg *protocol.Message, m
 	// 服务器返回的参数中不区分是是否是指针类型
 	// 客户端在处理返回值的类型时需要自己根据注册的过程进行处理
 	msg.SetMsgType(protocol.MessageReturn)
-	msg.Timestamp = uint64(time.Now().Unix())
 	msg.MsgId = msgId
-	s.mop.Reset(msg, false, true, true, 1024)
+	protocol.ResetMsg(msg, false, true, true, 1024)
 	// OnCallResult Plugin
 	if err := s.pManager.OnCallResult(msg, &callResult); err != nil {
 		s.logger.ErrorFromErr(err)
@@ -244,12 +269,36 @@ func (s *Server) callHandleUnit(sArg serverCallContext, msg *protocol.Message, m
 	s.sendMsg(sArg, msg)
 }
 
-func (s *Server) onClose(conn transport.ServerConnAdapter, err error) {
-	s.logger.ErrorFromString(fmt.Sprintf("Close Connection: %v", err))
+func (s *Server) onClose(conn transport.ConnAdapter, err error) {
+	if err != nil {
+		s.logger.ErrorFromString(fmt.Sprintf("Close Connection: %s:%s err: %v",
+			conn.LocalAddr().String(), conn.RemoteAddr().String(), err))
+	} else {
+		s.logger.Info(fmt.Sprintf("Close Connection: %s:%s",
+			conn.LocalAddr().String(), conn.RemoteAddr().String()))
+	}
+	// 关闭之前的清理工作
+	s.noReadyBufferDesc.Delete(conn)
 }
 
-func (s *Server) onOpen(conn transport.ServerConnAdapter) {
-	return
+func (s *Server) onOpen(conn transport.ConnAdapter) {
+	// 初始化连接的相关数据
+	connBuffer := &bufferDesc{
+		muxNoReady: make(map[uint64][]byte, 16),
+		msgBuffer: sync.Pool{
+			New: func() interface{} {
+				return protocol.NewMessage()
+			},
+		},
+		bytesBuffer: sync.Pool{
+			New: func() interface{} {
+				var tmp container.Slice[byte] = make([]byte, 0, 128)
+				return &tmp
+			},
+		},
+		Conn: conn,
+	}
+	s.noReadyBufferDesc.Store(conn, connBuffer)
 }
 
 func (s *Server) onErr(err error) {
