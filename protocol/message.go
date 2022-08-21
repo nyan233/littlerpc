@@ -11,16 +11,8 @@ const (
 	MessageCall uint8 = 0x10
 	// MessageReturn 表示这是一条未开启Mux的同步调用返回消息
 	MessageReturn uint8 = 0x18
-	// MessageMuxCall 表示这是一条开启Mux的同步调用消息
-	MessageMuxCall uint8 = 0x50
-	// MessageMuxReturn 表示这是一条开启Mux的同步调用返回消息
-	MessageMuxReturn uint8 = 0x56
-	// MessageContextWith 用于服务端接收的context.Context初始化
-	MessageContextWith uint8 = 0x22
 	// MessageContextCancel 用户服务端接收的context.Context的取消API
 	MessageContextCancel uint8 = 0x24
-	// MessageErrorReturn 调用因某种原因失败的返回
-	MessageErrorReturn uint8 = 0x26
 	// MessagePing Ping消息
 	MessagePing uint8 = 0x33
 	// MessagePong Pong消息
@@ -47,11 +39,11 @@ func NewMessage() *Message {
 	}
 }
 
-//	Message 是对一次RPC调用传递的数据的描述
-//	封装的方法均不是线程安全的
-//	DecodeHeader会修改一些内部值，调用时需要注意顺序
-//	为了使用一致性的API，在访问内部一些简单的属性时，请使用Getxx方法
-//	在设置一些值的过程中可能需要调整其它值，所以请使用Setxx方法
+// Message 是对一次RPC调用传递的数据的描述
+// 封装的方法均不是线程安全的
+// DecodeHeader会修改一些内部值，调用时需要注意顺序
+// 为了使用一致性的API，在访问内部一些简单的属性时，请使用Getxx方法
+// 在设置一些值的过程中可能需要调整其它值，所以请使用Setxx方法
 type Message struct {
 	// int/uint数值统一使用大端序
 	//	[0] == Magic (魔数，表示这是由littlerpc客户端发起或者服务端回复)
