@@ -144,14 +144,20 @@ func muxReadAll(c ReadLocker, mmBytes container.Slice[byte],
 		}
 		err := protocol.UnmarshalMuxBlock(bytes, &muxMsg)
 		if err != nil {
+			c.Unlock()
 			return err
 		}
 		if muxMsg.PayloadLength == 0 {
+			c.Unlock()
 			return errors.New("message length is zero")
 		}
 		// 未读出一个完整载荷
 		if muxMsg.Payloads == nil || int(muxMsg.PayloadLength) > muxMsg.Payloads.Len() {
-			bytes = (bytes)[:muxMsg.PayloadLength]
+			if muxMsg.PayloadLength > protocol.MaxPayloadSizeOnMux {
+				bytes = (bytes)[:protocol.MaxPayloadSizeOnMux]
+			} else {
+				bytes = (bytes)[:muxMsg.PayloadLength]
+			}
 			err := ReadControl(c, bytes)
 			if err != nil {
 				c.Unlock()
