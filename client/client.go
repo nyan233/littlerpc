@@ -10,6 +10,7 @@ import (
 	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
+	lerror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/utils/hash"
 	"github.com/zbh255/bilog"
 	"reflect"
@@ -71,6 +72,7 @@ type Client struct {
 	pluginManager *pluginManager
 	// 地址管理器
 	addrManager AddrManager
+	lNewErrorFn lerror.LNewErrorDesc
 }
 
 func NewClient(opts ...clientOption) (*Client, error) {

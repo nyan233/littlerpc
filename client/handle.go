@@ -2,28 +2,38 @@ package client
 
 import (
 	"context"
-	"errors"
 	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/container"
 	"github.com/nyan233/littlerpc/protocol"
+	perror "github.com/nyan233/littlerpc/protocol/error"
 	lreflect "github.com/nyan233/littlerpc/reflect"
+	"github.com/nyan233/littlerpc/utils/convert"
 	"github.com/nyan233/littlerpc/utils/hash"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
-func (c *Client) handleProcessRetErr(errBytes []byte, i interface{}) (interface{}, error) {
-	//单独处理返回的错误类型
-	//处理最后返回的Error
-	i, _ = lreflect.ToTypePtr(i)
-	err := c.codecWp.Instance().UnmarshalError(errBytes, i)
+func (c *Client) handleProcessRetErr(msg *protocol.Message) error {
+	code, err := strconv.Atoi(msg.GetMetaData("littlerpc-code"))
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if e, ok := i.(*error); ok {
-		return *e, nil
+	message := msg.GetMetaData("littlerpc-message")
+	success := common.Success
+	// Success表示无错误
+	if code == success.Code && message == success.Message {
+		return nil
 	}
-	return i, nil
+	desc := c.lNewErrorFn(code, message)
+	moresBinStr := msg.GetMetaData("littlerpc-mores-bin")
+	if moresBinStr != "" {
+		err := desc.UnmarshalMores(convert.StringToBytes(moresBinStr))
+		if err != nil {
+			return err
+		}
+	}
+	return desc
 }
 
 func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Message, lc *lockConn, method reflect.Value, rep *[]interface{}) error {
@@ -88,10 +98,6 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 	if err != nil {
 		return err
 	}
-	// 处理服务器的错误返回
-	if msg.GetMsgType() == protocol.MessageErrorReturn {
-		return errors.New(string(msg.Payloads))
-	}
 	// TODO : Client Handle Ping&Pong
 	// encoder类型为text时不需要额外的内存拷贝
 	// 默认的encoder即text
@@ -107,6 +113,11 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 	if err != nil {
 		c.logger.ErrorFromErr(err)
 	}
+	// 优先处理错误, 如果远程过程返回了错误, 那么就没有必要再序列化结果了
+	err = c.handleProcessRetErr(msg)
+	if err != nil {
+		return err
+	}
 	// 处理服务端传回的参数
 	outputTypeList := lreflect.FuncOutputTypeList(method, false)
 	var i int
@@ -116,13 +127,6 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 		var err2 error
 		if !endBefore {
 			returnV, err2 = common.CheckCoderType(c.codecWp.Instance(), p, eface)
-			if err2 != nil {
-				err = err2
-				return false
-			}
-		} else {
-			// 处理返回值列表中最后的error
-			returnV, err2 = c.handleProcessRetErr(p, outputTypeList[len(outputTypeList)-1])
 			if err2 != nil {
 				err = err2
 				return false
@@ -148,19 +152,23 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 	msg.SetMethodName(methodData[1])
 	instance, ok := c.elems.Load(msg.GetInstanceName())
 	if !ok {
-		return reflect.ValueOf(nil), nil, common.ErrNoInstance
+		return reflect.ValueOf(nil), nil, c.lNewErrorFn(perror.InstanceNoRegister,
+			perror.Code(perror.InstanceNoRegister).String(), msg.GetInstanceName())
 	}
 	method, ok := instance.Methods[msg.GetMethodName()]
 	if !ok {
-		return reflect.ValueOf(nil), nil, common.ErrNoMethod
+		return reflect.ValueOf(nil), nil, c.lNewErrorFn(perror.MethodNoRegister,
+			perror.Code(perror.MethodNoRegister).String(), msg.GetMethodName())
 	}
-	var rCtx context.Context
+	rCtx := context.Background()
+	// 哨兵条件
+	if args == nil || len(args) == 0 {
+		return method, rCtx, nil
+	}
 	// 检查是否携带context.Context
 	if ctx, ok := args[0].(context.Context); ok {
 		rCtx = ctx
 		args = args[1:]
-	} else {
-		rCtx, _ = context.WithTimeout(context.Background(), Default_Conn_Timeout)
 	}
 	for _, v := range args {
 		argType := common.CheckIType(v)

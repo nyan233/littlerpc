@@ -9,6 +9,7 @@ import (
 	"github.com/nyan233/littlerpc/middle/plugin"
 	"github.com/nyan233/littlerpc/middle/resolver"
 	"github.com/nyan233/littlerpc/protocol"
+	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
 	"time"
 )
@@ -30,6 +31,7 @@ func WithDefaultClient() clientOption {
 		config.Codec = codec.GetCodecFromIndex(int(protocol.DefaultCodecType))
 		config.NetWork = "tcp"
 		config.MuxConnection = 8
+		config.LNewErrorDesc = perror.LNewStdError
 	}
 }
 
@@ -113,5 +115,11 @@ func WithPoolSize(size int) clientOption {
 func WithPlugin(plugin plugin.ClientPlugin) clientOption {
 	return func(config *Config) {
 		config.Plugins = append(config.Plugins, plugin)
+	}
+}
+
+func WithNewErrorDesc(fn perror.LNewErrorDesc) clientOption {
+	return func(config *Config) {
+		config.LNewErrorDesc = fn
 	}
 }

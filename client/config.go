@@ -8,6 +8,7 @@ import (
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/middle/plugin"
 	"github.com/nyan233/littlerpc/middle/resolver"
+	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
 	"time"
 )
@@ -48,6 +49,8 @@ type Config struct {
 	ResolverParseUrl string
 	// 安装的插件
 	Plugins []plugin.ClientPlugin
+	// 可以生成自定义错误的工厂回调函数
+	LNewErrorDesc perror.LNewErrorDesc
 }
 
 type NewProtocolSupport func(config Config) (transport.ClientTransport, error)
