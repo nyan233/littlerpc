@@ -35,6 +35,7 @@ func (m *SliceMap[K, V]) Store(key K, value V) {
 	m.values = append(m.values, value)
 	m.keys = m.keys[:cap(m.keys)]
 	m.values = m.values[:cap(m.values)]
+	m.length++
 }
 
 func (m *SliceMap[K, V]) Load(key K) (V, bool) {
