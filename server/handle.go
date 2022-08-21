@@ -5,21 +5,49 @@ import (
 	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/container"
 	"github.com/nyan233/littlerpc/protocol"
+	perror "github.com/nyan233/littlerpc/protocol/error"
 	lreflect "github.com/nyan233/littlerpc/reflect"
+	"github.com/nyan233/littlerpc/utils/convert"
 	"github.com/nyan233/littlerpc/utils/hash"
 	"reflect"
+	"strconv"
 )
 
-// try 指示是否需要重入处理结果的逻辑
-// cr2 表示内部append过的callResult，以使更改调用者可见
-func (s *Server) handleErrAndRepResult(sArg serverCallContext, msg *protocol.Message, callResult []reflect.Value) {
-	bytes, err := sArg.Codec.MarshalError(lreflect.ToValueTypeEface(callResult[len(callResult)-1]))
-	if err != nil {
-		s.handleError(sArg, msg.MsgId, *common.ErrCodecMarshalError,
-			fmt.Sprintf("%s : %s", sArg.Codec.Scheme(), err.Error()))
-		return
+// 必须在其结果集中首先处理错误在处理其余结果
+// bool(1)类型的返回值指示用户是否返回了错误,Success在LittleRpc中并不会被认为是错误
+// bool(2)类型的返回值指示是否可继续
+func (s *Server) handleErrAndRepResult(sArg serverCallContext, msg *protocol.Message, callResult []reflect.Value) (bool, bool) {
+	interErr := lreflect.ToValueTypeEface(callResult[len(callResult)-1])
+	// 无错误
+	if interErr == error(nil) {
+		msg.SetMetaData("littlerpc-code", strconv.Itoa(common.Success.Code))
+		msg.SetMetaData("littlerpc-message", common.Success.Message)
+		return false, true
 	}
-	msg.AppendPayloads(bytes)
+	// 检查是否实现了自定义错误的接口
+	desc, ok := interErr.(perror.LErrorDesc)
+	if !ok {
+		msg.SetMetaData("littlerpc-code", strconv.Itoa(desc.GetCode()))
+		msg.SetMetaData("littlerpc-message", desc.GetMessage())
+		bytes, err := desc.MarshalMores()
+		if err != nil {
+			s.handleError(sArg, msg.MsgId, common.ErrCodecMarshalError,
+				fmt.Sprintf("%s : %s", sArg.Codec.Scheme(), err.Error()))
+			return true, false
+		}
+		msg.SetMetaData("littlerpc-mores-bin", convert.BytesToString(bytes))
+		return true, true
+	}
+	err, ok := interErr.(error)
+	// NOTE 按理来说, 在正常情况下!ok这个分支不应该被激活, 检查每个过程返回error是Elem的责任
+	// NOTE 建立这个分支是防止用户自作聪明使用一些Hack的手段绕过了Elem的检查
+	if !ok {
+		s.handleError(sArg, msg.MsgId, perror.LNewBaseError(perror.UnsafeOption, "Server.Elem no checker on error"))
+		return true, false
+	}
+	msg.SetMetaData("littlerpc-code", strconv.Itoa(perror.Unknown))
+	msg.SetMetaData("littlerpc-message", err.Error())
+	return true, true
 }
 
 func (s *Server) sendMsg(sArg serverCallContext, msg *protocol.Message) {
@@ -38,7 +66,7 @@ func (s *Server) sendMsg(sArg serverCallContext, msg *protocol.Message) {
 	if sArg.Encoder.Scheme() != "text" {
 		bytes, err := sArg.Encoder.EnPacket(msg.Payloads)
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, *common.ErrServer, err.Error())
+			s.handleError(sArg, msg.MsgId, common.ErrServer, err.Error())
 			return
 		}
 		msg.Payloads = append(msg.Payloads[:0], bytes...)
@@ -67,7 +95,7 @@ func (s *Server) handleResult(sArg serverCallContext, msg *protocol.Message, cal
 		// 可替换的Codec已经不需要Any包装器了
 		bytes, err := sArg.Codec.Marshal(eface)
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, *common.ErrServer, "")
+			s.handleError(sArg, msg.MsgId, common.ErrServer, "")
 			return
 		}
 		msg.AppendPayloads(bytes)
@@ -89,7 +117,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 		eface := inputTypeList[i]
 		callArg, err := common.CheckCoderType(sArg.Codec, p, eface)
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, *common.ErrServer, err.Error())
+			s.handleError(sArg, msg.MsgId, common.ErrServer, err.Error())
 			e = err
 			return false
 		}
@@ -107,11 +135,11 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	ok, noMatch := common.CheckInputTypeList(callArgs, append([]interface{}{receiver.Interface()}, inputTypeList...))
 	if !ok {
 		if noMatch != nil {
-			s.handleError(sArg, msg.MsgId, *common.ErrCallArgsType,
+			s.handleError(sArg, msg.MsgId, common.ErrCallArgsType,
 				fmt.Sprintf("pass value type is %s but call arg type is %s", noMatch[1], noMatch[0]),
 			)
 		} else {
-			s.handleError(sArg, msg.MsgId, *common.ErrCallArgsType,
+			s.handleError(sArg, msg.MsgId, common.ErrCallArgsType,
 				fmt.Sprintf("pass arg list length no equal of call arg list : len(callArgs) == %d : len(inputTypeList) == %d",
 					len(callArgs)-1, len(inputTypeList)-1),
 			)
@@ -121,16 +149,24 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	return callArgs, true
 }
 
-// TODO 需要修改兼容Mux的逻辑
-func (s *Server) handleError(sArg serverCallContext, msgId uint64, errNo protocol.Error, appendInfo string) {
+func (s *Server) handleError(sArg serverCallContext, msgId uint64, errNo *perror.LBaseError, appendInfo ...string) {
 	desc := sArg.Desc
 	msg := protocol.NewMessage()
-	// 表示该消息类型是服务器的错误返回
-	msg.SetMsgType(protocol.MessageErrorReturn)
+	msg.SetMsgType(protocol.MessageReturn)
 	msg.MsgId = msgId
-	// 设置error
-	errNo.Trace = appendInfo
-	msg.Payloads = []byte(errNo.Error())
+	msg.SetMetaData("littlerpc-code", strconv.Itoa(errNo.Code))
+	msg.SetMetaData("littlerpc-message", errNo.Message)
+	// 为空则不序列化Mores, 否则会造成空间浪费
+	if appendInfo != nil || len(appendInfo) > 0 {
+		errDesc := s.lNewErrorFn(errNo.Code, errNo.Message, appendInfo)
+		bytes, err := errDesc.MarshalMores()
+		if err != nil {
+			msg.SetMetaData("littlerpc-code", strconv.Itoa(common.ErrServer.Code))
+			msg.SetMetaData("littlerpc-message", "Marshal error Mores data failed")
+		} else {
+			msg.SetMetaData("littlerpc-mores-bin", convert.BytesToString(bytes))
+		}
+	}
 	bp := desc.bytesBuffer.Get().(*container.Slice[byte])
 	bp.Reset()
 	defer desc.bytesBuffer.Put(bp)

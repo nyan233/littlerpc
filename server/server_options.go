@@ -6,6 +6,7 @@ import (
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/middle/plugin"
 	"github.com/nyan233/littlerpc/protocol"
+	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
 	"time"
 )
@@ -31,6 +32,7 @@ func WithDefaultServer() serverOption {
 		config.ServerTimeout = 90 * time.Second
 		config.Encoder = packet.GetEncoderFromIndex(int(protocol.DefaultEncodingType))
 		config.NetWork = "tcp"
+		config.LNewErrorDesc = perror.LNewStdError
 	}
 }
 
@@ -69,5 +71,11 @@ func WithOpenLogger(ok bool) serverOption {
 func WithPlugin(plg plugin.ServerPlugin) serverOption {
 	return func(config *Config) {
 		config.Plugins = append(config.Plugins, plg)
+	}
+}
+
+func WithNewErrorDesc(fn perror.LNewErrorDesc) serverOption {
+	return func(config *Config) {
+		config.LNewErrorDesc = fn
 	}
 }

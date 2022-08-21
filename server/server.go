@@ -9,6 +9,7 @@ import (
 	"github.com/nyan233/littlerpc/middle/codec"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
+	lerror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
 	"math"
 	"net"
@@ -47,7 +48,8 @@ type Server struct {
 	// 缓存一些Encoder以加速索引
 	cacheEncoder []packet.Wrapper
 	// 注册的插件的管理器
-	pManager *pluginManager
+	pManager    *pluginManager
+	lNewErrorFn lerror.LNewErrorDesc
 }
 
 func NewServer(opts ...serverOption) *Server {
@@ -192,7 +194,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 			}
 		}
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, *common.ErrMessageFormat, "")
+			s.handleError(sArg, msg.MsgId, common.ErrMessageFormat, "")
 			return
 		}
 		// 调用编码器解包
@@ -201,7 +203,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		if encoder.Scheme() != "text" {
 			msg.Payloads, err = encoder.UnPacket(msg.Payloads)
 			if err != nil {
-				s.handleError(sArg, msg.MsgId, *common.ErrServer, "")
+				s.handleError(sArg, msg.MsgId, common.ErrServer, err.Error())
 				return
 			}
 		}
@@ -214,12 +216,12 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		// MethodName : Hello.Hello : receiver:methodName
 		elemData, ok := s.elems.Load(msg.GetInstanceName())
 		if !ok {
-			s.handleError(sArg, msg.MsgId, *common.ErrElemTypeNoRegister, msg.InstanceName)
+			s.handleError(sArg, msg.MsgId, common.ErrElemTypeNoRegister, msg.InstanceName)
 			return
 		}
 		method, ok := elemData.Methods[msg.MethodName]
 		if !ok {
-			s.handleError(sArg, msg.MsgId, *common.ErrMethodNoRegister, "")
+			s.handleError(sArg, msg.MsgId, common.ErrMethodNoRegister, msg.MethodName)
 			return
 		}
 		// 从客户端校验并获得合法的调用参数
@@ -229,7 +231,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 			if err := s.pManager.OnCallBefore(msg, &callArgs, errors.New("arguments check failed")); err != nil {
 				s.logger.ErrorFromErr(err)
 			}
-			s.handleError(sArg, msg.MsgId, *common.ErrServer, "arguments check failed")
+			s.handleError(sArg, msg.MsgId, common.ErrServer, "arguments check failed")
 			return
 		}
 		// Plugin
@@ -262,11 +264,15 @@ func (s *Server) callHandleUnit(sArg serverCallContext, msg *protocol.Message, m
 	if err := s.pManager.OnCallResult(msg, &callResult); err != nil {
 		s.logger.ErrorFromErr(err)
 	}
-	s.handleResult(sArg, msg, callResult)
 	// 处理用户过程返回的错误，v0.30开始规定每个符合规范的API最后一个返回值是error接口
-	s.handleErrAndRepResult(sArg, msg, callResult)
-	// 处理结果发送
-	s.sendMsg(sArg, msg)
+	userUseErr, sendMsgOk := s.handleErrAndRepResult(sArg, msg, callResult)
+	if !userUseErr {
+		s.handleResult(sArg, msg, callResult)
+	}
+	if sendMsgOk {
+		// 处理结果发送
+		s.sendMsg(sArg, msg)
+	}
 }
 
 func (s *Server) onClose(conn transport.ConnAdapter, err error) {

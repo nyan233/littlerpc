@@ -7,6 +7,7 @@ import (
 	"github.com/nyan233/littlerpc/common/transport"
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/middle/plugin"
+	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
 	"runtime"
 	"time"
@@ -25,7 +26,8 @@ type Config struct {
 	Encoder packet.Wrapper
 	Logger  bilog.Logger
 	// 使用的插件
-	Plugins []plugin.ServerPlugin
+	Plugins       []plugin.ServerPlugin
+	LNewErrorDesc perror.LNewErrorDesc
 }
 
 type NewProtocolSupport func(config Config) transport.ServerTransportBuilder
