@@ -1,18 +1,15 @@
 package common
 
 import (
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/error"
 )
 
 var (
-	ErrMethodNoRegister   = protocol.NewError("method no register", "")
-	ErrElemTypeNoRegister = protocol.NewError("elem type no register : ", "")
-	ErrMessageFormat      = protocol.NewError("message format invalid", "")
-	ErrBodyRead           = protocol.NewError("read body failed : readN == ", "")
-	ErrServer             = protocol.NewError("server error: ", "")
-	ErrCallArgsType       = protocol.NewError("call arguments type error : ", "")
-	ErrCodecMarshalError  = protocol.NewError("codec.MarshalError return one error : ", "")
-	ErrNoInstance         = protocol.NewError("instance not found : ", "")
-	ErrNoMethod           = protocol.NewError("method not found : ", "")
-	Nil                   = protocol.NewError("the error is nil", "")
+	Success               = error.LNewBaseError(error.Success, "OK")
+	ErrMethodNoRegister   = error.LNewBaseError(error.MethodNoRegister, "method no register")
+	ErrElemTypeNoRegister = error.LNewBaseError(error.InstanceNoRegister, "elem type no register")
+	ErrMessageFormat      = error.LNewBaseError(error.MessageDecodingFailed, "message format invalid")
+	ErrServer             = error.LNewBaseError(error.ServerError, "server error")
+	ErrCallArgsType       = error.LNewBaseError(error.CallArgsTypeErr, "call arguments type error")
+	ErrCodecMarshalError  = error.LNewBaseError(error.CodecMarshalErr, "codec.MarshalError return one error")
 )
