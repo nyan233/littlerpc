@@ -34,7 +34,7 @@ func FuncInputTypeList(value reflect.Value, start int, isRecv bool, directNew fu
 	inputIndex := -1
 	for i := start; i < cap(typs); i++ {
 		inputIndex++
-		if directNew(inputIndex) {
+		if directNew != nil && directNew(inputIndex) {
 			typs = append(typs, reflect.New(typ.In(i)).Interface())
 			continue
 		}
@@ -73,7 +73,7 @@ func FuncOutputTypeList(value reflect.Value, isRecv bool, directNew func(i int) 
 		if isRecv {
 			di--
 		}
-		if directNew(di) {
+		if directNew != nil && directNew(di) {
 			typs = append(typs, reflect.New(typ.Out(i)).Elem().Interface())
 			continue
 		}
