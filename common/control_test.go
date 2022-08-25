@@ -38,16 +38,20 @@ func RandomMuxMessage(maxBlock int, maxPayloads int) []byte {
 	}
 	var muxMsgBytes []byte
 	oldLen := len(msgBytes)
-	for i := 0; i < int(nBlock); i++ {
-		muxMsg.PayloadLength = uint16(oldLen / int(nBlock))
-		muxMsg.Payloads = msgBytes[:oldLen/int(nBlock)]
+	for i := 0; i < nBlock; i++ {
+		split := oldLen / nBlock
+		if i == 0 && split < protocol.MessageBaseLen {
+			split = protocol.MessageBaseLen
+		}
+		muxMsg.PayloadLength = uint16(split)
+		muxMsg.Payloads = msgBytes[:split]
 		tmpMuxMsgBytes := make([]byte, 0)
 		err := protocol.MarshalMuxBlock(&muxMsg, (*container.Slice[byte])(&tmpMuxMsgBytes))
 		if err != nil {
 			panic(err)
 		}
 		muxMsgBytes = append(muxMsgBytes, tmpMuxMsgBytes...)
-		msgBytes = msgBytes[oldLen/int(nBlock):]
+		msgBytes = msgBytes[split:]
 	}
 	return muxMsgBytes
 }
@@ -57,15 +61,55 @@ func TestControl(t *testing.T) {
 		sync.Mutex
 		io.Reader
 	}
-	rawBytes := RandomMuxMessage(65536/protocol.MuxMessageBlockSize, 65536)
+	completeMsgs := RandomMuxMessage(70, 4096)
+	for len(completeMsgs) < protocol.MuxMessageBlockSize {
+		completeMsgs = append(completeMsgs, RandomMuxMessage(2, 4096)...)
+	}
+	rawBytes := RandomMuxMessage(20, 8192)
+	completeMsgs = append(completeMsgs, rawBytes[:5]...)
+	rawBytes = rawBytes[5:]
 	rl := &readLock{
 		Mutex:  sync.Mutex{},
 		Reader: bytes.NewReader(rawBytes),
 	}
-	var mmBytes container.Slice[byte] = make([]byte, 0, protocol.MuxMessageBlockSize)
-	err := MuxReadAll(rl, mmBytes, nil, func(mm protocol.MuxBlock) bool {
+	unmarshalMap := make(map[uint64][]byte)
+	completeMap := make(map[uint64][]byte)
+	err := MuxReadAll(rl, completeMsgs, nil, func(mm protocol.MuxBlock) bool {
+		// 第一次存储
+		if p, ok := unmarshalMap[mm.MsgId]; !ok {
+			var baseMsg protocol.Message
+			err := protocol.UnmarshalMessageOnMux(mm.Payloads, &baseMsg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p = make([]byte, 0, baseMsg.PayloadLength)
+			p = append(p, mm.Payloads...)
+			if len(p) == cap(p) {
+				completeMap[mm.MsgId] = p
+			} else {
+				unmarshalMap[mm.MsgId] = p
+			}
+		} else {
+			p = append(p, mm.Payloads...)
+			if len(p) == cap(p) {
+				delete(unmarshalMap, mm.MsgId)
+				completeMap[mm.MsgId] = p
+			} else {
+				unmarshalMap[mm.MsgId] = p
+			}
+		}
 		return true
 	})
+	if len(unmarshalMap) == 0 {
+		t.Fatal("unmarshalMap is not equal zero")
+	}
+	for _, v := range completeMap {
+		msg := protocol.NewMessage()
+		err := protocol.UnmarshalMessage(v, msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

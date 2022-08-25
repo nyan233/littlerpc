@@ -2,11 +2,15 @@ package common
 
 import (
 	"errors"
+	"fmt"
 	"github.com/nyan233/littlerpc/container"
 	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/reflect"
 	"io"
 	"sync"
 )
+
+const MessageTrace = 0
 
 type WriteLocker interface {
 	sync.Locker
@@ -45,7 +49,7 @@ func ReadControl(c io.Reader, data []byte) error {
 			return err
 		}
 		readCount += readN
-		if readCount >= len(data) {
+		if readCount == len(data) {
 			break
 		}
 	}
@@ -60,7 +64,7 @@ func WriteControl(c io.Writer, data []byte) error {
 			return err
 		}
 		writeCount += writeN
-		if writeCount >= len(data) {
+		if writeCount == len(data) {
 			break
 		}
 	}
@@ -73,6 +77,15 @@ func WriteControl(c io.Writer, data []byte) error {
 // startFn是每次循环开始时都会调用的回调函数,它允许你在开始前做一些检查
 func MuxWriteAll(c WriteLocker, muxMsg *protocol.MuxBlock, mmBytes *container.Slice[byte],
 	mBytes []byte, startFn func()) error {
+	if mmBytes == nil {
+		var tmp container.Slice[byte]
+		if len(mBytes) <= protocol.MuxMessageBlockSize {
+			tmp = make([]byte, 0, len(mBytes))
+		} else {
+			tmp = make([]byte, protocol.MuxMessageBlockSize)
+		}
+		mmBytes = &tmp
+	}
 	for len(mBytes) > 0 {
 		if startFn != nil {
 			startFn()
@@ -89,6 +102,10 @@ func MuxWriteAll(c WriteLocker, muxMsg *protocol.MuxBlock, mmBytes *container.Sl
 		err := protocol.MarshalMuxBlock(muxMsg, mmBytes)
 		if err != nil {
 			return err
+		}
+		if MessageTrace > 0 {
+			fmt.Println("Write ", *muxMsg)
+			fmt.Println("Write Raw", string(*mmBytes))
 		}
 		c.Lock()
 		err = WriteControl(c, *mmBytes)
@@ -130,13 +147,14 @@ func muxReadAll(c ReadLocker, mmBytes container.Slice[byte],
 	for {
 		if checkPoint != nil && !checkPoint(c) {
 			c.Unlock()
-			break
+			return nil
 		}
 		var muxMsg protocol.MuxBlock
 		if bytes.Len() < protocol.MuxBlockBaseLen {
 			// Server OnMessage响应的数据包不满足基本长度
-			bytes = bytes[bytes.Len():protocol.MuxBlockBaseLen]
-			err := ReadControl(c, bytes)
+			oldLen := bytes.Len()
+			bytes = bytes[:protocol.MuxBlockBaseLen]
+			err := ReadControl(c, bytes[oldLen:protocol.MuxBlockBaseLen])
 			if err != nil {
 				c.Unlock()
 				return err
@@ -147,7 +165,32 @@ func muxReadAll(c ReadLocker, mmBytes container.Slice[byte],
 			c.Unlock()
 			return err
 		}
+		if MessageTrace > 0 {
+			if mmBytes.Len() > 0 {
+				fmt.Println("Server MuxMsg", muxMsg)
+			} else {
+				fmt.Println("Client MuxMsg", muxMsg)
+			}
+		}
+		if MessageTrace > 0 {
+			if mmBytes.Len() <= 0 {
+				fmt.Printf("Mux:{%d %d %d %d}\n", muxMsg.Flags, muxMsg.StreamId, muxMsg.MsgId, muxMsg.PayloadLength)
+			}
+			if muxMsg.PayloadLength == 0 && mmBytes.Len() > 0 {
+				fmt.Println("Server ReadControl")
+			}
+		}
 		if muxMsg.PayloadLength == 0 {
+			if MessageTrace > 0 {
+				fmt.Println(mmBytes.Len())
+				fmt.Println(muxMsg)
+				after := make([]byte, 160)
+				err := ReadControl(c, after)
+				if err != nil {
+					panic(err)
+				}
+				fmt.Println("After Read", string(after))
+			}
 			c.Unlock()
 			return errors.New("message length is zero")
 		}
@@ -156,6 +199,10 @@ func muxReadAll(c ReadLocker, mmBytes container.Slice[byte],
 			if muxMsg.PayloadLength > protocol.MaxPayloadSizeOnMux {
 				bytes = (bytes)[:protocol.MaxPayloadSizeOnMux]
 			} else {
+				if muxMsg.PayloadLength < protocol.MaxPayloadSizeOnMux && bytes.Cap() < int(muxMsg.PayloadLength) {
+					bytes = bytes[:bytes.Cap()]
+					bytes = reflect.SliceBackSpace(bytes, uint(int(muxMsg.PayloadLength)-bytes.Len())).(container.Slice[byte])
+				}
 				bytes = (bytes)[:muxMsg.PayloadLength]
 			}
 			err := ReadControl(c, bytes)
@@ -165,18 +212,26 @@ func muxReadAll(c ReadLocker, mmBytes container.Slice[byte],
 			}
 			muxMsg.Payloads = bytes
 			oneComplete(muxMsg)
-			break
+			if checkPoint == nil {
+				break
+			} else {
+				bytes.Reset()
+			}
 		} else if muxMsg.Payloads != nil && int(muxMsg.PayloadLength) < muxMsg.Payloads.Len() {
 			// 数据中包含下一个载荷,下一个载荷可能是完整包,也可能是半包
 			// 尽快调用oneComplete()因为拷贝数据之后会导致原数据被修改
+			rawPayloads := muxMsg.Payloads
 			muxMsg.Payloads = muxMsg.Payloads[:muxMsg.PayloadLength]
 			oneComplete(muxMsg)
-			nextBytes := muxMsg.Payloads[muxMsg.PayloadLength:]
-			copy(bytes, nextBytes)
+			bytes = rawPayloads[muxMsg.PayloadLength:]
 		} else {
 			// 仅仅包含一个完整的载荷
 			oneComplete(muxMsg)
-			break
+			if checkPoint == nil {
+				break
+			} else {
+				bytes.Reset()
+			}
 		}
 	}
 	c.Unlock()
