@@ -16,15 +16,27 @@ type Iface struct {
 }
 
 // FuncInputTypeList 返回函数的输入参数类型列表，空接口切片表示
-func FuncInputTypeList(value reflect.Value, isRecv bool) []interface{} {
+// directNew是一个过滤器回调函数, 返回true指示new的类型是其原始类型, 返回false则代表new一个非指针类型并返回其指针
+// directNew()其入参的index当(isRecv == true), 它的值相当于减去接收器的参数的长度
+//
+//	Example
+//	if directNew() == true { Input(*reflect.Value) Exec -> return new(*reflect.Value)}
+//	if directNew() == false { Input(*reflect.Value) Exec -> tmp := new(reflect.Value) -> return &tmp}
+func FuncInputTypeList(value reflect.Value, start int, isRecv bool, directNew func(i int) bool) []interface{} {
 	typ := value.Type()
 	typs := make([]interface{}, 0, typ.NumIn())
+	if isRecv {
+		start++
+	}
 	if isRecv && cap(typs) <= 1 {
 		return nil
 	}
-	for i := 0; i < cap(typs); i++ {
-		if isRecv && i == 0 {
-			i = 1
+	inputIndex := -1
+	for i := start; i < cap(typs); i++ {
+		inputIndex++
+		if directNew(inputIndex) {
+			typs = append(typs, reflect.New(typ.In(i)).Interface())
+			continue
 		}
 		if typ.In(i).Kind() == reflect.Interface {
 			typs = append(typs, reflect.New(typ.In(i)).Interface())
@@ -41,7 +53,13 @@ func FuncInputTypeList(value reflect.Value, isRecv bool) []interface{} {
 }
 
 // FuncOutputTypeList 返回函数的返回值类型列表，空接口切片表示
-func FuncOutputTypeList(value reflect.Value, isRecv bool) []interface{} {
+// directNew是一个过滤器回调函数, 返回true指示new的类型是其原始类型, 返回false则代表new一个非指针类型并返回其指针
+// directNew()其入参的index当(isRecv == true), 它的值相当于减去接收器的参数的长度
+//
+//	Example
+//	if directNew() == true { Input(*reflect.Value) Exec -> return new(*reflect.Value)}
+//	if directNew() == false { Input(*reflect.Value) Exec -> tmp := new(reflect.Value) -> return &tmp}
+func FuncOutputTypeList(value reflect.Value, isRecv bool, directNew func(i int) bool) []interface{} {
 	typ := value.Type()
 	typs := make([]interface{}, 0, typ.NumOut())
 	if isRecv && cap(typs) <= 1 {
@@ -50,6 +68,14 @@ func FuncOutputTypeList(value reflect.Value, isRecv bool) []interface{} {
 	for i := 0; i < cap(typs); i++ {
 		if isRecv && i == 0 {
 			i = 1
+		}
+		var di = i
+		if isRecv {
+			di--
+		}
+		if directNew(di) {
+			typs = append(typs, reflect.New(typ.Out(i)).Elem().Interface())
+			continue
 		}
 		if typ.Out(i).Kind() == reflect.Interface {
 			typs = append(typs, reflect.New(typ.Out(i)).Interface())
