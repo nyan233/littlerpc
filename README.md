@@ -109,21 +109,49 @@ hello world!
 
 在`littlerpc`中一个合法的过程是如下那样，必须有一个接收器，参数可以是指针类型或者非指针类型，返回结果集允许指针/非指针类型，返回值列表中最后的值类型必须是error
 
+`Type`的约束, 如上所说, 参数的类型可以是指针/非指针类型, 但是指针只不允许多重指针的出现, 另外参数不能为接口类型, 不管它是空接口还是非空接口, 除了`LittleRpc`能够理解的`context.Context`&`stream.Stream`&`error`
+
 ```go
-func(receiver Type) FuncName(arg1...argN) (result1...resultN,error)
+type Type interface {
+    Pointer(NoInterface) | NoPointer(NoInterface)
+}
+```
+
+```go
+func(receiver) FuncName(...Type) (...Type,error)
 ```
 
 `littlerpc`并不规定合法的过程必须要传递参数，以下的声明也是合法的
 
 ```go
-func(receiver Type) FuncName() (result1...resultN,error)
+func(receiver) FuncName() (...Type,error)
 ```
 
 `littlerpc`也不规定，一定要返回一个值，但是error必须在返回值列表中被声明，以下的声明也是合法的
 
 ```go
-func(receiver Type) FuncName() error
+func(receiver) FuncName() error
 ```
+
+关于`context.Context`&`stream.Stream`, 输入参数可以有`context.Context`也可以没有`stream.Stream`同理, 如果有的话`context.Context`必须被放置在第一个参数的位置, 当它们同时存在时, `stream.Stream`必须被放置在第二个位置, 以下列出了参数的几种排列情况, `...`表示参数列表的长度为`0...N`
+
+- ```go
+	func(receiver Type) FuncName(context.Context,...Type) (...result,error)
+	```
+
+- ```go
+	func(receiver Type) FuncName(context.Context,stream.Stream,...Type) (...Type,error)
+	```
+
+- ```go
+	func(receiver Type) FuncName(stream.Stream,...Type) (...Type,error)
+	```
+
+- ```go
+	func(receiver Type) FuncName(...Type) (...Type,error)
+	```
+
+
 
 ### 代码生成器
 
