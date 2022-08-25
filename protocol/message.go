@@ -18,6 +18,8 @@ const (
 	// MessagePong Pong消息
 	MessagePong uint8 = 0x35
 
+	// MessageBaseLen Message的基本长度
+	MessageBaseLen            = 4 + 4 + 8
 	DefaultEncodingType uint8 = 0 // text == json
 	DefaultCodecType    uint8 = 0 // encoding == text
 )
@@ -94,10 +96,8 @@ func (m *Message) BaseLength() int {
 
 // GetLength 根据结构计算序列化之后的数据长度
 func (m *Message) GetLength() int {
-	// Scope
-	baseLen := len(m.Scope)
-	// MsgId & PayloadLength
-	baseLen += 12
+	// Scope & MsgId & PayloadLength
+	baseLen := MessageBaseLen
 	// NameLayout
 	baseLen += len(m.NameLayout) * 4
 	// InstanceName & MethodName
@@ -115,12 +115,8 @@ func (m *Message) GetLength() int {
 	}
 	// NArgs
 	baseLen += 4
-	if m.PayloadLayout != nil && m.PayloadLayout.Len() > 0 {
-		// PayloadLayout
-		baseLen += len(m.PayloadLayout) * 4
-		// Payloads
-		baseLen += len(m.Payloads)
-	}
+	baseLen += m.PayloadLayout.Len() * 4
+	baseLen += m.Payloads.Len()
 	return baseLen
 }
 
@@ -186,6 +182,23 @@ func (m *Message) SetMethodName(methodName string) {
 func (m *Message) AppendPayloads(p []byte) {
 	m.Payloads = append(m.Payloads, p...)
 	m.PayloadLayout = append(m.PayloadLayout, uint32(len(p)))
+}
+
+func (m *Message) PayloadsIterator() *container.Iterator[[]byte] {
+	rangCount := 0
+	i := -1
+	return container.NewIterator[[]byte](func() ([]byte, bool) {
+		i++
+		if m.PayloadLayout == nil || m.PayloadLayout.Len() == 0 {
+			return make([]byte, 0), true
+		}
+		if i == m.PayloadLayout.Len()-1 {
+			return m.Payloads[rangCount : rangCount+int(m.PayloadLayout[i])], true
+		}
+		old := rangCount
+		rangCount += int(m.PayloadLayout[i])
+		return m.Payloads[old:rangCount], false
+	})
 }
 
 func (m *Message) MinMux() int {
