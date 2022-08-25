@@ -89,6 +89,7 @@ func NewServer(opts ...serverOption) *Server {
 			break
 		}
 	}
+	server.lNewErrorFn = sc.LNewErrorDesc
 	// init plugin manager
 	server.pManager = &pluginManager{plugins: sc.Plugins}
 	// New TaskPool
@@ -231,7 +232,6 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 			if err := s.pManager.OnCallBefore(msg, &callArgs, errors.New("arguments check failed")); err != nil {
 				s.logger.ErrorFromErr(err)
 			}
-			s.handleError(sArg, msg.MsgId, common.ErrServer, "arguments check failed")
 			return
 		}
 		// Plugin
@@ -265,14 +265,13 @@ func (s *Server) callHandleUnit(sArg serverCallContext, msg *protocol.Message, m
 		s.logger.ErrorFromErr(err)
 	}
 	// 处理用户过程返回的错误，v0.30开始规定每个符合规范的API最后一个返回值是error接口
-	userUseErr, sendMsgOk := s.handleErrAndRepResult(sArg, msg, callResult)
-	if !userUseErr {
-		s.handleResult(sArg, msg, callResult)
+	_, sendMsgOk := s.handleErrAndRepResult(sArg, msg, callResult)
+	if !sendMsgOk {
+		return
 	}
-	if sendMsgOk {
-		// 处理结果发送
-		s.sendMsg(sArg, msg)
-	}
+	s.handleResult(sArg, msg, callResult)
+	// 处理结果发送
+	s.sendMsg(sArg, msg)
 }
 
 func (s *Server) onClose(conn transport.ConnAdapter, err error) {

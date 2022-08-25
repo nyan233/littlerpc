@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/container"
 	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	lreflect "github.com/nyan233/littlerpc/reflect"
+	"github.com/nyan233/littlerpc/stream"
 	"github.com/nyan233/littlerpc/utils/convert"
 	"github.com/nyan233/littlerpc/utils/hash"
 	"reflect"
@@ -91,6 +93,16 @@ func (s *Server) sendMsg(sArg serverCallContext, msg *protocol.Message) {
 // 将用户过程的返回结果集序列化为可传输的json数据
 func (s *Server) handleResult(sArg serverCallContext, msg *protocol.Message, callResult []reflect.Value) {
 	for _, v := range callResult[:len(callResult)-1] {
+		// NOTE : 对于指针类型或者隐含指针的类型, 他检查用户过程是否返回nil
+		// NOTE : 对于非指针的值传递类型, 它检查该类型是否是零值
+		// 借助这个哨兵条件可以减少零值的序列化/网络开销
+		if v.IsZero() {
+			// 添加返回参数的标记, 这是因为在多个返回参数可能出现以下的情况
+			// (Value),(Value2),(nil),(Zero)
+			// 在以上情况下简单地忽略并不是一个好主意(会导致返回值反序列化异常), 所以需要一个标记让客户端知道
+			msg.AppendPayloads(make([]byte, 0))
+			continue
+		}
 		var eface = v.Interface()
 		// 可替换的Codec已经不需要Any包装器了
 		bytes, err := sArg.Codec.Marshal(eface)
@@ -110,41 +122,73 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 		receiver,
 	}
 	// 排除receiver
-	inputTypeList := lreflect.FuncInputTypeList(method, true)
-	var i int
-	var e error
-	protocol.RangePayloads(msg, msg.Payloads, func(p []byte, endBefore bool) bool {
+	iter := msg.PayloadsIterator()
+	// 去除接收者之后的输入参数长度
+	// 校验客户端传递的参数和服务端是否一致
+	if nInput := method.Type().NumIn() - 1; nInput != msg.PayloadLayout.Len() {
+		serverErr := *common.ErrServer
+		serverErr.Message = "client input args number no equal server"
+		s.handleError(sArg, msg.MsgId, &serverErr, fmt.Sprintf("Client : %d", msg.PayloadLayout.Len()),
+			fmt.Sprintf("Server : %d", nInput))
+		return nil, false
+	}
+	var inputStart int
+	if msg.GetMetaData("context-timeout") != "" {
+		inputStart++
+	}
+	if msg.GetMetaData("stream-id") != "" {
+		inputStart++
+	}
+	inputTypeList := lreflect.FuncInputTypeList(method, inputStart, true, func(i int) bool {
+		if msg.PayloadLayout[i] == 0 {
+			return true
+		}
+		return false
+	})
+	if inputStart == 2 {
+		val1 := reflect.New(method.Type().In(1)).Interface()
+		val2 := reflect.New(method.Type().In(2)).Interface()
+		switch val1.(type) {
+		case *context.Context:
+			break
+		default:
+			// TODO Handle Error
+		}
+		switch val2.(type) {
+		case *stream.Stream:
+			break
+		default:
+			// TODO Handle Error
+		}
+	} else if inputStart == 1 {
+		typ1 := method.Type().In(1)
+		if typ1.Kind() != reflect.Interface {
+			// TODO Handle Error
+		}
+		switch reflect.New(typ1).Interface().(type) {
+		case *context.Context:
+			break
+		case *stream.Stream:
+			break
+		default:
+			// TODO Handle Error
+		}
+	}
+	for i := 0; i < len(inputTypeList) && iter.Next(); i++ {
 		eface := inputTypeList[i]
-		callArg, err := common.CheckCoderType(sArg.Codec, p, eface)
+		argBytes := iter.Take()
+		if len(argBytes) == 0 {
+			callArgs = append(callArgs, reflect.ValueOf(eface))
+			continue
+		}
+		callArg, err := common.CheckCoderType(sArg.Codec, argBytes, eface)
 		if err != nil {
 			s.handleError(sArg, msg.MsgId, common.ErrServer, err.Error())
-			e = err
-			return false
+			return nil, false
 		}
 		// 可以根据获取的参数类别的每一个参数的类型信息得到
 		// 所需的精确类型，所以不用再对变长的类型做处理
 		callArgs = append(callArgs, reflect.ValueOf(callArg))
-		i++
-		return true
-	})
-	if e != nil {
-		return nil, false
-	}
-	// 验证客户端传来的栈帧中每个参数的类型是否与服务器需要的一致？
-	// receiver(接收器)参与验证
-	ok, noMatch := common.CheckInputTypeList(callArgs, append([]interface{}{receiver.Interface()}, inputTypeList...))
-	if !ok {
-		if noMatch != nil {
-			s.handleError(sArg, msg.MsgId, common.ErrCallArgsType,
-				fmt.Sprintf("pass value type is %s but call arg type is %s", noMatch[1], noMatch[0]),
-			)
-		} else {
-			s.handleError(sArg, msg.MsgId, common.ErrCallArgsType,
-				fmt.Sprintf("pass arg list length no equal of call arg list : len(callArgs) == %d : len(inputTypeList) == %d",
-					len(callArgs)-1, len(inputTypeList)-1),
-			)
-		}
-		return nil, false
 	}
 	return callArgs, true
 }
@@ -167,13 +211,17 @@ func (s *Server) handleError(sArg serverCallContext, msgId uint64, errNo *perror
 			msg.SetMetaData("littlerpc-mores-bin", convert.BytesToString(bytes))
 		}
 	}
+	msg.PayloadLength = uint32(msg.GetLength())
 	bp := desc.bytesBuffer.Get().(*container.Slice[byte])
 	bp.Reset()
 	defer desc.bytesBuffer.Put(bp)
 	protocol.MarshalMessage(msg, bp)
-	desc.Lock()
-	defer desc.Unlock()
-	_, err := desc.Write(*bp)
+	muxBlock := &protocol.MuxBlock{
+		Flags:    protocol.MuxEnabled,
+		StreamId: hash.FastRand(),
+		MsgId:    msgId,
+	}
+	err := common.MuxWriteAll(desc, muxBlock, nil, *bp, nil)
 	if err != nil {
 		s.logger.ErrorFromErr(err)
 		return
