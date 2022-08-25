@@ -68,7 +68,16 @@ func newWebSocketSupport(config Config) transport.ServerTransportBuilder {
 	return transport.NewWebSocketServer(config.TlsConfig, nbioCfg)
 }
 
+func newStdTcpServer(config Config) transport.ServerTransportBuilder {
+	return transport.NewStdTcpTransServer(&transport.StdTcpOption{
+		Network:           "tcp",
+		MaxReadBufferSize: transport.ReadBufferSize,
+		Addrs:             config.Address,
+	})
+}
+
 func init() {
 	RegisterProtocolNew("tcp", newTcpSupport)
 	RegisterProtocolNew("websocket", newWebSocketSupport)
+	RegisterProtocolNew("std_tcp", newStdTcpServer)
 }
