@@ -23,6 +23,11 @@ const (
 	Default_Conn_Timeout = time.Second * 10
 )
 
+type readyDesc struct {
+	MessageLength int64
+	MessageBuffer []byte
+}
+
 type lockConn struct {
 	sync.Mutex
 	transport.ClientTransport
@@ -36,7 +41,7 @@ type lockConn struct {
 	//	用来存储Mux模式下未被读完的响应, Mux模式下响应该始终在同一个连接上发送
 	//	对于readyBuffer,Value的[]byte类型按照约定,len == 已被读取的字节数
 	//	cap == 回复消息的总长度
-	noReadyBuffer map[uint64][]byte
+	noReadyBuffer map[uint64]readyDesc
 }
 
 func (lc *lockConn) GetMsgId() uint64 {
@@ -83,6 +88,7 @@ func NewClient(opts ...clientOption) (*Client, error) {
 	}
 	client := &Client{}
 	client.logger = config.Logger
+	client.lNewErrorFn = config.LNewErrorDesc
 	// 配置解析器和负载均衡器
 	var manager AddrManager
 	if config.ServerAddr != "" {
@@ -106,7 +112,7 @@ func NewClient(opts ...clientOption) (*Client, error) {
 		}
 		client.concurrentConnect[k] = &lockConn{
 			ClientTransport: conn,
-			noReadyBuffer:   make(map[uint64][]byte, 256),
+			noReadyBuffer:   make(map[uint64]readyDesc, 256),
 			initSeq:         uint64(hash.FastRand()),
 			msgBuffer: sync.Pool{
 				New: func() interface{} {

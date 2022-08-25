@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"github.com/nyan233/littlerpc/common"
 	"github.com/nyan233/littlerpc/container"
 	"github.com/nyan233/littlerpc/protocol"
@@ -46,7 +47,75 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 		*readBuf = make([]byte, 0, protocol.MuxMessageBlockSize)
 	}
 	var msgBytes []byte
-	var muxMsg protocol.MuxBlock
+	err := c.readMessageFromServer(ctx, lc, msg, (*[]byte)(readBuf), &msgBytes)
+	if err != nil {
+		return err
+	}
+	// read header
+	protocol.ResetMsg(msg, false, false, true, 4096)
+	err = protocol.UnmarshalMessage(msgBytes, msg)
+	if err != nil {
+		return c.lNewErrorFn(perror.ClientError, "UnmarshalMessage failed", err)
+	}
+	// TODO : Client Handle Ping&Pong
+	// encoder类型为text时不需要额外的内存拷贝
+	// 默认的encoder即text
+	if msg.GetEncoderType() != protocol.DefaultEncodingType {
+		packet, err := c.encoderWp.Instance().UnPacket(msg.Payloads)
+		if err != nil {
+			return c.lNewErrorFn(perror.ClientError, "UnPacket failed", err)
+		}
+		msg.Payloads = append(msg.Payloads[:0], packet...)
+	}
+	// OnReceiveMessage 接收完消息之后调用的插件过程
+	err = c.pluginManager.OnReceiveMessage(msg, &msgBytes)
+	if err != nil {
+		c.logger.ErrorFromErr(err)
+	}
+	// 没有参数布局则表示该过程之后一个error类型的返回值
+	// 但error是不在返回值列表中处理的
+	if msg.PayloadLayout.Len() > 0 {
+		// 处理结果再处理错误, 因为游戏过程可能因为某种原因失败返回错误, 但也会返回处理到一定
+		// 进度的结果, 这个时候检查到错误就激进地抛弃结果是不可取的
+		iter := msg.PayloadsIterator()
+		outputList := lreflect.FuncOutputTypeList(method, false, func(i int) bool {
+			if i >= msg.PayloadLayout.Len()+1 {
+				panic("server return args number no equal client")
+			} else if i >= msg.PayloadLayout.Len() {
+				// 忽略返回值列表中的error
+				return true
+			}
+			if msg.PayloadLayout[i] == 0 {
+				return true
+			}
+			return false
+		})
+		for k, v := range outputList[:len(outputList)-1] {
+			if msg.PayloadLayout[k] == 0 {
+				iter.Take()
+				*rep = append(*rep, v)
+				continue
+			}
+			var returnV interface{}
+			var err2 error
+			returnV, err2 = common.CheckCoderType(c.codecWp.Instance(), iter.Take(), v)
+			if err2 != nil {
+				err = c.lNewErrorFn(perror.ClientError, "CheckCoderType failed", err)
+			}
+			*rep = append(*rep, returnV)
+		}
+		// 返回的参数个数和用户注册的过程不对应
+		if iter.Next() {
+			return c.lNewErrorFn(common.ErrServer.Code, common.ErrServer.Message,
+				"return results number is no equal client",
+				fmt.Sprintf("Server=%d", msg.PayloadLayout.Len()),
+				fmt.Sprintf("Client=%d", len(outputList)))
+		}
+	}
+	return c.handleProcessRetErr(msg)
+}
+
+func (c *Client) readMessageFromServer(ctx context.Context, lc *lockConn, msg *protocol.Message, readBuf *[]byte, complete *[]byte) error {
 	var iErr error
 	err := common.MuxReadAll(lc, *readBuf, func(c common.ReadLocker) bool {
 		// 检查context有无被取消
@@ -57,16 +126,15 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 			// 没有被取消则继续
 		}
 		// 检查其它过程是否将属于自己的数据读取完毕
-		if p, ok := lc.noReadyBuffer[msg.MsgId]; ok && len(p) == cap(p) {
-			msgBytes = p
+		if p, ok := lc.noReadyBuffer[msg.MsgId]; ok && len(p.MessageBuffer) == int(p.MessageLength) {
+			*complete = p.MessageBuffer
 			delete(lc.noReadyBuffer, msg.MsgId)
-			lc.Unlock()
 			return false
 		}
 		return true
 	}, func(mm protocol.MuxBlock) bool {
 		// 将数据直接添加到缓冲区中,在到达检查点时检查其是否完成
-		buf, ok := lc.noReadyBuffer[muxMsg.MsgId]
+		buf, ok := lc.noReadyBuffer[mm.MsgId]
 		if !ok {
 			// 缓冲区没有MsgId对应的数据说明该数据对应的MuxBlock是首次到来
 			// 如果消息的长度在MuxBlock能承载的载荷大小之内就不用加入缓冲区了,前提是自己的数据
@@ -76,68 +144,21 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 				iErr = err
 				return false
 			}
-			// 检查是否是自己的消息
-			if baseMsg.PayloadLength <= protocol.MaxPayloadSizeOnMux && msg.MsgId == baseMsg.MsgId {
-				msgBytes = append(msgBytes, mm.Payloads...)
-				return false
-			}
+			buf.MessageBuffer = make([]byte, 0, baseMsg.PayloadLength)
+			buf.MessageLength = int64(baseMsg.PayloadLength)
+			buf.MessageBuffer = append(buf.MessageBuffer, mm.Payloads...)
+			lc.noReadyBuffer[mm.MsgId] = buf
+			return true
 		}
-		buf = append(buf, mm.Payloads...)
-		lc.noReadyBuffer[muxMsg.MsgId] = buf
+		buf.MessageBuffer = append(buf.MessageBuffer, mm.Payloads...)
+		lc.noReadyBuffer[mm.MsgId] = buf
 		return true
 	})
 	if iErr != nil {
-		return err
+		return c.lNewErrorFn(perror.ClientError, "UnmarshalMessageOnMux failed", iErr)
 	}
 	if err != nil {
-		return err
-	}
-	// read header
-	protocol.ResetMsg(msg, false, false, true, 4096)
-	err = protocol.UnmarshalMessage(msgBytes, msg)
-	if err != nil {
-		return err
-	}
-	// TODO : Client Handle Ping&Pong
-	// encoder类型为text时不需要额外的内存拷贝
-	// 默认的encoder即text
-	if msg.GetEncoderType() != protocol.DefaultEncodingType {
-		packet, err := c.encoderWp.Instance().UnPacket(msg.Payloads)
-		if err != nil {
-			return err
-		}
-		msg.Payloads = append(msg.Payloads[:0], packet...)
-	}
-	// OnReceiveMessage 接收完消息之后调用的插件过程
-	err = c.pluginManager.OnReceiveMessage(msg, &msgBytes)
-	if err != nil {
-		c.logger.ErrorFromErr(err)
-	}
-	// 优先处理错误, 如果远程过程返回了错误, 那么就没有必要再序列化结果了
-	err = c.handleProcessRetErr(msg)
-	if err != nil {
-		return err
-	}
-	// 处理服务端传回的参数
-	outputTypeList := lreflect.FuncOutputTypeList(method, false)
-	var i int
-	protocol.RangePayloads(msg, msg.Payloads, func(p []byte, endBefore bool) bool {
-		eface := outputTypeList[i]
-		var returnV interface{}
-		var err2 error
-		if !endBefore {
-			returnV, err2 = common.CheckCoderType(c.codecWp.Instance(), p, eface)
-			if err2 != nil {
-				err = err2
-				return false
-			}
-		}
-		*rep = append(*rep, returnV)
-		i++
-		return true
-	})
-	if err != nil {
-		return err
+		return c.lNewErrorFn(perror.ClientError, "MuxReadAll failed", err)
 	}
 	return nil
 }
