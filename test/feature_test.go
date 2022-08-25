@@ -57,6 +57,7 @@ func TestNoTlsServerAndClient(t *testing.T) {
 	common.SetOpenLogger(false)
 	server := lserver.NewServer(
 		lserver.WithAddressServer(":1234"),
+		lserver.WithTransProtocol("std_tcp"),
 		lserver.WithServerEncoder("gzip"),
 		lserver.WithOpenLogger(false),
 	)
@@ -74,7 +75,7 @@ func TestNoTlsServerAndClient(t *testing.T) {
 
 	var wg sync.WaitGroup
 	// 启动多少的客户端
-	nGoroutine := 1
+	nGoroutine := 100
 	// 一个客户端连续发送多少次消息
 	sendN := 5
 	// 统计触发错误的次数

@@ -77,6 +77,9 @@ func genCode() {
 		fmt.Println("double }")
 	}
 	fmtBytes, err := format.Source(fileBuffer.Bytes())
+	if err != nil {
+		panic(err)
+	}
 	writeN, err := file.Write(fmtBytes)
 	if err != nil {
 		panic(interface{}(err))
@@ -146,13 +149,13 @@ func getAllFunc(file *ast.File, rawFile *os.File, filter func(recvT string) bool
 		if err != nil {
 			return nil
 		}
-		asyncApi, err := genAsyncApi(recvName, funName, inNameList, inTypeList, outTypeList)
-		if err != nil {
-			return nil
-		}
+		//asyncApi, err := genAsyncApi(recvName, funName, inNameList, inTypeList, outTypeList)
+		//if err != nil {
+		//	return nil
+		//}
 		funcStrs = append(funcStrs, syncApi)
-		funcStrs = append(funcStrs, asyncApi[0])
-		funcStrs = append(funcStrs, asyncApi[1])
+		//funcStrs = append(funcStrs, asyncApi[0])
+		//funcStrs = append(funcStrs, asyncApi[1])
 	}
 	return funcStrs
 }
@@ -183,46 +186,29 @@ func genSyncApi(recvName, funName string, inNameList, inTypeList, outList []stri
 			sb.WriteString(")")
 		}
 	}
-	fmt.Fprintf(&sb, "{rep,err := p.Call(\"%s.%s\",", recvName, funName)
+	if len(outList) > 1 {
+		fmt.Fprintf(&sb, "{rep,err := p.Call(\"%s.%s\",", recvName, funName)
+	} else {
+		fmt.Fprintf(&sb, "{_,err := p.Call(\"%s.%s\",", recvName, funName)
+	}
 	for _, v := range inNameList {
 		sb.WriteString(v)
 		sb.WriteString(",")
 	}
 	sb.WriteString(");")
-	sb.WriteString("if err != nil {return ")
-	for k, v := range outList {
-		if k == len(outList)-1 {
-			sb.WriteString("err};")
-			continue
-		}
-		str, err := writeDefaultValue(v)
-		if err != nil {
-			return "", err
-		}
-		sb.WriteString(str)
-		if len(outList) > 1 {
-			sb.WriteString(",")
-		}
-	}
-	// 生成其余断言的代码
-	for k, v := range outList {
-		// 对error类型的返回值使用安全断言
-		if v == "error" {
-			fmt.Fprintf(&sb, "r%d,_ := rep[%d].(%s);", k, k, v)
-			continue
-		}
-		fmt.Fprintf(&sb, "r%d := rep[%d].(%s);", k, k, v)
+	for k, v := range outList[:len(outList)-1] {
+		fmt.Fprintf(&sb, "r%d,_ := rep[%d].(%s);", k, k, v)
 	}
 	// 生成最终返回的代码
 	sb.WriteString("return ")
-	for k := range outList {
+	for k := range outList[:len(outList)-1] {
 		if k == len(outList)-1 {
 			fmt.Fprintf(&sb, "r%d", k)
 			continue
 		}
 		fmt.Fprintf(&sb, "r%d,", k)
 	}
-	sb.WriteString(";}")
+	sb.WriteString("err;}")
 	return sb.String(), nil
 }
 

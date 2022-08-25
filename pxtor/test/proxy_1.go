@@ -2,7 +2,8 @@ package test
 
 import (
 	"errors"
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/common"
+	perror "github.com/nyan233/littlerpc/protocol/error"
 )
 
 type Test struct{}
@@ -24,7 +25,5 @@ func (p *Test) ErrHandler(s1 string) (err error) {
 }
 
 func (p *Test) ErrHandler2(s1 string) (err error) {
-	return &protocol.Error{
-		Info: "string",
-	}
+	return perror.LNewStdError(common.Success.Code, common.Success.Message)
 }
