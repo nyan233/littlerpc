@@ -12,7 +12,7 @@ func TestError(t *testing.T) {
 }
 
 func BenchmarkErrorEncoding(b *testing.B) {
-	err := LNewStdError(200, random.RandomStringOnAscii(1000), random.RandomBytesOnAscii(400), 200)
+	err := LNewStdError(200, random.GenStringOnAscii(1000), random.GenBytesOnAscii(400), 200)
 	b.Run("StdError.Error()", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {

@@ -17,11 +17,11 @@ func RandomMuxMessage(maxBlock int, maxPayloads int) []byte {
 	msg := protocol.NewMessage()
 	msg.MsgId = uint64(hash.FastRand())
 	*(*uint32)(unsafe.Pointer(&msg.Scope)) = hash.FastRand()
-	msg.SetMethodName(random.RandomStringOnAscii(100))
-	msg.SetInstanceName(random.RandomStringOnAscii(100))
-	msg.SetMetaData(random.RandomStringOnAscii(30),
-		random.RandomStringOnAscii(34))
-	msg.Payloads = random.RandomBytesOnAscii(uint32(maxPayloads))
+	msg.SetMethodName(random.GenStringOnAscii(100))
+	msg.SetInstanceName(random.GenStringOnAscii(100))
+	msg.SetMetaData(random.GenStringOnAscii(30),
+		random.GenStringOnAscii(34))
+	msg.Payloads = random.GenBytesOnAscii(uint32(maxPayloads))
 	// generate payloadLayout
 	for i := 0; i < int(hash.FastRandN(10)); i++ {
 		msg.PayloadLayout.AppendS(hash.FastRand())
