@@ -141,8 +141,7 @@ func (m *Message) GetMethodName() string {
 }
 
 func (m *Message) GetMetaData(key string) string {
-	v, _ := m.MetaData.Load(key)
-	return v
+	return m.MetaData.Load(key)
 }
 
 func (m *Message) SetMetaData(key, value string) {

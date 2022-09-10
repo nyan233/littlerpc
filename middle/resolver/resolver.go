@@ -34,7 +34,7 @@ func RegisterResolver(scheme string, resolver Builder) {
 }
 
 func GetResolver(scheme string) Builder {
-	r, ok := resolverCollection.Load(scheme)
+	r, ok := resolverCollection.LoadOk(scheme)
 	if !ok {
 		return nil
 	}

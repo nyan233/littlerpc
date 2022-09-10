@@ -210,7 +210,7 @@ func (c *Client) AsyncCall(processName string, args ...interface{}) error {
 	return c.gp.GOGO(func() {
 		// 查找对应的回调函数
 		var callBackIsOk bool
-		cbFn, ok := c.callBacks.Load(processName)
+		cbFn, ok := c.callBacks.LoadOk(processName)
 		callBackIsOk = ok
 		// 在池中获取一个底层传输的连接
 		conn := getConnFromMux(c)

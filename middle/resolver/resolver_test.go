@@ -36,7 +36,7 @@ func TestAllResolver(t *testing.T) {
 		t.Fatal(err)
 	}
 	go http.Serve(listener, http.DefaultServeMux)
-	tmp, _ := resolverCollection.Load("live")
+	tmp, _ := resolverCollection.LoadOk("live")
 	lrb := tmp.(*liveResolver)
 	addrs, err := lrb.Instance().Parse("live://127.0.0.1")
 	if err != nil {
@@ -52,7 +52,7 @@ func TestAllResolver(t *testing.T) {
 	if !reflect.DeepEqual(addrs, []string{"127.0.0.1", "192.168.1.1", "192.168.1.2"}) {
 		t.Error("no equal")
 	}
-	tmp, _ = resolverCollection.Load("file")
+	tmp, _ = resolverCollection.LoadOk("file")
 	frb := tmp.(*fileResolverBuilder)
 	addrs, err = frb.Instance().Parse("file://./addrs.txt")
 	if err != nil {
@@ -61,7 +61,7 @@ func TestAllResolver(t *testing.T) {
 	if !reflect.DeepEqual(addrs, eqData[:]) {
 		t.Error("no equal")
 	}
-	tmp, _ = resolverCollection.Load("http")
+	tmp, _ = resolverCollection.LoadOk("http")
 	hrb := tmp.(*httpResolverBuilder)
 	addrs, err = hrb.Instance().Parse("http://127.0.0.1:8080/addrs.txt")
 	if err != nil {

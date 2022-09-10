@@ -171,7 +171,7 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 	}
 	msg.SetInstanceName(methodData[0])
 	msg.SetMethodName(methodData[1])
-	instance, ok := c.elems.Load(msg.GetInstanceName())
+	instance, ok := c.elems.LoadOk(msg.GetInstanceName())
 	if !ok {
 		return reflect.ValueOf(nil), nil, c.lNewErrorFn(perror.InstanceNoRegister,
 			perror.Code(perror.InstanceNoRegister).String(), msg.GetInstanceName())

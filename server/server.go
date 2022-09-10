@@ -215,7 +215,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		}
 		// 序列化完之后才确定调用名
 		// MethodName : Hello.Hello : receiver:methodName
-		elemData, ok := s.elems.Load(msg.GetInstanceName())
+		elemData, ok := s.elems.LoadOk(msg.GetInstanceName())
 		if !ok {
 			s.handleError(sArg, msg.MsgId, common.ErrElemTypeNoRegister, msg.InstanceName)
 			return

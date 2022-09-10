@@ -27,7 +27,7 @@ func RegisterBalancer(balancer Balancer) {
 }
 
 func GetBalancer(scheme string) Balancer {
-	b, ok := balancerCollection.Load(scheme)
+	b, ok := balancerCollection.LoadOk(scheme)
 	if !ok {
 		return nil
 	}
