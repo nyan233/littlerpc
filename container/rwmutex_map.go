@@ -30,6 +30,12 @@ func (m *RWMutexMap[Key, Value]) Load(k Key) Value {
 	return m.mp[k]
 }
 
+func (m *RWMutexMap[Key, Value]) Len() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.mp)
+}
+
 func (m *RWMutexMap[Key, Value]) Store(k Key, v Value) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

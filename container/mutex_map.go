@@ -58,3 +58,9 @@ func (m *MutexMap[Key, Value]) Delete(k Key) {
 	}
 	delete(m.mp, k)
 }
+
+func (m *MutexMap[Key, Value]) Len() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.mp)
+}

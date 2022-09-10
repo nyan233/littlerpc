@@ -1,13 +1,18 @@
 package container
 
-import "testing"
+import (
+	"github.com/nyan233/littlerpc/utils/random"
+	"github.com/stretchr/testify/assert"
+	"testing"
+)
 
 func TestSliceUnique(t *testing.T) {
-	testData := []int{40, 55, 2746, 30, 55, 40, 66, 77, 44, 77}
-	s := Slice[int]{}
-	s = testData
-	s.Unique()
-	t.Log(s)
+	var testData Slice[uint32] = random.GenSequenceNumberOnFastRand(1000)
+	testData.AppendS(100)
+	testData.Append(random.GenSequenceNumberOnMathRand(10))
+	testData.Unique()
+	assert.Equal(t, testData.Len(), 1011)
+	assert.GreaterOrEqual(t, testData.Cap(), 1011)
 }
 
 func BenchmarkSliceUnique(b *testing.B) {
