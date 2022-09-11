@@ -72,7 +72,7 @@ type Client struct {
 	// 用于取消后台正在监听消息的goroutine
 	listenReady context.CancelFunc
 	// 用于超时管理和异步调用模拟的goroutine池
-	gp *pool.CounterPool
+	gp *pool.TaskPool
 	// 用于客户端的插件
 	pluginManager *pluginManager
 	// 地址管理器
@@ -128,7 +128,7 @@ func NewClient(opts ...clientOption) (*Client, error) {
 		}
 	}
 	// init goroutine pool
-	client.gp = pool.NewCounterPool(config.PoolSize, nil)
+	client.gp = pool.NewTaskPool(int(config.PoolSize*10), int(config.PoolSize))
 	// plugins
 	client.pluginManager = &pluginManager{plugins: config.Plugins}
 	// encoderWp
@@ -207,7 +207,7 @@ func (c *Client) AsyncCall(processName string, args ...interface{}) error {
 	if err != nil {
 		return err
 	}
-	return c.gp.GOGO(func() {
+	return c.gp.Push(func() {
 		// 查找对应的回调函数
 		var callBackIsOk bool
 		cbFn, ok := c.callBacks.LoadOk(processName)
@@ -242,10 +242,12 @@ func (c *Client) RegisterCallBack(processName string, fn func(rep []interface{},
 }
 
 func (c *Client) Close() error {
-	c.gp.Stop()
+	if err := c.gp.Stop(); err != nil {
+		return err
+	}
 	for _, v := range c.concurrentConnect {
 		v.Lock()
-		err := v.Close()
+		err := v.ClientTransport.Close()
 		v.Unlock()
 		if err != nil {
 			v.Unlock()
