@@ -10,7 +10,7 @@ import (
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"github.com/nyan233/littlerpc/stream"
 	"github.com/nyan233/littlerpc/utils/convert"
-	"github.com/nyan233/littlerpc/utils/hash"
+	"github.com/nyan233/littlerpc/utils/random"
 	"reflect"
 	"strconv"
 )
@@ -28,7 +28,7 @@ func (s *Server) handleErrAndRepResult(sArg serverCallContext, msg *protocol.Mes
 	}
 	// 检查是否实现了自定义错误的接口
 	desc, ok := interErr.(perror.LErrorDesc)
-	if !ok {
+	if ok {
 		msg.SetMetaData("littlerpc-code", strconv.Itoa(desc.GetCode()))
 		msg.SetMetaData("littlerpc-message", desc.GetMessage())
 		bytes, err := desc.MarshalMores()
@@ -58,7 +58,7 @@ func (s *Server) sendMsg(sArg serverCallContext, msg *protocol.Message) {
 	// write header
 	muxMsg := &protocol.MuxBlock{
 		Flags:    protocol.MuxEnabled,
-		StreamId: hash.FastRand(),
+		StreamId: random.FastRand(),
 		MsgId:    msg.MsgId,
 	}
 	bp := sArg.Desc.bytesBuffer.Get().(*container.Slice[byte])
@@ -107,7 +107,7 @@ func (s *Server) handleResult(sArg serverCallContext, msg *protocol.Message, cal
 		// 可替换的Codec已经不需要Any包装器了
 		bytes, err := sArg.Codec.Marshal(eface)
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, common.ErrServer, "")
+			s.handleError(sArg, msg.MsgId, common.ErrServer)
 			return
 		}
 		msg.AppendPayloads(bytes)
@@ -193,6 +193,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	return callArgs, true
 }
 
+// NOTE: 在没有可以额外携带的数据时就不要传递appendInfo, 如果传递空字符串会导致客户端序列化失败和空间的浪费
 func (s *Server) handleError(sArg serverCallContext, msgId uint64, errNo *perror.LBaseError, appendInfo ...string) {
 	desc := sArg.Desc
 	msg := protocol.NewMessage()
@@ -201,7 +202,7 @@ func (s *Server) handleError(sArg serverCallContext, msgId uint64, errNo *perror
 	msg.SetMetaData("littlerpc-code", strconv.Itoa(errNo.Code))
 	msg.SetMetaData("littlerpc-message", errNo.Message)
 	// 为空则不序列化Mores, 否则会造成空间浪费
-	if appendInfo != nil || len(appendInfo) > 0 {
+	if appendInfo != nil && len(appendInfo) > 0 {
 		errDesc := s.lNewErrorFn(errNo.Code, errNo.Message, appendInfo)
 		bytes, err := errDesc.MarshalMores()
 		if err != nil {
@@ -218,7 +219,7 @@ func (s *Server) handleError(sArg serverCallContext, msgId uint64, errNo *perror
 	protocol.MarshalMessage(msg, bp)
 	muxBlock := &protocol.MuxBlock{
 		Flags:    protocol.MuxEnabled,
-		StreamId: hash.FastRand(),
+		StreamId: random.FastRand(),
 		MsgId:    msgId,
 	}
 	err := common.MuxWriteAll(desc, muxBlock, nil, *bp, nil)

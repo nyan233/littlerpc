@@ -3,7 +3,7 @@ package client
 import (
 	"github.com/nyan233/littlerpc/middle/balance"
 	"github.com/nyan233/littlerpc/middle/resolver"
-	"github.com/nyan233/littlerpc/utils/hash"
+	"github.com/nyan233/littlerpc/utils/random"
 	"math"
 	"unsafe"
 )
@@ -54,7 +54,7 @@ func (m *addrManager) resolverOnModify(keys []int, values []string) {
 }
 
 func (m *addrManager) Target() string {
-	r := hash.FastRandN(math.MaxUint32)
+	r := random.FastRandN(math.MaxUint32)
 	return m.balance.Target((*(*[4]byte)(unsafe.Pointer(&r)))[:])
 }
 

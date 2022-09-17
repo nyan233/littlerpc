@@ -3,7 +3,7 @@ package balance
 import (
 	"fmt"
 	"github.com/nyan233/littlerpc/container"
-	hash2 "github.com/nyan233/littlerpc/utils/hash"
+	"github.com/nyan233/littlerpc/utils/random"
 	"math"
 	"net"
 	"sync"
@@ -20,8 +20,8 @@ const (
 func TestHashBalance(t *testing.T) {
 	var addrs container.Slice[string] = make([]string, 0, NAddr)
 	for i := 0; i < NAddr; i++ {
-		ip := net.IPv4(byte(hash2.FastRandN(MaxByte)), byte(hash2.FastRandN(MaxByte)),
-			byte(hash2.FastRandN(MaxByte)), byte(hash2.FastRandN(MaxByte)))
+		ip := net.IPv4(byte(random.FastRandN(MaxByte)), byte(random.FastRandN(MaxByte)),
+			byte(random.FastRandN(MaxByte)), byte(random.FastRandN(MaxByte)))
 		addrs = append(addrs, ip.String())
 	}
 	// 去重

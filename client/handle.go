@@ -9,7 +9,7 @@ import (
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	lreflect "github.com/nyan233/littlerpc/reflect"
 	"github.com/nyan233/littlerpc/utils/convert"
-	"github.com/nyan233/littlerpc/utils/hash"
+	"github.com/nyan233/littlerpc/utils/random"
 	"reflect"
 	"strconv"
 	"strings"
@@ -30,6 +30,7 @@ func (c *Client) handleProcessRetErr(msg *protocol.Message) error {
 	moresBinStr := msg.GetMetaData("littlerpc-mores-bin")
 	if moresBinStr != "" {
 		err := desc.UnmarshalMores(convert.StringToBytes(moresBinStr))
+		c.logger.Debug(desc.Error())
 		if err != nil {
 			return err
 		}
@@ -37,7 +38,7 @@ func (c *Client) handleProcessRetErr(msg *protocol.Message) error {
 	return desc
 }
 
-func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Message, lc *lockConn, method reflect.Value, rep *[]interface{}) error {
+func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Message, lc *lockConn, method reflect.Value, rep []interface{}) error {
 	// 接收服务器返回的调用结果并将header反序列化
 	readBuf := lc.bytesBuffer.Get().(*container.Slice[byte])
 	readBuf.Reset()
@@ -93,7 +94,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 		for k, v := range outputList[:len(outputList)-1] {
 			if msg.PayloadLayout[k] == 0 {
 				iter.Take()
-				*rep = append(*rep, v)
+				rep[k] = v
 				continue
 			}
 			var returnV interface{}
@@ -102,7 +103,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 			if err2 != nil {
 				err = c.lNewErrorFn(perror.ClientError, "CheckCoderType failed", err)
 			}
-			*rep = append(*rep, returnV)
+			rep[k] = returnV
 		}
 		// 返回的参数个数和用户注册的过程不对应
 		if iter.Next() {
@@ -236,7 +237,7 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 	}
 	muxMsg := &protocol.MuxBlock{
 		Flags:    protocol.MuxEnabled,
-		StreamId: hash.FastRand(),
+		StreamId: random.FastRand(),
 		MsgId:    msg.MsgId,
 	}
 	// 要发送的数据小于一个MuxBlock的长度则直接发送

@@ -11,7 +11,7 @@ import (
 	"github.com/nyan233/littlerpc/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
-	"github.com/nyan233/littlerpc/utils/hash"
+	"github.com/nyan233/littlerpc/utils/random"
 	"github.com/zbh255/bilog"
 	"reflect"
 	"sync"
@@ -113,7 +113,7 @@ func NewClient(opts ...clientOption) (*Client, error) {
 		client.concurrentConnect[k] = &lockConn{
 			ClientTransport: conn,
 			noReadyBuffer:   make(map[uint64]readyDesc, 256),
-			initSeq:         uint64(hash.FastRand()),
+			initSeq:         uint64(random.FastRand()),
 			msgBuffer: sync.Pool{
 				New: func() interface{} {
 					return protocol.NewMessage()
@@ -174,7 +174,7 @@ func (c *Client) BindFunc(instanceName string, i interface{}) error {
 // 现在的onErr回调函数将不起作用，sErr表示Client.Call()在调用一些函数返回的错误或者调用远程过程时返回的错误
 // 用户定义的远程过程返回的错误应该被安排在rep的最后一个槽位中
 // 生成器应该将优先将sErr错误返回
-func (c *Client) Call(processName string, args ...interface{}) (rep []interface{}, sErr error) {
+func (c *Client) Call(processName string, args ...interface{}) ([]interface{}, error) {
 	conn := getConnFromMux(c)
 	msg := conn.msgBuffer.Get().(*protocol.Message)
 	defer conn.msgBuffer.Put(msg)
@@ -191,12 +191,13 @@ func (c *Client) Call(processName string, args ...interface{}) (rep []interface{
 	if err != nil {
 		return nil, err
 	}
-	err = c.readMsgAndDecodeReply(ctx, msg, conn, method, &rep)
+	rep := make([]interface{}, method.Type().NumOut()-1)
+	err = c.readMsgAndDecodeReply(ctx, msg, conn, method, rep)
 	c.pluginManager.OnResult(msg, &rep, err)
 	if err != nil {
-		return nil, err
+		return rep, err
 	}
-	return
+	return rep, nil
 }
 
 // AsyncCall 该函数返回时至少数据已经经过Codec的序列化，调用者有责任检查error
@@ -223,8 +224,8 @@ func (c *Client) AsyncCall(processName string, args ...interface{}) error {
 		} else if err != nil && !callBackIsOk {
 			return
 		}
-		rep := make([]interface{}, 0)
-		err = c.readMsgAndDecodeReply(ctx, msg, conn, method, &rep)
+		rep := make([]interface{}, method.Type().NumOut()-1)
+		err = c.readMsgAndDecodeReply(ctx, msg, conn, method, rep)
 		if err != nil && callBackIsOk {
 			cbFn(nil, err)
 			return

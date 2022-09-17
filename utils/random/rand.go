@@ -1,4 +1,4 @@
-package hash
+package random
 
 import (
 	_ "unsafe"
