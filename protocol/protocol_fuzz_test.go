@@ -4,6 +4,8 @@ package protocol
 
 import (
 	"github.com/nyan233/littlerpc/container"
+	"github.com/nyan233/littlerpc/utils/random"
+	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
@@ -28,5 +30,27 @@ func FuzzMessage(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		msg := NewMessage()
 		_ = UnmarshalMessage(data, msg)
+	})
+}
+
+func FuzzMuxMessage(f *testing.F) {
+	muxMsg := &MuxBlock{
+		Flags:    MuxEnabled,
+		StreamId: random.FastRand(),
+		MsgId:    uint64(random.FastRand()),
+	}
+	muxMsg.SetPayloads(random.GenBytesOnAscii(100))
+	f.Add(muxMsg.Flags, muxMsg.StreamId, muxMsg.MsgId, ([]byte)(muxMsg.Payloads))
+	f.Fuzz(func(t *testing.T, flags uint8, streamId uint32,
+		msgId uint64, payloads []byte) {
+		block := &MuxBlock{}
+		block.SetFlags(flags)
+		block.SetStreamId(streamId)
+		block.SetMsgId(msgId)
+		block.SetPayloads(payloads)
+		assert.Equal(t, block.GetFlags(), flags)
+		assert.Equal(t, block.GetStreamId(), streamId)
+		assert.Equal(t, block.GetMsgId(), msgId)
+		assert.Equal(t, block.GetPayloadLength(), uint16(len(payloads)))
 	})
 }
