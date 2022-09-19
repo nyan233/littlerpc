@@ -15,6 +15,13 @@ type Iface struct {
 	data unsafe.Pointer
 }
 
+func RealType(value reflect.Value) reflect.Value {
+	if value.Kind() != reflect.Interface {
+		return value
+	}
+	return RealType(reflect.ValueOf(value.Interface()))
+}
+
 // FuncInputTypeList 返回函数的输入参数类型列表，空接口切片表示
 // directNew是一个过滤器回调函数, 返回true指示new的类型是其原始类型, 返回false则代表new一个非指针类型并返回其指针
 // directNew()其入参的index当(isRecv == true), 它的值相当于减去接收器的参数的长度
@@ -128,4 +135,53 @@ func typeToEfaceNoNew(typ reflect.Type, val interface{}) interface{} {
 // InterDataPointer 获得val对应eface-data指针的值
 func InterDataPointer(val interface{}) unsafe.Pointer {
 	return (*Eface)(unsafe.Pointer(&val)).data
+}
+
+// DeepEqualNotType 主要用于比较
+func DeepEqualNotType(x, y interface{}) bool {
+	if x == nil && y == nil {
+		return true
+	} else if x == nil || y == nil {
+		return false
+	}
+	xValue := reflect.ValueOf(x)
+	yValue := reflect.ValueOf(y)
+	if xValue.Type() == reflect.TypeOf([]interface{}{0}) || yValue.Type() == reflect.TypeOf([]interface{}{0}) {
+		if xValue.Kind() != reflect.Slice || yValue.Kind() != reflect.Slice {
+			return false
+		}
+		return deepEqualNotTypeOnArray(xValue, yValue)
+	} else if xValue.Type() != yValue.Type() {
+		return false
+	} else {
+		return reflect.DeepEqual(x, y)
+	}
+}
+
+func deepEqualNotTypeOnArray(x, y reflect.Value) bool {
+	if x.Len() != y.Len() {
+		return false
+	}
+	var rangeN reflect.Value
+	var cmpN reflect.Value
+	if _, xOK := x.Interface().([]interface{}); xOK {
+		rangeN = x
+		cmpN = y
+	} else {
+		rangeN = y
+		cmpN = x
+	}
+	length := x.Len()
+	for i := 0; i < length; i++ {
+		rangeV := RealType(rangeN.Index(i))
+		cmpV := RealType(cmpN.Index(i))
+		if rangeV.Kind() == reflect.Slice && cmpV.Kind() == reflect.Slice {
+			deepEqualNotTypeOnArray(rangeV, cmpV)
+			continue
+		}
+		if !reflect.DeepEqual(rangeV.Interface(), cmpV.Interface()) {
+			return false
+		}
+	}
+	return true
 }
