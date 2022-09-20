@@ -25,5 +25,5 @@ func (p *Test) ErrHandler(s1 string) (err error) {
 }
 
 func (p *Test) ErrHandler2(s1 string) (err error) {
-	return perror.LNewStdError(common.Success.Code, common.Success.Message)
+	return perror.LNewStdError(common.Success.Code(), common.Success.Message())
 }

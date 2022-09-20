@@ -32,7 +32,7 @@ func WithDefaultServer() serverOption {
 		config.ServerTimeout = 90 * time.Second
 		config.Encoder = packet.GetEncoderFromIndex(int(protocol.DefaultEncodingType))
 		config.NetWork = "tcp"
-		config.LNewErrorDesc = perror.LNewStdError
+		config.ErrHandler = common.DefaultErrHandler
 	}
 }
 
@@ -74,8 +74,8 @@ func WithPlugin(plg plugin.ServerPlugin) serverOption {
 	}
 }
 
-func WithNewErrorDesc(fn perror.LNewErrorDesc) serverOption {
+func WithNewErrHandler(eh perror.LErrors) serverOption {
 	return func(config *Config) {
-		config.LNewErrorDesc = fn
+		config.ErrHandler = eh
 	}
 }

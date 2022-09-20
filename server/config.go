@@ -26,8 +26,8 @@ type Config struct {
 	Encoder packet.Wrapper
 	Logger  bilog.Logger
 	// 使用的插件
-	Plugins       []plugin.ServerPlugin
-	LNewErrorDesc perror.LNewErrorDesc
+	Plugins    []plugin.ServerPlugin
+	ErrHandler perror.LErrors
 }
 
 type NewProtocolSupport func(config Config) transport.ServerTransportBuilder

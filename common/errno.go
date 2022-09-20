@@ -5,11 +5,11 @@ import (
 )
 
 var (
-	Success               = error.LNewBaseError(error.Success, "OK")
-	ErrMethodNoRegister   = error.LNewBaseError(error.MethodNoRegister, "method no register")
-	ErrElemTypeNoRegister = error.LNewBaseError(error.InstanceNoRegister, "elem type no register")
-	ErrMessageFormat      = error.LNewBaseError(error.MessageDecodingFailed, "message format invalid")
-	ErrServer             = error.LNewBaseError(error.ServerError, "server error")
-	ErrCallArgsType       = error.LNewBaseError(error.CallArgsTypeErr, "call arguments type error")
-	ErrCodecMarshalError  = error.LNewBaseError(error.CodecMarshalErr, "codec.MarshalError return one error")
+	Success               = error.LNewStdError(error.Success, "OK")
+	ErrMethodNoRegister   = error.LNewStdError(error.MethodNoRegister, "method no register")
+	ErrElemTypeNoRegister = error.LNewStdError(error.InstanceNoRegister, "elem type no register")
+	ErrMessageFormat      = error.LNewStdError(error.MessageDecodingFailed, "message format invalid")
+	ErrServer             = error.LNewStdError(error.ServerError, "server error")
+	ErrCallArgsType       = error.LNewStdError(error.CallArgsTypeErr, "call arguments type error")
+	ErrCodecMarshalError  = error.LNewStdError(error.CodecMarshalErr, "codec.MarshalError return one error")
 )

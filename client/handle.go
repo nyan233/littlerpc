@@ -23,7 +23,7 @@ func (c *Client) handleProcessRetErr(msg *protocol.Message) error {
 	message := msg.GetMetaData("littlerpc-message")
 	success := common.Success
 	// Success表示无错误
-	if code == success.Code && message == success.Message {
+	if code == success.Code() && message == success.Message() {
 		return nil
 	}
 	desc := c.lNewErrorFn(code, message)
@@ -107,7 +107,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 		}
 		// 返回的参数个数和用户注册的过程不对应
 		if iter.Next() {
-			return c.lNewErrorFn(common.ErrServer.Code, common.ErrServer.Message,
+			return c.lNewErrorFn(common.ErrServer.Code(), common.ErrServer.Message(),
 				"return results number is no equal client",
 				fmt.Sprintf("Server=%d", msg.PayloadLayout.Len()),
 				fmt.Sprintf("Client=%d", len(outputList)))

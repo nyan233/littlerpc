@@ -48,8 +48,9 @@ type Server struct {
 	// 缓存一些Encoder以加速索引
 	cacheEncoder []packet.Wrapper
 	// 注册的插件的管理器
-	pManager    *pluginManager
-	lNewErrorFn lerror.LNewErrorDesc
+	pManager *pluginManager
+	// Error Handler
+	eHandle lerror.LErrors
 }
 
 func NewServer(opts ...serverOption) *Server {
@@ -89,7 +90,6 @@ func NewServer(opts ...serverOption) *Server {
 			break
 		}
 	}
-	server.lNewErrorFn = sc.LNewErrorDesc
 	// init plugin manager
 	server.pManager = &pluginManager{plugins: sc.Plugins}
 	// New TaskPool
@@ -126,7 +126,7 @@ func (s *Server) Elem(i interface{}) error {
 }
 
 func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
-	// TODO : Handle Ping-Pong Message
+	// TODO : Handle Ping-Pong message
 	// TODO : Handle Control Header
 	connBuffer, ok := s.noReadyBufferDesc.LoadOk(c)
 	if !ok {
@@ -195,7 +195,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 			}
 		}
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, common.ErrMessageFormat, "")
+			s.handleError(sArg, msg.MsgId, common.ErrMessageFormat)
 			return
 		}
 		// 调用编码器解包
@@ -204,7 +204,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		if encoder.Scheme() != "text" {
 			msg.Payloads, err = encoder.UnPacket(msg.Payloads)
 			if err != nil {
-				s.handleError(sArg, msg.MsgId, common.ErrServer, err.Error())
+				s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
 				return
 			}
 		}
@@ -217,12 +217,14 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		// MethodName : Hello.Hello : receiver:methodName
 		elemData, ok := s.elems.LoadOk(msg.GetInstanceName())
 		if !ok {
-			s.handleError(sArg, msg.MsgId, common.ErrElemTypeNoRegister, msg.InstanceName)
+			s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(
+				common.ErrElemTypeNoRegister, msg.InstanceName))
 			return
 		}
 		method, ok := elemData.Methods[msg.MethodName]
 		if !ok {
-			s.handleError(sArg, msg.MsgId, common.ErrMethodNoRegister, msg.MethodName)
+			s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(
+				common.ErrMethodNoRegister, msg.MethodName))
 			return
 		}
 		// 从客户端校验并获得合法的调用参数

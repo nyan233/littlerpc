@@ -1,30 +1,22 @@
 package error
 
 type LErrorDesc interface {
-	GetCode() int
-	SetCode(code int)
-	GetMessage() string
-	SetMessage(message string)
+	Code() int
+	Message() string
 	AppendMore(more interface{})
-	SetMores(mores []interface{})
-	GetMores() []interface{}
+	Mores() []interface{}
 	MarshalMores() ([]byte, error)
 	UnmarshalMores([]byte) error
 	error
 }
 
-type LBaseError struct {
-	Code    int
-	Message string
-	Mores   []interface{}
-}
-
-func LNewBaseError(code int, message string, mores ...interface{}) *LBaseError {
-	return &LBaseError{
-		Code:    code,
-		Message: message,
-		Mores:   mores,
-	}
+type LErrors interface {
+	// LNewErrorDesc 用于生产LittleRpc中的标准错误
+	LNewErrorDesc(code int, message string, mores ...interface{}) LErrorDesc
+	// LWarpErrorDesc 用于包装LittleRpc中的标准错误
+	LWarpErrorDesc(desc LErrorDesc, mores ...interface{}) LErrorDesc
 }
 
 type LNewErrorDesc func(code int, message string, mores ...interface{}) LErrorDesc
+
+type LWarpErrorDesc func(desc LErrorDesc, mores ...interface{}) LErrorDesc
