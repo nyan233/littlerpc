@@ -29,6 +29,7 @@ const (
 	MethodNoRegister      = 750  // 需要调用的方法未被注册
 	InstanceNoRegister    = 770  // 需要调用的实例未被注册
 	MessageDecodingFailed = 780  // 载荷消息解码失败
+	MessageEncodingFailed = 1060 // 载荷消息编码失败
 	ServerError           = 690  // 服务器的其它错误
 	ClientError           = 580  // 客户端产生的错误
 	CallArgsTypeErr       = 1030 // 过程的调用参数类型错误

@@ -92,6 +92,8 @@ func NewServer(opts ...serverOption) *Server {
 	}
 	// init plugin manager
 	server.pManager = &pluginManager{plugins: sc.Plugins}
+	// init ErrorHandler
+	server.eHandle = sc.ErrHandler
 	// New TaskPool
 	//server.taskPool = pool.NewTaskPool(pool.MaxTaskPoolSize, runtime.NumCPU()*4)
 	return server
@@ -195,7 +197,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 			}
 		}
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, common.ErrMessageFormat)
+			s.handleError(sArg, msg.MsgId, common.ErrMessageDecoding)
 			return
 		}
 		// 调用编码器解包

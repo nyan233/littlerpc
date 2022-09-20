@@ -31,7 +31,7 @@ func WithDefaultClient() clientOption {
 		config.Codec = codec.GetCodecFromIndex(int(protocol.DefaultCodecType))
 		config.NetWork = "tcp"
 		config.MuxConnection = 8
-		config.LNewErrorDesc = perror.LNewStdError
+		config.ErrHandler = common.DefaultErrHandler
 	}
 }
 
@@ -118,8 +118,8 @@ func WithPlugin(plugin plugin.ClientPlugin) clientOption {
 	}
 }
 
-func WithNewErrorDesc(fn perror.LNewErrorDesc) clientOption {
+func WithErrHandler(eh perror.LErrors) clientOption {
 	return func(config *Config) {
-		config.LNewErrorDesc = fn
+		config.ErrHandler = eh
 	}
 }

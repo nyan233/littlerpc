@@ -35,9 +35,9 @@ type lockConn struct {
 	msgBuffer sync.Pool
 	// 发送数据的缓冲池, 用于减少重复创建bytes slice的开销
 	bytesBuffer sync.Pool
-	// Message ID的起始, 开始时随机分配
+	// message ID的起始, 开始时随机分配
 	initSeq uint64
-	// MessageId : Message
+	// MessageId : message
 	//	用来存储Mux模式下未被读完的响应, Mux模式下响应该始终在同一个连接上发送
 	//	对于readyBuffer,Value的[]byte类型按照约定,len == 已被读取的字节数
 	//	cap == 回复消息的总长度
@@ -66,7 +66,7 @@ type Client struct {
 	// 注册的所有异步调用的回调函数
 	// processName:func(rep []interface{},err error)
 	callBacks container.SyncMap118[string, func(rep []interface{}, err error)]
-	// MessageId : Message
+	// MessageId : message
 	// 使用到的操作均是线程安全的
 	readyBuffer container.RWMutexMap[uint64, []byte]
 	// 用于取消后台正在监听消息的goroutine
@@ -77,7 +77,7 @@ type Client struct {
 	pluginManager *pluginManager
 	// 地址管理器
 	addrManager AddrManager
-	lNewErrorFn lerror.LNewErrorDesc
+	eHandle     lerror.LErrors
 }
 
 func NewClient(opts ...clientOption) (*Client, error) {
@@ -88,7 +88,7 @@ func NewClient(opts ...clientOption) (*Client, error) {
 	}
 	client := &Client{}
 	client.logger = config.Logger
-	client.lNewErrorFn = config.LNewErrorDesc
+	client.eHandle = config.ErrHandler
 	// 配置解析器和负载均衡器
 	var manager AddrManager
 	if config.ServerAddr != "" {
@@ -139,6 +139,8 @@ func NewClient(opts ...clientOption) (*Client, error) {
 	client.callBacks = container.SyncMap118[string, func(rep []interface{}, err error)]{
 		SMap: sync.Map{},
 	}
+	// init ErrHandler
+	client.eHandle = config.ErrHandler
 	return client, nil
 }
 

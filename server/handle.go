@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"github.com/nyan233/littlerpc/common"
+	"github.com/nyan233/littlerpc/common/stream"
 	"github.com/nyan233/littlerpc/container"
 	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	lreflect "github.com/nyan233/littlerpc/reflect"
-	"github.com/nyan233/littlerpc/stream"
 	"github.com/nyan233/littlerpc/utils/convert"
 	"github.com/nyan233/littlerpc/utils/random"
 	"reflect"
@@ -155,7 +155,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 			// TODO Handle Error
 		}
 		switch val2.(type) {
-		case *stream.Stream:
+		case *stream.LStream:
 			break
 		default:
 			// TODO Handle Error
@@ -168,7 +168,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 		switch reflect.New(typ1).Interface().(type) {
 		case *context.Context:
 			break
-		case *stream.Stream:
+		case *stream.LStream:
 			break
 		default:
 			// TODO Handle Error

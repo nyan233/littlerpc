@@ -50,7 +50,7 @@ type Config struct {
 	// 安装的插件
 	Plugins []plugin.ClientPlugin
 	// 可以生成自定义错误的工厂回调函数
-	LNewErrorDesc perror.LNewErrorDesc
+	ErrHandler perror.LErrors
 }
 
 type NewProtocolSupport func(config Config) (transport.ClientTransport, error)
