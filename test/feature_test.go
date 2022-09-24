@@ -2,7 +2,7 @@ package main
 
 import (
 	lclient "github.com/nyan233/littlerpc/client"
-	"github.com/nyan233/littlerpc/common"
+	"github.com/nyan233/littlerpc/pkg/common"
 	lserver "github.com/nyan233/littlerpc/server"
 	"sync"
 	"sync/atomic"

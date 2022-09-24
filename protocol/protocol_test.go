@@ -2,7 +2,7 @@ package protocol
 
 import (
 	"errors"
-	"github.com/nyan233/littlerpc/container"
+	container2 "github.com/nyan233/littlerpc/pkg/container"
 	"math"
 	"math/rand"
 	"sync"
@@ -16,14 +16,14 @@ func BenchmarkProtocol(b *testing.B) {
 		InstanceName:  "Hello",
 		MethodName:    "Add",
 		MsgId:         rand.Uint64(),
-		MetaData:      container.NewSliceMap[string, string](10),
+		MetaData:      container2.NewSliceMap[string, string](10),
 		PayloadLayout: []uint32{1 << 10, 1 << 11, 1 << 12, 1 << 13},
 		Payloads:      nil,
 	}
 	msg.SetMetaData("Error", "My is Error")
 	pool := &sync.Pool{
 		New: func() interface{} {
-			var tmp container.Slice[byte] = make([]byte, 0, 128)
+			var tmp container2.Slice[byte] = make([]byte, 0, 128)
 			return &tmp
 		},
 	}
@@ -36,12 +36,12 @@ func BenchmarkProtocol(b *testing.B) {
 	b.Run("ProtocolHeaderMarshal", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			bp := pool.Get().(*container.Slice[byte])
+			bp := pool.Get().(*container2.Slice[byte])
 			MarshalMessage(msg, bp)
 			pool.Put(bp)
 		}
 	})
-	var headerData container.Slice[byte] = make([]byte, 128)
+	var headerData container2.Slice[byte] = make([]byte, 128)
 	MarshalMessage(msg, &headerData)
 	b.Run("ProtocolHeaderUnmarshal", func(b *testing.B) {
 		b.ReportAllocs()
@@ -68,11 +68,11 @@ func TestProtocol(t *testing.T) {
 	msg.SetMetaData("Hehe", "heheda")
 	pool := &sync.Pool{
 		New: func() interface{} {
-			var tmp container.Slice[byte] = make([]byte, 0, 128)
+			var tmp container2.Slice[byte] = make([]byte, 0, 128)
 			return &tmp
 		},
 	}
-	bytes := pool.Get().(*container.Slice[byte])
+	bytes := pool.Get().(*container2.Slice[byte])
 	defer pool.Put(bytes)
 	MarshalMessage(msg, bytes)
 	err := UnmarshalMessage(*bytes, msg)

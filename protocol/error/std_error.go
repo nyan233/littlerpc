@@ -2,7 +2,7 @@ package error
 
 import (
 	"encoding/json"
-	"github.com/nyan233/littlerpc/utils/convert"
+	"github.com/nyan233/littlerpc/pkg/utils/convert"
 )
 
 type LStdError struct {

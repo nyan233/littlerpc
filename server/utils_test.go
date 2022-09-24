@@ -1,8 +1,8 @@
 package server
 
 import (
-	"github.com/nyan233/littlerpc/middle/codec"
-	"github.com/nyan233/littlerpc/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/middle/codec"
+	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"testing"
 )
 

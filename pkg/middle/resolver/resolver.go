@@ -1,7 +1,7 @@
 package resolver
 
 import (
-	"github.com/nyan233/littlerpc/container"
+	"github.com/nyan233/littlerpc/pkg/container"
 	"time"
 )
 

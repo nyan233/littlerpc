@@ -3,9 +3,9 @@ package common
 import (
 	"errors"
 	"fmt"
-	"github.com/nyan233/littlerpc/container"
+	"github.com/nyan233/littlerpc/internal/reflect"
+	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/protocol"
-	"github.com/nyan233/littlerpc/reflect"
 	"io"
 	"sync"
 )

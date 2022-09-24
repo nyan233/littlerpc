@@ -2,9 +2,9 @@ package server
 
 import (
 	"github.com/lesismal/llib/std/crypto/tls"
-	"github.com/nyan233/littlerpc/common"
-	"github.com/nyan233/littlerpc/middle/packet"
-	"github.com/nyan233/littlerpc/middle/plugin"
+	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
@@ -25,14 +25,14 @@ func WithCustomLogger(logger bilog.Logger) serverOption {
 
 func WithDefaultServer() serverOption {
 	return func(config *Config) {
-		config.Logger = common.Logger
+		config.Logger = common2.Logger
 		config.TlsConfig = nil
 		config.ServerKeepAlive = true
 		config.ServerPPTimeout = 5 * time.Second
 		config.ServerTimeout = 90 * time.Second
 		config.Encoder = packet.GetEncoderFromIndex(int(protocol.DefaultEncodingType))
 		config.NetWork = "tcp"
-		config.ErrHandler = common.DefaultErrHandler
+		config.ErrHandler = common2.DefaultErrHandler
 	}
 }
 
@@ -63,7 +63,7 @@ func WithTransProtocol(scheme string) serverOption {
 func WithOpenLogger(ok bool) serverOption {
 	return func(config *Config) {
 		if !ok {
-			config.Logger = common.NilLogger
+			config.Logger = common2.NilLogger
 		}
 	}
 }

@@ -2,9 +2,9 @@ package common
 
 import (
 	"bytes"
-	"github.com/nyan233/littlerpc/container"
+	"github.com/nyan233/littlerpc/pkg/container"
+	random2 "github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol"
-	"github.com/nyan233/littlerpc/utils/random"
 	"io"
 	"sync"
 	"testing"
@@ -14,23 +14,23 @@ import (
 func RandomMuxMessage(maxBlock int, maxPayloads int) []byte {
 	nBlock := maxBlock
 	msg := protocol.NewMessage()
-	msg.MsgId = uint64(random.FastRand())
-	*(*uint32)(unsafe.Pointer(&msg.Scope)) = random.FastRand()
-	msg.SetMethodName(random.GenStringOnAscii(100))
-	msg.SetInstanceName(random.GenStringOnAscii(100))
-	msg.SetMetaData(random.GenStringOnAscii(30),
-		random.GenStringOnAscii(34))
-	msg.Payloads = random.GenBytesOnAscii(uint32(maxPayloads))
+	msg.MsgId = uint64(random2.FastRand())
+	*(*uint32)(unsafe.Pointer(&msg.Scope)) = random2.FastRand()
+	msg.SetMethodName(random2.GenStringOnAscii(100))
+	msg.SetInstanceName(random2.GenStringOnAscii(100))
+	msg.SetMetaData(random2.GenStringOnAscii(30),
+		random2.GenStringOnAscii(34))
+	msg.Payloads = random2.GenBytesOnAscii(uint32(maxPayloads))
 	// generate payloadLayout
-	for i := 0; i < int(random.FastRandN(10)); i++ {
-		msg.PayloadLayout.AppendS(random.FastRand())
+	for i := 0; i < int(random2.FastRandN(10)); i++ {
+		msg.PayloadLayout.AppendS(random2.FastRand())
 	}
 	msg.PayloadLength = uint32(msg.GetLength())
 	var msgBytes []byte
 	protocol.MarshalMessage(msg, (*container.Slice[byte])(&msgBytes))
 	muxMsg := protocol.MuxBlock{
 		Flags:         protocol.MuxEnabled,
-		StreamId:      random.FastRand(),
+		StreamId:      random2.FastRand(),
 		MsgId:         msg.MsgId,
 		PayloadLength: 0,
 		Payloads:      nil,

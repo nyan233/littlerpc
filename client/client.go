@@ -3,15 +3,15 @@ package client
 import (
 	"context"
 	"errors"
-	"github.com/nyan233/littlerpc/common"
-	"github.com/nyan233/littlerpc/common/transport"
-	"github.com/nyan233/littlerpc/container"
 	"github.com/nyan233/littlerpc/internal/pool"
-	"github.com/nyan233/littlerpc/middle/codec"
-	"github.com/nyan233/littlerpc/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/transport"
+	container2 "github.com/nyan233/littlerpc/pkg/container"
+	"github.com/nyan233/littlerpc/pkg/middle/codec"
+	"github.com/nyan233/littlerpc/pkg/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
-	"github.com/nyan233/littlerpc/utils/random"
 	"github.com/zbh255/bilog"
 	"reflect"
 	"sync"
@@ -57,7 +57,7 @@ type Client struct {
 	concurrentConnCount int64
 	// elems 可以支持不同实例的调用
 	// 所有的操作都是线程安全的
-	elems  container.SyncMap118[string, common.ElemMeta]
+	elems  container2.SyncMap118[string, common.ElemMeta]
 	logger bilog.Logger
 	// 字节流编码器包装器
 	encoderWp packet.Wrapper
@@ -65,10 +65,10 @@ type Client struct {
 	codecWp codec.Wrapper
 	// 注册的所有异步调用的回调函数
 	// processName:func(rep []interface{},err error)
-	callBacks container.SyncMap118[string, func(rep []interface{}, err error)]
+	callBacks container2.SyncMap118[string, func(rep []interface{}, err error)]
 	// MessageId : message
 	// 使用到的操作均是线程安全的
-	readyBuffer container.RWMutexMap[uint64, []byte]
+	readyBuffer container2.RWMutexMap[uint64, []byte]
 	// 用于取消后台正在监听消息的goroutine
 	listenReady context.CancelFunc
 	// 用于超时管理和异步调用模拟的goroutine池
@@ -121,7 +121,7 @@ func NewClient(opts ...clientOption) (*Client, error) {
 			},
 			bytesBuffer: sync.Pool{
 				New: func() interface{} {
-					var tmp container.Slice[byte] = make([]byte, 0, 128)
+					var tmp container2.Slice[byte] = make([]byte, 0, 128)
 					return &tmp
 				},
 			},
@@ -136,7 +136,7 @@ func NewClient(opts ...clientOption) (*Client, error) {
 	// codec
 	client.codecWp = config.Codec
 	// init callBacks register map
-	client.callBacks = container.SyncMap118[string, func(rep []interface{}, err error)]{
+	client.callBacks = container2.SyncMap118[string, func(rep []interface{}, err error)]{
 		SMap: sync.Map{},
 	}
 	// init ErrHandler

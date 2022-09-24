@@ -3,14 +3,14 @@ package server
 import (
 	"context"
 	"fmt"
-	"github.com/nyan233/littlerpc/common"
-	"github.com/nyan233/littlerpc/common/stream"
-	"github.com/nyan233/littlerpc/container"
+	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
+	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/container"
+	"github.com/nyan233/littlerpc/pkg/stream"
+	"github.com/nyan233/littlerpc/pkg/utils/convert"
+	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
-	lreflect "github.com/nyan233/littlerpc/reflect"
-	"github.com/nyan233/littlerpc/utils/convert"
-	"github.com/nyan233/littlerpc/utils/random"
 	"reflect"
 	"strconv"
 )
@@ -19,11 +19,11 @@ import (
 // bool(1)类型的返回值指示用户是否返回了错误,Success在LittleRpc中并不会被认为是错误
 // bool(2)类型的返回值指示是否可继续
 func (s *Server) handleErrAndRepResult(sArg serverCallContext, msg *protocol.Message, callResult []reflect.Value) (bool, bool) {
-	interErr := lreflect.ToValueTypeEface(callResult[len(callResult)-1])
+	interErr := reflect2.ToValueTypeEface(callResult[len(callResult)-1])
 	// 无错误
 	if interErr == error(nil) {
-		msg.SetMetaData("littlerpc-code", strconv.Itoa(common.Success.Code()))
-		msg.SetMetaData("littlerpc-message", common.Success.Message())
+		msg.SetMetaData("littlerpc-code", strconv.Itoa(common2.Success.Code()))
+		msg.SetMetaData("littlerpc-message", common2.Success.Message())
 		return false, true
 	}
 	// 检查是否实现了自定义错误的接口
@@ -34,7 +34,7 @@ func (s *Server) handleErrAndRepResult(sArg serverCallContext, msg *protocol.Mes
 		bytes, err := desc.MarshalMores()
 		if err != nil {
 			s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(
-				common.ErrCodecMarshalError,
+				common2.ErrCodecMarshalError,
 				fmt.Sprintf("%s : %s", sArg.Codec.Scheme(), err.Error())))
 			return true, false
 		}
@@ -69,7 +69,7 @@ func (s *Server) sendMsg(sArg serverCallContext, msg *protocol.Message) {
 	if sArg.Encoder.Scheme() != "text" {
 		bytes, err := sArg.Encoder.EnPacket(msg.Payloads)
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
+			s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(common2.ErrServer, err.Error()))
 			return
 		}
 		msg.Payloads = append(msg.Payloads[:0], bytes...)
@@ -81,7 +81,7 @@ func (s *Server) sendMsg(sArg serverCallContext, msg *protocol.Message) {
 	// 大于一个MuxBlock时则分片发送
 	sendBuf := sArg.Desc.bytesBuffer.Get().(*container.Slice[byte])
 	defer sArg.Desc.bytesBuffer.Put(sendBuf)
-	err := common.MuxWriteAll(sArg.Desc, muxMsg, sendBuf, *bp, nil)
+	err := common2.MuxWriteAll(sArg.Desc, muxMsg, sendBuf, *bp, nil)
 	if err != nil {
 		s.logger.ErrorFromString(fmt.Sprintf("Marshal MuxBlock failed: %v", sArg.Desc.Close()))
 		return
@@ -108,7 +108,7 @@ func (s *Server) handleResult(sArg serverCallContext, msg *protocol.Message, cal
 		// 可替换的Codec已经不需要Any包装器了
 		bytes, err := sArg.Codec.Marshal(eface)
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, common.ErrServer)
+			s.handleError(sArg, msg.MsgId, common2.ErrServer)
 			return
 		}
 		msg.AppendPayloads(bytes)
@@ -127,7 +127,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	// 去除接收者之后的输入参数长度
 	// 校验客户端传递的参数和服务端是否一致
 	if nInput := method.Type().NumIn() - 1; nInput != msg.PayloadLayout.Len() {
-		s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(common.ErrServer,
+		s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(common2.ErrServer,
 			"client input args number no equal server",
 			fmt.Sprintf("Client : %d", msg.PayloadLayout.Len()), fmt.Sprintf("Server : %d", nInput)))
 		return nil, false
@@ -139,7 +139,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	if msg.GetMetaData("stream-id") != "" {
 		inputStart++
 	}
-	inputTypeList := lreflect.FuncInputTypeList(method, inputStart, true, func(i int) bool {
+	inputTypeList := reflect2.FuncInputTypeList(method, inputStart, true, func(i int) bool {
 		if msg.PayloadLayout[i] == 0 {
 			return true
 		}
@@ -181,9 +181,9 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 			callArgs = append(callArgs, reflect.ValueOf(eface))
 			continue
 		}
-		callArg, err := common.CheckCoderType(sArg.Codec, argBytes, eface)
+		callArg, err := common2.CheckCoderType(sArg.Codec, argBytes, eface)
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
+			s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(common2.ErrServer, err.Error()))
 			return nil, false
 		}
 		// 可以根据获取的参数类别的每一个参数的类型信息得到
@@ -206,7 +206,7 @@ func (s *Server) handleError(sArg serverCallContext, msgId uint64, errNo perror.
 	if mores == nil || len(mores) == 0 {
 		bytes, err := errNo.MarshalMores()
 		if err != nil {
-			msg.SetMetaData("littlerpc-code", strconv.Itoa(common.ErrServer.Code()))
+			msg.SetMetaData("littlerpc-code", strconv.Itoa(common2.ErrServer.Code()))
 			msg.SetMetaData("littlerpc-message", "Marshal error mores data failed")
 		} else {
 			msg.SetMetaData("littlerpc-mores-bin", convert.BytesToString(bytes))
@@ -222,7 +222,7 @@ func (s *Server) handleError(sArg serverCallContext, msgId uint64, errNo perror.
 		StreamId: random.FastRand(),
 		MsgId:    msgId,
 	}
-	err := common.MuxWriteAll(desc, muxBlock, nil, *bp, nil)
+	err := common2.MuxWriteAll(desc, muxBlock, nil, *bp, nil)
 	if err != nil {
 		s.logger.ErrorFromErr(err)
 		return

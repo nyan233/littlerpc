@@ -14,6 +14,7 @@ func NewSliceMap[K comparable, V any](size int) *SliceMap[K, V] {
 }
 
 func (m *SliceMap[K, V]) Reset() {
+	m.length = 0
 	m.keys = m.keys[:0]
 	m.values = m.values[:0]
 }

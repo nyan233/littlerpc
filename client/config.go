@@ -2,12 +2,12 @@ package client
 
 import (
 	"crypto/tls"
-	"github.com/nyan233/littlerpc/common/transport"
-	"github.com/nyan233/littlerpc/middle/balance"
-	"github.com/nyan233/littlerpc/middle/codec"
-	"github.com/nyan233/littlerpc/middle/packet"
-	"github.com/nyan233/littlerpc/middle/plugin"
-	"github.com/nyan233/littlerpc/middle/resolver"
+	transport2 "github.com/nyan233/littlerpc/pkg/common/transport"
+	"github.com/nyan233/littlerpc/pkg/middle/balance"
+	"github.com/nyan233/littlerpc/pkg/middle/codec"
+	"github.com/nyan233/littlerpc/pkg/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/middle/plugin"
+	"github.com/nyan233/littlerpc/pkg/middle/resolver"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
 	"time"
@@ -53,7 +53,7 @@ type Config struct {
 	ErrHandler perror.LErrors
 }
 
-type NewProtocolSupport func(config Config) (transport.ClientTransport, error)
+type NewProtocolSupport func(config Config) (transport2.ClientTransport, error)
 
 var (
 	clientSupportCollection = make(map[string]NewProtocolSupport)
@@ -63,12 +63,12 @@ func RegisterProtocol(scheme string, newFn NewProtocolSupport) {
 	clientSupportCollection[scheme] = newFn
 }
 
-func newTcpClient(config Config) (transport.ClientTransport, error) {
-	return transport.NewTcpTransClient(config.TlsConfig, config.ServerAddr)
+func newTcpClient(config Config) (transport2.ClientTransport, error) {
+	return transport2.NewTcpTransClient(config.TlsConfig, config.ServerAddr)
 }
 
-func newWebSocketClient(config Config) (transport.ClientTransport, error) {
-	return transport.NewWebSocketTransClient(config.TlsConfig, config.ServerAddr)
+func newWebSocketClient(config Config) (transport2.ClientTransport, error) {
+	return transport2.NewWebSocketTransClient(config.TlsConfig, config.ServerAddr)
 }
 
 func init() {

@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/nyan233/littlerpc/middle/plugin"
+	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	"github.com/nyan233/littlerpc/protocol"
 	"reflect"
 )

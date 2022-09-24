@@ -1,9 +1,9 @@
 package client
 
 import (
-	"github.com/nyan233/littlerpc/middle/balance"
-	"github.com/nyan233/littlerpc/middle/resolver"
-	"github.com/nyan233/littlerpc/utils/random"
+	"github.com/nyan233/littlerpc/pkg/middle/balance"
+	"github.com/nyan233/littlerpc/pkg/middle/resolver"
+	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"math"
 	"unsafe"
 )

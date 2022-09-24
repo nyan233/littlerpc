@@ -2,7 +2,7 @@ package test
 
 import (
 	"errors"
-	"github.com/nyan233/littlerpc/common"
+	"github.com/nyan233/littlerpc/pkg/common"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 )
 

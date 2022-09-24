@@ -2,7 +2,7 @@ package error
 
 import (
 	"fmt"
-	"github.com/nyan233/littlerpc/utils/convert"
+	"github.com/nyan233/littlerpc/pkg/utils/convert"
 )
 
 // 定义LittleRpc内部会使用到的错误码

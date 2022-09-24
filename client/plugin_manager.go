@@ -1,7 +1,7 @@
 package client
 
 import (
-	"github.com/nyan233/littlerpc/middle/plugin"
+	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	"github.com/nyan233/littlerpc/protocol"
 )
 
@@ -41,4 +41,3 @@ func (p *pluginManager) OnResult(msg *protocol.Message, results *[]interface{}, 
 		plg.OnResult(msg, results, err)
 	}
 }
-

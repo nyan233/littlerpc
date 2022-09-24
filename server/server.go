@@ -3,11 +3,11 @@ package server
 import (
 	"errors"
 	"fmt"
-	"github.com/nyan233/littlerpc/common"
-	"github.com/nyan233/littlerpc/common/transport"
-	"github.com/nyan233/littlerpc/container"
-	"github.com/nyan233/littlerpc/middle/codec"
-	"github.com/nyan233/littlerpc/middle/packet"
+	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/transport"
+	container2 "github.com/nyan233/littlerpc/pkg/container"
+	codec2 "github.com/nyan233/littlerpc/pkg/middle/codec"
+	packet2 "github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/protocol"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
@@ -18,8 +18,8 @@ import (
 )
 
 type serverCallContext struct {
-	Codec   codec.Codec
-	Encoder packet.Encoder
+	Codec   codec2.Codec
+	Encoder packet2.Encoder
 	Desc    *bufferDesc
 }
 
@@ -34,19 +34,19 @@ type bufferDesc struct {
 type Server struct {
 	// 存储绑定的实例的集合
 	// Map[TypeName]:[ElemMeta]
-	elems container.SyncMap118[string, common.ElemMeta]
+	elems container2.SyncMap118[string, common2.ElemMeta]
 	// Server Engine
 	server transport.ServerTransport
 	// 任务池
 	//taskPool *pool.TaskPool
 	// 简单的缓冲内存池
-	noReadyBufferDesc container.RWMutexMap[transport.ConnAdapter, *bufferDesc]
+	noReadyBufferDesc container2.RWMutexMap[transport.ConnAdapter, *bufferDesc]
 	// logger
 	logger bilog.Logger
 	// 缓存一些Codec以加速索引
-	cacheCodec []codec.Wrapper
+	cacheCodec []codec2.Wrapper
 	// 缓存一些Encoder以加速索引
-	cacheEncoder []packet.Wrapper
+	cacheEncoder []packet2.Wrapper
 	// 注册的插件的管理器
 	pManager *pluginManager
 	// Error Handler
@@ -63,7 +63,7 @@ func NewServer(opts ...serverOption) *Server {
 	if sc.Logger != nil {
 		server.logger = sc.Logger
 	} else {
-		server.logger = common.Logger
+		server.logger = common2.Logger
 	}
 	builder := serverSupportProtocol[sc.NetWork](*sc)
 	builder.SetOnMessage(server.onMessage)
@@ -74,7 +74,7 @@ func NewServer(opts ...serverOption) *Server {
 	server.server = builder.Instance()
 	// init encoder cache
 	for i := 0; i < math.MaxUint8; i++ {
-		wp := packet.GetEncoderFromIndex(i)
+		wp := packet2.GetEncoderFromIndex(i)
 		if wp != nil {
 			server.cacheEncoder = append(server.cacheEncoder, wp)
 		} else {
@@ -83,7 +83,7 @@ func NewServer(opts ...serverOption) *Server {
 	}
 	// init codec cache
 	for i := 0; i < math.MaxUint8; i++ {
-		wp := codec.GetCodecFromIndex(i)
+		wp := codec2.GetCodecFromIndex(i)
 		if wp != nil {
 			server.cacheCodec = append(server.cacheCodec, wp)
 		} else {
@@ -103,7 +103,7 @@ func (s *Server) Elem(i interface{}) error {
 	if i == nil {
 		return errors.New("register elem is nil")
 	}
-	elemD := common.ElemMeta{}
+	elemD := common2.ElemMeta{}
 	elemD.Typ = reflect.TypeOf(i)
 	elemD.Data = reflect.ValueOf(i)
 	// 检查类型的名字是否正确，因为类型名要作为key
@@ -137,7 +137,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 	}
 	var completes [][]byte
 	var internalErr error
-	err := common.MuxReadAll(connBuffer, data, nil, func(mm protocol.MuxBlock) bool {
+	err := common2.MuxReadAll(connBuffer, data, nil, func(mm protocol.MuxBlock) bool {
 		nrBuf, ok := connBuffer.muxNoReady[mm.MsgId]
 		if !ok {
 			// 读取到该消息的第一个块
@@ -197,7 +197,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 			}
 		}
 		if err != nil {
-			s.handleError(sArg, msg.MsgId, common.ErrMessageDecoding)
+			s.handleError(sArg, msg.MsgId, common2.ErrMessageDecoding)
 			return
 		}
 		// 调用编码器解包
@@ -206,7 +206,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		if encoder.Scheme() != "text" {
 			msg.Payloads, err = encoder.UnPacket(msg.Payloads)
 			if err != nil {
-				s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
+				s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(common2.ErrServer, err.Error()))
 				return
 			}
 		}
@@ -220,13 +220,13 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		elemData, ok := s.elems.LoadOk(msg.GetInstanceName())
 		if !ok {
 			s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(
-				common.ErrElemTypeNoRegister, msg.InstanceName))
+				common2.ErrElemTypeNoRegister, msg.InstanceName))
 			return
 		}
 		method, ok := elemData.Methods[msg.MethodName]
 		if !ok {
 			s.handleError(sArg, msg.MsgId, s.eHandle.LWarpErrorDesc(
-				common.ErrMethodNoRegister, msg.MethodName))
+				common2.ErrMethodNoRegister, msg.MethodName))
 			return
 		}
 		// 从客户端校验并获得合法的调用参数
@@ -301,7 +301,7 @@ func (s *Server) onOpen(conn transport.ConnAdapter) {
 		},
 		bytesBuffer: sync.Pool{
 			New: func() interface{} {
-				var tmp container.Slice[byte] = make([]byte, 0, 128)
+				var tmp container2.Slice[byte] = make([]byte, 0, 128)
 				return &tmp
 			},
 		},

@@ -2,12 +2,12 @@ package client
 
 import (
 	"crypto/tls"
-	"github.com/nyan233/littlerpc/common"
-	"github.com/nyan233/littlerpc/middle/balance"
-	"github.com/nyan233/littlerpc/middle/codec"
-	"github.com/nyan233/littlerpc/middle/packet"
-	"github.com/nyan233/littlerpc/middle/plugin"
-	"github.com/nyan233/littlerpc/middle/resolver"
+	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/middle/balance"
+	"github.com/nyan233/littlerpc/pkg/middle/codec"
+	"github.com/nyan233/littlerpc/pkg/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/middle/plugin"
+	"github.com/nyan233/littlerpc/pkg/middle/resolver"
 	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
@@ -26,12 +26,12 @@ func WithDefaultClient() clientOption {
 		config.KeepAlive = false
 		config.ClientConnTimeout = 90 * time.Second
 		config.ClientPPTimeout = 5 * time.Second
-		config.Logger = common.Logger
+		config.Logger = common2.Logger
 		config.Encoder = packet.GetEncoderFromIndex(int(protocol.DefaultEncodingType))
 		config.Codec = codec.GetCodecFromIndex(int(protocol.DefaultCodecType))
 		config.NetWork = "tcp"
 		config.MuxConnection = 8
-		config.ErrHandler = common.DefaultErrHandler
+		config.ErrHandler = common2.DefaultErrHandler
 	}
 }
 

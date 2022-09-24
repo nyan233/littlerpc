@@ -3,7 +3,7 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
-	"github.com/nyan233/littlerpc/container"
+	"github.com/nyan233/littlerpc/pkg/container"
 	"math"
 	"unsafe"
 )

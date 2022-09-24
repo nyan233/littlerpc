@@ -3,13 +3,13 @@ package client
 import (
 	"context"
 	"fmt"
-	"github.com/nyan233/littlerpc/common"
-	"github.com/nyan233/littlerpc/container"
+	lreflect "github.com/nyan233/littlerpc/internal/reflect"
+	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/container"
+	"github.com/nyan233/littlerpc/pkg/utils/convert"
+	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
-	lreflect "github.com/nyan233/littlerpc/reflect"
-	"github.com/nyan233/littlerpc/utils/convert"
-	"github.com/nyan233/littlerpc/utils/random"
 	"reflect"
 	"strconv"
 	"strings"
@@ -18,20 +18,19 @@ import (
 func (c *Client) handleProcessRetErr(msg *protocol.Message) perror.LErrorDesc {
 	code, err := strconv.Atoi(msg.GetMetaData("littlerpc-code"))
 	if err != nil {
-		return perror.LWarpStdError(common.ErrClient, err.Error())
+		return perror.LWarpStdError(common2.ErrClient, err.Error())
 	}
 	message := msg.GetMetaData("littlerpc-message")
 	// Success表示无错误
-	if code == common.Success.Code() && message == common.Success.Message() {
+	if code == common2.Success.Code() && message == common2.Success.Message() {
 		return nil
 	}
 	desc := c.eHandle.LNewErrorDesc(code, message)
 	moresBinStr := msg.GetMetaData("littlerpc-mores-bin")
 	if moresBinStr != "" {
 		err := desc.UnmarshalMores(convert.StringToBytes(moresBinStr))
-		c.logger.Debug(desc.Error())
 		if err != nil {
-			return c.eHandle.LWarpErrorDesc(common.ErrClient, err.Error())
+			return c.eHandle.LWarpErrorDesc(common2.ErrClient, err.Error())
 		}
 	}
 	return desc
@@ -55,7 +54,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 	protocol.ResetMsg(msg, false, false, true, 4096)
 	stdErr := protocol.UnmarshalMessage(msgBytes, msg)
 	if stdErr != nil {
-		return c.eHandle.LWarpErrorDesc(common.ErrMessageDecoding, "client error", stdErr.Error())
+		return c.eHandle.LWarpErrorDesc(common2.ErrMessageDecoding, "client error", stdErr.Error())
 	}
 	// TODO : Client Handle Ping&Pong
 	// encoder类型为text时不需要额外的内存拷贝
@@ -98,15 +97,15 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 			}
 			var returnV interface{}
 			var err2 error
-			returnV, err2 = common.CheckCoderType(c.codecWp.Instance(), iter.Take(), v)
+			returnV, err2 = common2.CheckCoderType(c.codecWp.Instance(), iter.Take(), v)
 			if err2 != nil {
-				err = c.eHandle.LWarpErrorDesc(common.ErrClient, "CheckCoderType failed", err2.Error())
+				err = c.eHandle.LWarpErrorDesc(common2.ErrClient, "CheckCoderType failed", err2.Error())
 			}
 			rep[k] = returnV
 		}
 		// 返回的参数个数和用户注册的过程不对应
 		if iter.Next() {
-			return c.eHandle.LWarpErrorDesc(common.ErrServer, "return results number is no equal client",
+			return c.eHandle.LWarpErrorDesc(common2.ErrServer, "return results number is no equal client",
 				fmt.Sprintf("Server=%d", msg.PayloadLayout.Len()),
 				fmt.Sprintf("Client=%d", len(outputList)))
 		}
@@ -116,7 +115,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 
 func (c *Client) readMessageFromServer(ctx context.Context, lc *lockConn, msg *protocol.Message, readBuf *[]byte, complete *[]byte) perror.LErrorDesc {
 	var iErr error
-	err := common.MuxReadAll(lc, *readBuf, func(c common.ReadLocker) bool {
+	err := common2.MuxReadAll(lc, *readBuf, func(c common2.ReadLocker) bool {
 		// 检查context有无被取消
 		select {
 		case <-ctx.Done():
@@ -173,12 +172,12 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 	instance, ok := c.elems.LoadOk(msg.GetInstanceName())
 	if !ok {
 		return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(
-			common.ErrElemTypeNoRegister, "client error", msg.GetInstanceName())
+			common2.ErrElemTypeNoRegister, "client error", msg.GetInstanceName())
 	}
 	method, ok := instance.Methods[msg.GetMethodName()]
 	if !ok {
 		return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(
-			common.ErrMethodNoRegister, "client error", msg.GetMethodName())
+			common2.ErrMethodNoRegister, "client error", msg.GetMethodName())
 	}
 	rCtx := context.Background()
 	// 哨兵条件
@@ -191,10 +190,10 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 		args = args[1:]
 	}
 	for _, v := range args {
-		argType := common.CheckIType(v)
+		argType := common2.CheckIType(v)
 		// 参数为指针类型则找出Elem的类型
 		if argType == protocol.Pointer {
-			argType = common.CheckIType(reflect.ValueOf(v).Elem().Interface())
+			argType = common2.CheckIType(reflect.ValueOf(v).Elem().Interface())
 			// 不支持多重指针的数据结构
 			if argType == protocol.Pointer {
 				panic(interface{}("multiple pointer no support"))
@@ -202,7 +201,7 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 		}
 		bytes, err := c.codecWp.Instance().Marshal(v)
 		if err != nil {
-			return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(common.ErrCodecMarshalError,
+			return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(common2.ErrCodecMarshalError,
 				"client error", err.Error())
 		}
 		msg.AppendPayloads(bytes)
@@ -224,7 +223,7 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 	if c.encoderWp.Index() != int(protocol.DefaultEncodingType) {
 		bodyBytes, err := c.encoderWp.Instance().EnPacket(msg.Payloads)
 		if err != nil {
-			return c.eHandle.LWarpErrorDesc(common.ErrClient, "Encoder.EnPacket", err.Error())
+			return c.eHandle.LWarpErrorDesc(common2.ErrClient, "Encoder.EnPacket", err.Error())
 		}
 		msg.Payloads = append(msg.Payloads[:0], bodyBytes...)
 	}
@@ -243,7 +242,7 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 	// 大于一个MuxBlock时则分片发送
 	sendBuf := lc.bytesBuffer.Get().(*container.Slice[byte])
 	defer lc.bytesBuffer.Put(sendBuf)
-	stdErr := common.MuxWriteAll(lc, muxMsg, sendBuf, *memBuffer, func() {
+	stdErr := common2.MuxWriteAll(lc, muxMsg, sendBuf, *memBuffer, func() {
 		select {
 		case <-ctx.Done():
 			// 发送取消消息之后退出
@@ -253,7 +252,7 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 		}
 	})
 	if stdErr != nil {
-		return c.eHandle.LWarpErrorDesc(common.ErrClient, stdErr.Error())
+		return c.eHandle.LWarpErrorDesc(common2.ErrClient, stdErr.Error())
 	}
 	return nil
 }

@@ -4,9 +4,9 @@ import (
 	"github.com/lesismal/llib/std/crypto/tls"
 	"github.com/lesismal/nbio"
 	"github.com/lesismal/nbio/nbhttp"
-	"github.com/nyan233/littlerpc/common/transport"
-	"github.com/nyan233/littlerpc/middle/packet"
-	"github.com/nyan233/littlerpc/middle/plugin"
+	transport2 "github.com/nyan233/littlerpc/pkg/common/transport"
+	"github.com/nyan233/littlerpc/pkg/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
 	"runtime"
@@ -30,7 +30,7 @@ type Config struct {
 	ErrHandler perror.LErrors
 }
 
-type NewProtocolSupport func(config Config) transport.ServerTransportBuilder
+type NewProtocolSupport func(config Config) transport2.ServerTransportBuilder
 
 var (
 	serverSupportProtocol = make(map[string]NewProtocolSupport)
@@ -40,7 +40,7 @@ func RegisterProtocolNew(key string, support NewProtocolSupport) {
 	serverSupportProtocol[key] = support
 }
 
-func newTcpSupport(config Config) transport.ServerTransportBuilder {
+func newTcpSupport(config Config) transport2.ServerTransportBuilder {
 	nbioCfg := nbio.Config{
 		Name:         "LittleRpc-Server-Tcp",
 		Network:      "tcp",
@@ -49,10 +49,10 @@ func newTcpSupport(config Config) transport.ServerTransportBuilder {
 		LockListener: false,
 		LockPoller:   false,
 	}
-	return transport.NewTcpTransServer(config.TlsConfig, nbioCfg)
+	return transport2.NewTcpTransServer(config.TlsConfig, nbioCfg)
 }
 
-func newWebSocketSupport(config Config) transport.ServerTransportBuilder {
+func newWebSocketSupport(config Config) transport2.ServerTransportBuilder {
 	nbioCfg := nbhttp.Config{
 		Name:                    "LittleRpc-Server-WebSocket",
 		Network:                 "tcp",
@@ -65,13 +65,13 @@ func newWebSocketSupport(config Config) transport.ServerTransportBuilder {
 	} else {
 		nbioCfg.AddrsTLS = config.Address
 	}
-	return transport.NewWebSocketServer(config.TlsConfig, nbioCfg)
+	return transport2.NewWebSocketServer(config.TlsConfig, nbioCfg)
 }
 
-func newStdTcpServer(config Config) transport.ServerTransportBuilder {
-	return transport.NewStdTcpTransServer(&transport.StdTcpOption{
+func newStdTcpServer(config Config) transport2.ServerTransportBuilder {
+	return transport2.NewStdTcpTransServer(&transport2.StdTcpOption{
 		Network:           "tcp",
-		MaxReadBufferSize: transport.ReadBufferSize,
+		MaxReadBufferSize: transport2.ReadBufferSize,
 		Addrs:             config.Address,
 	})
 }

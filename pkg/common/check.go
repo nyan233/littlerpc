@@ -2,9 +2,9 @@ package common
 
 import (
 	"errors"
-	"github.com/nyan233/littlerpc/middle/codec"
+	lreflect "github.com/nyan233/littlerpc/internal/reflect"
+	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/protocol"
-	lreflect "github.com/nyan233/littlerpc/reflect"
 	"reflect"
 )
 

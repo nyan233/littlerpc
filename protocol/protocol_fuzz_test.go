@@ -3,8 +3,8 @@
 package protocol
 
 import (
-	"github.com/nyan233/littlerpc/container"
-	"github.com/nyan233/littlerpc/utils/random"
+	"github.com/nyan233/littlerpc/pkg/container"
+	random2 "github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -36,10 +36,10 @@ func FuzzMessage(f *testing.F) {
 func FuzzMuxMessage(f *testing.F) {
 	muxMsg := &MuxBlock{
 		Flags:    MuxEnabled,
-		StreamId: random.FastRand(),
-		MsgId:    uint64(random.FastRand()),
+		StreamId: random2.FastRand(),
+		MsgId:    uint64(random2.FastRand()),
 	}
-	muxMsg.SetPayloads(random.GenBytesOnAscii(100))
+	muxMsg.SetPayloads(random2.GenBytesOnAscii(100))
 	f.Add(muxMsg.Flags, muxMsg.StreamId, muxMsg.MsgId, ([]byte)(muxMsg.Payloads))
 	f.Fuzz(func(t *testing.T, flags uint8, streamId uint32,
 		msgId uint64, payloads []byte) {

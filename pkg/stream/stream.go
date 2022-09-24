@@ -1,6 +1,8 @@
 package stream
 
-import "github.com/nyan233/littlerpc/common/transport"
+import (
+	"github.com/nyan233/littlerpc/pkg/common/transport"
+)
 
 type LStream interface {
 	RecvMsg(data interface{}) error

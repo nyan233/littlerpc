@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"github.com/nyan233/littlerpc/container"
+	"github.com/nyan233/littlerpc/pkg/container"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 	// - (3 + 6) 是因为考虑到了Struct的对齐
 	MuxBlockBaseLen = 1 + 4 + 8 + 2
 	// MuxMessageBlockSize Mux模式下Server一次接收多少长度的消息
-	MuxMessageBlockSize = 1400
+	MuxMessageBlockSize = 8192
 	// MaxPayloadSizeOnMux 在Mux模式上发送的消息一次最多携带多少属于Message的数据
 	MaxPayloadSizeOnMux = MuxMessageBlockSize - MuxBlockBaseLen
 )

@@ -2,7 +2,7 @@ package hash
 
 import (
 	"fmt"
-	"github.com/nyan233/littlerpc/utils/random"
+	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"math/rand"
 	"strconv"
 	"testing"

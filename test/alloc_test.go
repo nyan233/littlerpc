@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/nyan233/littlerpc/client"
-	"github.com/nyan233/littlerpc/common"
+	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/server"
 	"math/rand"
 	"testing"
@@ -58,13 +58,19 @@ func BenchmarkClientAlloc(b *testing.B) {
 	b.Run("ClientBigAlloc", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_, _ = p1.AllocBigBytes(32768)
+			_, err2 := p1.AllocBigBytes(32768)
+			if err2 != nil {
+				b.Fatal(err2)
+			}
 		}
 	})
 	b.Run("ClientLittleAlloc", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_, _ = p1.AllocLittleNBytesNoInit(10, 128)
+			_, err2 := p1.AllocLittleNBytesNoInit(10, 128)
+			if err2 != nil {
+				b.Fatal(err2)
+			}
 		}
 	})
 }

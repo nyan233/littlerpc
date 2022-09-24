@@ -2,8 +2,8 @@ package balance
 
 import (
 	"fmt"
-	"github.com/nyan233/littlerpc/container"
-	"github.com/nyan233/littlerpc/utils/random"
+	container2 "github.com/nyan233/littlerpc/pkg/container"
+	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"math"
 	"net"
 	"sync"
@@ -18,7 +18,7 @@ const (
 )
 
 func TestHashBalance(t *testing.T) {
-	var addrs container.Slice[string] = make([]string, 0, NAddr)
+	var addrs container2.Slice[string] = make([]string, 0, NAddr)
 	for i := 0; i < NAddr; i++ {
 		ip := net.IPv4(byte(random.FastRandN(MaxByte)), byte(random.FastRandN(MaxByte)),
 			byte(random.FastRandN(MaxByte)), byte(random.FastRandN(MaxByte)))
@@ -42,7 +42,7 @@ func testBalance(t *testing.T, scheme string, addrs []string) {
 	b.InitTable(addrs)
 	var wg sync.WaitGroup
 	wg.Add(NGoroutine)
-	countMap := container.MutexMap[string, int]{}
+	countMap := container2.MutexMap[string, int]{}
 	for i := 0; i < NGoroutine; i++ {
 		go func() {
 			defer wg.Done()

@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"github.com/nyan233/littlerpc/container"
+	container2 "github.com/nyan233/littlerpc/pkg/container"
 	"unsafe"
 )
 
@@ -35,7 +35,7 @@ type Reset interface {
 
 func NewMessage() *Message {
 	return &Message{
-		MetaData:      container.NewSliceMap[string, string](4),
+		MetaData:      container2.NewSliceMap[string, string](4),
 		PayloadLayout: make([]uint32, 0, 2),
 		Payloads:      nil,
 	}
@@ -73,7 +73,7 @@ type Message struct {
 	//	"hello":"world","world:hello"
 	// OutPut:
 	//	0x00000002|0x00000005|0x00000005|hello|world|0x00000005|0x00000005|world|hello
-	MetaData *container.SliceMap[string, string]
+	MetaData *container2.SliceMap[string, string]
 	// 有效载荷数据的布局描述
 	// Format :
 	//	NArgs(4 Byte)|Arg1-Size(4 Byte)|Arg2-Size(4 Byte)|Arg3-Size(4 Byte)
@@ -81,10 +81,10 @@ type Message struct {
 	//	{"mypyload1":"haha"},{"mypyload2":"hehe"}
 	// OutPut:
 	//	0x00000002|0x00000014|0x00000014
-	PayloadLayout container.Slice[uint32]
+	PayloadLayout container2.Slice[uint32]
 	// 调用参数序列化后的载荷数据
 	// 如果被压缩了那么在反序列化时,最后剩下的数据均为参数载荷
-	Payloads container.Slice[byte]
+	Payloads container2.Slice[byte]
 }
 
 // BaseLength 获取基本数据的长度防止输入过短的数据导致panic
@@ -183,10 +183,10 @@ func (m *Message) AppendPayloads(p []byte) {
 	m.PayloadLayout = append(m.PayloadLayout, uint32(len(p)))
 }
 
-func (m *Message) PayloadsIterator() *container.Iterator[[]byte] {
+func (m *Message) PayloadsIterator() *container2.Iterator[[]byte] {
 	rangCount := 0
 	i := -1
-	return container.NewIterator[[]byte](func() ([]byte, bool) {
+	return container2.NewIterator[[]byte](func() ([]byte, bool) {
 		i++
 		if m.PayloadLayout == nil || m.PayloadLayout.Len() == 0 {
 			return make([]byte, 0), true
