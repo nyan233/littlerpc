@@ -10,31 +10,42 @@ import (
 const nTask = 1000
 
 func TestTaskPool(t *testing.T) {
-	pool := NewTaskPool(MaxTaskPoolSize, runtime.NumCPU()*4)
+	var pool TaskPool = NewTaskPool(32, int32(runtime.NumCPU()*4), 1024)
 	defer pool.Stop()
+	go func() {
+		for {
+			time.Sleep(time.Second * 5)
+			t.Log("Live-Size", pool.LiveSize())
+			t.Log("Buffer-Size", pool.BufSize())
+			t.Log("Success", pool.ExecuteSuccess())
+			t.Log("Error", pool.ExecuteError())
+		}
+	}()
 	for i := 0; i < nTask; i++ {
 		_ = pool.Push(func() {
-			time.Sleep(500 * time.Nanosecond)
+			time.Sleep(5 * time.Second)
 		})
 	}
 	_ = pool.Stop()
 }
 
 func BenchmarkTaskPool(b *testing.B) {
-	pool := NewTaskPool(MaxTaskPoolSize, 1024)
+	pool := NewTaskPool(512, 512, 2048)
 	defer pool.Stop()
-	b.Run("TaskPool", func(b *testing.B) {
+	b.Run("DynamicTaskPool", func(b *testing.B) {
 		b.ReportAllocs()
 		var wg sync.WaitGroup
 		for i := 0; i < b.N; i++ {
 			wg.Add(nTask)
+			b.StartTimer()
 			for j := 0; j < nTask; j++ {
 				_ = pool.Push(func() {
-					time.Sleep(time.Microsecond)
+					time.Sleep(time.Microsecond * 5)
 					wg.Done()
 				})
 			}
 			wg.Wait()
+			b.StopTimer()
 		}
 	})
 	b.Run("NoTaskPool", func(b *testing.B) {
@@ -42,13 +53,15 @@ func BenchmarkTaskPool(b *testing.B) {
 		var wg sync.WaitGroup
 		for i := 0; i < b.N; i++ {
 			wg.Add(nTask)
+			b.StartTimer()
 			for j := 0; j < nTask; j++ {
 				go func() {
-					time.Sleep(time.Microsecond)
+					time.Sleep(time.Microsecond * 5)
 					wg.Done()
 				}()
 			}
 			wg.Wait()
+			b.StopTimer()
 		}
 	})
 }
