@@ -3,6 +3,7 @@ package client
 import (
 	"crypto/tls"
 	transport2 "github.com/nyan233/littlerpc/pkg/common/transport"
+	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/balance"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
@@ -11,10 +12,6 @@ import (
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
 	"time"
-)
-
-const (
-	DEFAULT_POOL_SIZE = 1024 * 16
 )
 
 type Config struct {
@@ -51,6 +48,9 @@ type Config struct {
 	Plugins []plugin.ClientPlugin
 	// 可以生成自定义错误的工厂回调函数
 	ErrHandler perror.LErrors
+	// 自定义Goroutine Pool的建造器, 在客户端不推荐使用
+	// 在不需要使用异步回调模式时可以关闭
+	ExecPoolBuilder export.TaskPoolBuilder
 }
 
 type NewProtocolSupport func(config Config) (transport2.ClientTransport, error)

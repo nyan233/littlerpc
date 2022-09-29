@@ -7,9 +7,9 @@ import (
 
 const (
 	MagicNumber uint8 = 0x45
-	// MessageCall 表示这是一条未开启Mux的同步调用的消息
+	// MessageCall 表示这是一条调用的消息
 	MessageCall uint8 = 0x10
-	// MessageReturn 表示这是一条未开启Mux的同步调用返回消息
+	// MessageReturn 表示这是一条调用返回消息
 	MessageReturn uint8 = 0x18
 	// MessageContextCancel 用户服务端接收的context.Context的取消API
 	MessageContextCancel uint8 = 0x24

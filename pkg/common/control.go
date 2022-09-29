@@ -8,6 +8,7 @@ import (
 	"github.com/nyan233/littlerpc/protocol"
 	"io"
 	"sync"
+	"syscall"
 )
 
 const MessageTrace = 0
@@ -40,13 +41,19 @@ func CheckConnRead(n int, err error) error {
 	return nil
 }
 
-// ReadControl data中的数据应该被置零
+// ReadControl
+//
+//	NOTE: data中的数据应该被置零
+//	NOTE: Read应该检测属于Nio的中断错误, 因为不确定其它框架中是否实现
+//	NOTE: 这些错误的过滤
 func ReadControl(c io.Reader, data []byte) error {
 	var readCount int
 	for {
 		readN, err := c.Read(data[readCount:])
-		if err != nil {
+		if err != nil && !(err == syscall.EAGAIN || err == syscall.EINTR || err == syscall.EWOULDBLOCK) {
 			return err
+		} else if readN < 0 {
+			readN = 0
 		}
 		readCount += readN
 		if readCount == len(data) {
@@ -56,12 +63,16 @@ func ReadControl(c io.Reader, data []byte) error {
 	return nil
 }
 
+// NOTE: Write应该检测属于Nio的中断错误, 因为不确定其它框架中是否实现
+// NOTE: 这些错误的过滤
 func WriteControl(c io.Writer, data []byte) error {
 	var writeCount int
 	for {
 		writeN, err := c.Write(data[writeCount:])
-		if err != nil {
+		if err != nil && !(err == syscall.EAGAIN || err == syscall.EINTR || err == syscall.EWOULDBLOCK) {
 			return err
+		} else if writeN < 0 {
+			writeN = 0
 		}
 		writeCount += writeN
 		if writeCount == len(data) {
@@ -128,7 +139,7 @@ func MuxWriteAll(c WriteLocker, muxMsg *protocol.MuxBlock, mmBytes *container.Sl
 //	NOTE checkPoint不是必选项,oneComplete回调必须被注册,否则会调用panic
 //	NOTE 不可能出现载荷长度为0的情况,LittleRpc的协议规定了Message的最小长度
 func MuxReadAll(c ReadLocker, mmBytes container.Slice[byte],
-	checkPoint func(c ReadLocker) bool, oneComplete func(mm protocol.MuxBlock) bool) error {
+	checkPoint func(c ReadLocker) bool, oneComplete func(mm protocol.MuxBlock) error) error {
 
 	if oneComplete == nil {
 		panic("no pass by oneComplete callback")
@@ -140,7 +151,7 @@ func MuxReadAll(c ReadLocker, mmBytes container.Slice[byte],
 }
 
 func muxReadAll(c ReadLocker, mmBytes container.Slice[byte],
-	checkPoint func(c ReadLocker) bool, oneComplete func(mm protocol.MuxBlock) bool) error {
+	checkPoint func(c ReadLocker) bool, oneComplete func(mm protocol.MuxBlock) error) error {
 
 	c.Lock()
 	bytes := mmBytes
@@ -211,7 +222,10 @@ func muxReadAll(c ReadLocker, mmBytes container.Slice[byte],
 				return err
 			}
 			muxMsg.Payloads = bytes
-			oneComplete(muxMsg)
+			if err := oneComplete(muxMsg); err != nil {
+				c.Unlock()
+				return err
+			}
 			if checkPoint == nil {
 				break
 			} else {
@@ -222,11 +236,17 @@ func muxReadAll(c ReadLocker, mmBytes container.Slice[byte],
 			// 尽快调用oneComplete()因为拷贝数据之后会导致原数据被修改
 			rawPayloads := muxMsg.Payloads
 			muxMsg.Payloads = muxMsg.Payloads[:muxMsg.PayloadLength]
-			oneComplete(muxMsg)
+			if err := oneComplete(muxMsg); err != nil {
+				c.Unlock()
+				return err
+			}
 			bytes = rawPayloads[muxMsg.PayloadLength:]
 		} else {
 			// 仅仅包含一个完整的载荷
-			oneComplete(muxMsg)
+			if err := oneComplete(muxMsg); err != nil {
+				c.Unlock()
+				return err
+			}
 			if checkPoint == nil {
 				break
 			} else {

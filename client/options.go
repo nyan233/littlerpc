@@ -32,6 +32,8 @@ func WithDefaultClient() clientOption {
 		config.NetWork = "tcp"
 		config.MuxConnection = 8
 		config.ErrHandler = common2.DefaultErrHandler
+		// 小于等于0表示不能使用Async模式
+		config.PoolSize = -1
 	}
 }
 
@@ -107,7 +109,7 @@ func WithProtocol(scheme string) clientOption {
 func WithPoolSize(size int) clientOption {
 	return func(config *Config) {
 		if size == 0 {
-			config.PoolSize = DEFAULT_POOL_SIZE
+			config.PoolSize = int32(size)
 		}
 	}
 }

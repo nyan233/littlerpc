@@ -13,6 +13,7 @@ import (
 	"github.com/nyan233/littlerpc/protocol"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
+	"io"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -29,7 +30,8 @@ type readyDesc struct {
 }
 
 type lockConn struct {
-	sync.Mutex
+	rmu sync.Mutex
+	wmu sync.Mutex
 	transport.ClientTransport
 	// 消息缓冲池，用于减少重复创建Message的开销
 	msgBuffer sync.Pool
@@ -42,6 +44,26 @@ type lockConn struct {
 	//	对于readyBuffer,Value的[]byte类型按照约定,len == 已被读取的字节数
 	//	cap == 回复消息的总长度
 	noReadyBuffer map[uint64]readyDesc
+}
+
+func (lc *lockConn) WriteLocker() common.WriteLocker {
+	return &struct {
+		*sync.Mutex
+		io.Writer
+	}{
+		&lc.wmu,
+		lc.ClientTransport,
+	}
+}
+
+func (lc *lockConn) ReadLocker() common.ReadLocker {
+	return &struct {
+		*sync.Mutex
+		io.Reader
+	}{
+		&lc.rmu,
+		lc.ClientTransport,
+	}
 }
 
 func (lc *lockConn) GetMsgId() uint64 {
@@ -72,7 +94,7 @@ type Client struct {
 	// 用于取消后台正在监听消息的goroutine
 	listenReady context.CancelFunc
 	// 用于超时管理和异步调用模拟的goroutine池
-	gp *pool.TaskPool
+	gp pool.TaskPool
 	// 用于客户端的插件
 	pluginManager *pluginManager
 	// 地址管理器
@@ -128,7 +150,16 @@ func NewClient(opts ...clientOption) (*Client, error) {
 		}
 	}
 	// init goroutine pool
-	client.gp = pool.NewTaskPool(int(config.PoolSize*10), int(config.PoolSize))
+	if config.PoolSize <= 0 {
+		// 关闭Async模式
+		client.gp = nil
+	} else if config.ExecPoolBuilder != nil {
+		client.gp = config.ExecPoolBuilder.Builder(
+			pool.MaxTaskPoolSize/4, config.PoolSize, config.PoolSize*2)
+	} else {
+		client.gp = pool.NewTaskPool(
+			pool.MaxTaskPoolSize/4, config.PoolSize, config.PoolSize*2)
+	}
 	// plugins
 	client.pluginManager = &pluginManager{plugins: config.Plugins}
 	// encoderWp
@@ -217,8 +248,6 @@ func (c *Client) AsyncCall(processName string, args ...interface{}) error {
 		callBackIsOk = ok
 		// 在池中获取一个底层传输的连接
 		conn := getConnFromMux(c)
-		conn.Lock()
-		defer conn.Unlock()
 		err := c.sendCallMsg(ctx, msg, conn)
 		if err != nil && callBackIsOk {
 			cbFn(nil, err)
@@ -249,11 +278,8 @@ func (c *Client) Close() error {
 		return err
 	}
 	for _, v := range c.concurrentConnect {
-		v.Lock()
 		err := v.ClientTransport.Close()
-		v.Unlock()
 		if err != nil {
-			v.Unlock()
 			return err
 		}
 	}

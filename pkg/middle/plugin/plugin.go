@@ -30,6 +30,7 @@ type ClientPlugin interface {
 // 如果你要这么做的话，那么请将其拷贝一份
 type ServerPlugin interface {
 	// OnMessage 消息刚刚到来时的值,bytes必须为一个完整的消息帧
+	// TODO 需要改动, 现版本发现bytes并没有用
 	OnMessage(msg *protocol.Message, bytes *[]byte) error
 	// OnCallBefore 在经过其他组件对消息的处理完成之后，此处流程是在reflect.Call()之前调用的
 	OnCallBefore(msg *protocol.Message, args *[]reflect.Value, err error) error
