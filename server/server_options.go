@@ -3,11 +3,13 @@ package server
 import (
 	"github.com/lesismal/llib/std/crypto/tls"
 	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
+	"runtime"
 	"time"
 )
 
@@ -33,6 +35,9 @@ func WithDefaultServer() serverOption {
 		config.Encoder = packet.GetEncoderFromIndex(int(protocol.DefaultEncodingType))
 		config.NetWork = "tcp"
 		config.ErrHandler = common2.DefaultErrHandler
+		config.PoolBufferSize = 8192
+		config.PoolMinSize = int32(runtime.NumCPU() * 4)
+		config.PoolMaxSize = config.PoolMinSize * 2
 	}
 }
 
@@ -77,5 +82,19 @@ func WithPlugin(plg plugin.ServerPlugin) serverOption {
 func WithNewErrHandler(eh perror.LErrors) serverOption {
 	return func(config *Config) {
 		config.ErrHandler = eh
+	}
+}
+
+func WithCustomExecPool(builder export.TaskPoolBuilder) serverOption {
+	return func(config *Config) {
+		config.ExecPoolBuilder = builder
+	}
+}
+
+func WithExecPool(minSize, maxSize, bufSize int32) serverOption {
+	return func(config *Config) {
+		config.PoolMinSize = minSize
+		config.PoolMaxSize = maxSize
+		config.PoolBufferSize = bufSize
 	}
 }

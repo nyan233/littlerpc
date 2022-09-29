@@ -5,6 +5,7 @@ import (
 	"github.com/lesismal/nbio"
 	"github.com/lesismal/nbio/nbhttp"
 	transport2 "github.com/nyan233/littlerpc/pkg/common/transport"
+	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	perror "github.com/nyan233/littlerpc/protocol/error"
@@ -26,8 +27,12 @@ type Config struct {
 	Encoder packet.Wrapper
 	Logger  bilog.Logger
 	// 使用的插件
-	Plugins    []plugin.ServerPlugin
-	ErrHandler perror.LErrors
+	Plugins         []plugin.ServerPlugin
+	ErrHandler      perror.LErrors
+	PoolMinSize     int32
+	PoolMaxSize     int32
+	PoolBufferSize  int32
+	ExecPoolBuilder export.TaskPoolBuilder
 }
 
 type NewProtocolSupport func(config Config) transport2.ServerTransportBuilder

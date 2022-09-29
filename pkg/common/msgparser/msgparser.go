@@ -14,6 +14,11 @@ const (
 	_ScanMsgParse2
 )
 
+type ParserMessage struct {
+	Message *protocol.Message
+	Header  byte
+}
+
 type readyBuffer struct {
 	MsgId         uint64
 	PayloadLength uint32
@@ -53,11 +58,11 @@ func NewLMessageParser(allocTor AllocTor) *LMessageParser {
 }
 
 // ParseMsg io.Reader主要用来标识一个读取到半包的连接, 并不会真正去调用他的方法
-func (h *LMessageParser) ParseMsg(data []byte) ([]*protocol.Message, error) {
+func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 	if h.clickInterval == 1 && len(data) == 0 {
 		return nil, errors.New("data length == 0")
 	}
-	allMsg := make([]*protocol.Message, 0, 4)
+	allMsg := make([]ParserMessage, 0, 4)
 	for {
 		if len(data) == 0 {
 			return allMsg, nil
@@ -114,13 +119,19 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]*protocol.Message, error) {
 					if err != nil {
 						return nil, err
 					}
-					allMsg = append(allMsg, msg)
+					allMsg = append(allMsg, ParserMessage{
+						Message: msg,
+						Header:  buf.RawBytes[0],
+					})
 					// 置空/删除Map Key让内存得以回收
 					h.noReadyBuffer[msg.MsgId] = readyBuffer{}
 					delete(h.noReadyBuffer, msg.MsgId)
 				}
 			case UnmarshalComplete:
-				allMsg = append(allMsg, msg)
+				allMsg = append(allMsg, ParserMessage{
+					Message: msg,
+					Header:  h.halfBuffer[0],
+				})
 			}
 			h.clickInterval = 1
 			h.state = _ScanInit
