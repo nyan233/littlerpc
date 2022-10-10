@@ -82,3 +82,37 @@ func TestWebSocketTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestStdTcpTransport(t *testing.T) {
+	// 关闭服务器烦人的日志
+	common.SetOpenLogger(false)
+	builder := NewStdTcpServerEngine(NetworkServerConfig{
+		Addrs: []string{"127.0.0.1:9090", "127.0.0.2:9090"},
+	})
+	eventD := builder.EventDriveInter()
+	eventD.OnMessage(tcpOnMessage)
+	server := builder.Server()
+	err := server.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Stop()
+	clientBuilder := NewStdTcpClientEngine()
+	clientBuilder.EventDriveInter().OnMessage(tcpClientOnMessage)
+	err = clientBuilder.Client().Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clientBuilder.Client().Stop()
+	conn, err := clientBuilder.Client().NewConn(NetworkClientConfig{
+		ServerAddr: "127.0.0.1:9090",
+		KeepAlive:  false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = conn.Write([]byte("hello world!"))
+	if err != nil {
+		t.Fatal(err)
+	}
+}

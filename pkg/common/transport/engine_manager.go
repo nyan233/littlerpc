@@ -34,4 +34,6 @@ func init() {
 	EngineManager.RegisterClientEngine("nbio_tcp", NewNBioTcpClientEngine)
 	EngineManager.RegisterServerEngine("nbio_ws", NewNBioWebsocketServerEngine)
 	EngineManager.RegisterClientEngine("nbio_ws", NewNBioWebsocketClientEngine)
+	EngineManager.RegisterServerEngine("std_tcp", NewStdTcpServerEngine)
+	EngineManager.RegisterClientEngine("std_tcp", NewStdTcpClientEngine)
 }
