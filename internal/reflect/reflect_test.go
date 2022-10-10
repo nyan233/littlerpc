@@ -19,7 +19,7 @@ func TestFuncReflect(t *testing.T) {
 	_ = typs[0].([]int)
 	_ = typs[1].(*testStruct)
 	// 测试函数的返回值列表
-	typs = FuncOutputTypeList(reflect.ValueOf(testFunc), false, func(i int) bool {
+	typs = FuncOutputTypeList(reflect.ValueOf(testFunc), func(i int) bool {
 		return true
 	})
 	_ = typs[0].(*int)

@@ -66,21 +66,14 @@ func FuncInputTypeList(value reflect.Value, start int, isRecv bool, directNew fu
 //	Example
 //	if directNew() == true { Input(*reflect.Value) Exec -> return new(*reflect.Value)}
 //	if directNew() == false { Input(*reflect.Value) Exec -> tmp := new(reflect.Value) -> return &tmp}
-func FuncOutputTypeList(value reflect.Value, isRecv bool, directNew func(i int) bool) []interface{} {
+func FuncOutputTypeList(value reflect.Value, directNew func(i int) bool) []interface{} {
 	typ := value.Type()
 	typs := make([]interface{}, 0, typ.NumOut())
-	if isRecv && cap(typs) <= 1 {
+	if cap(typs) == 0 {
 		return nil
 	}
 	for i := 0; i < cap(typs); i++ {
-		if isRecv && i == 0 {
-			i = 1
-		}
-		var di = i
-		if isRecv {
-			di--
-		}
-		if directNew != nil && directNew(di) {
+		if directNew != nil && directNew(i) {
 			typs = append(typs, reflect.New(typ.Out(i)).Elem().Interface())
 			continue
 		}
