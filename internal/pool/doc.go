@@ -15,5 +15,5 @@ type TaskPool interface {
 }
 
 type TaskPoolBuilder interface {
-	Builder(bufSize, minSize, maxSize int32) TaskPool
+	Builder(bufSize, minSize, maxSize int32, rf RecoverFunc) TaskPool
 }

@@ -12,13 +12,15 @@ const (
 	MaxTaskPoolSize = 1024 * 16
 )
 
-//	DynamicTaskPool
-//	v0.10 -> v0.36 实现了简单的任务池
-//	v0.38 -> now 实现了可自动扩容的Goroutine池和可拓展的接口
+type RecoverFunc func(poolId int, err interface{})
+
+// DynamicTaskPool
+// v0.10 -> v0.36 实现了简单的任务池
+// v0.38 -> now 实现了可自动扩容的Goroutine池和可拓展的接口
 type DynamicTaskPool struct {
 	// buf chan
 	tasks     chan func()
-	recoverFn func(poolId int, err interface{})
+	recoverFn RecoverFunc
 	// 用于取消所有goroutine
 	ctx      context.Context
 	cancelFn context.CancelFunc
@@ -40,12 +42,13 @@ type DynamicTaskPool struct {
 	execFailed uint64
 }
 
-func NewTaskPool(bufSize, minSize, maxSize int32) *DynamicTaskPool {
+func NewTaskPool(bufSize, minSize, maxSize int32, rf RecoverFunc) *DynamicTaskPool {
 	pool := &DynamicTaskPool{}
 	if bufSize > MaxTaskPoolSize {
 		bufSize = MaxTaskPoolSize
 	}
 	pool.tasks = make(chan func(), bufSize)
+	pool.recoverFn = rf
 	pool.minSize = minSize
 	pool.maxSize = maxSize
 	pool.idleTimeout = time.Second * 90
