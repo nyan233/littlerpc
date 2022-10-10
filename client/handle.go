@@ -36,26 +36,19 @@ func (c *Client) handleProcessRetErr(msg *protocol.Message) perror.LErrorDesc {
 	return desc
 }
 
-func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Message, lc *lockConn, method reflect.Value, rep []interface{}) perror.LErrorDesc {
+func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lockConn, method reflect.Value, rep []interface{}) perror.LErrorDesc {
 	// 接收服务器返回的调用结果并将header反序列化
-	readBuf := lc.bytesBuffer.Get().(*container.Slice[byte])
-	readBuf.Reset()
-	defer lc.bytesBuffer.Put(readBuf)
-	// 容量不够则扩容
-	if readBuf.Cap() < protocol.MuxMessageBlockSize {
-		*readBuf = make([]byte, 0, protocol.MuxMessageBlockSize)
+	done, ok := lc.notify.LoadOk(msgId)
+	if !ok {
+		return c.eHandle.LWarpErrorDesc(common.ErrClient, "readMessage Lookup done channel failed")
 	}
-	var msgBytes []byte
-	err := c.readMessageFromServer(ctx, lc, msg, (*[]byte)(readBuf), &msgBytes)
-	if err != nil {
-		return err
+	defer lc.notify.Delete(msgId)
+	pMsg := <-done
+	if pMsg.Error != nil {
+		return c.eHandle.LWarpErrorDesc(common.ErrClient, pMsg.Error.Error())
 	}
-	// read header
-	protocol.ResetMsg(msg, false, false, true, 4096)
-	stdErr := protocol.UnmarshalMessage(msgBytes, msg)
-	if stdErr != nil {
-		return c.eHandle.LWarpErrorDesc(common.ErrMessageDecoding, "client error", stdErr.Error())
-	}
+	msg := pMsg.Message
+	defer lc.parser.FreeMessage(msg)
 	// TODO : Client Handle Ping&Pong
 	// encoder类型为text时不需要额外的内存拷贝
 	// 默认的encoder即text
@@ -67,22 +60,23 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 		msg.Payloads = append(msg.Payloads[:0], packet...)
 	}
 	// OnReceiveMessage 接收完消息之后调用的插件过程
-	stdErr = c.pluginManager.OnReceiveMessage(msg, &msgBytes)
+	stdErr := c.pluginManager.OnReceiveMessage(msg, nil)
 	if stdErr != nil {
-		c.logger.ErrorFromErr(err)
+		c.logger.ErrorFromErr(stdErr)
 	}
 	// 没有参数布局则表示该过程之后一个error类型的返回值
 	// 但error是不在返回值列表中处理的
 	if msg.PayloadLayout.Len() > 0 {
 		// 处理结果再处理错误, 因为游戏过程可能因为某种原因失败返回错误, 但也会返回处理到一定
 		// 进度的结果, 这个时候检查到错误就激进地抛弃结果是不可取的
+		if method.Type().NumOut()-1 != msg.PayloadLayout.Len() {
+			panic("server return args number no equal client")
+		}
 		iter := msg.PayloadsIterator()
-		outputList := lreflect.FuncOutputTypeList(method, false, func(i int) bool {
-			if i >= msg.PayloadLayout.Len()+1 {
-				panic("server return args number no equal client")
-			} else if i >= msg.PayloadLayout.Len() {
-				// 忽略返回值列表中的error
-				return true
+		outputList := lreflect.FuncOutputTypeList(method, func(i int) bool {
+			// 最后的是error, false/true都可以
+			if i == msg.PayloadLayout.Len() {
+				return false
 			}
 			if msg.PayloadLayout[i] == 0 {
 				return true
@@ -95,11 +89,9 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 				rep[k] = v
 				continue
 			}
-			var returnV interface{}
-			var err2 error
-			returnV, err2 = common.CheckCoderType(c.codecWp.Instance(), iter.Take(), v)
+			returnV, err2 := common.CheckCoderType(c.codecWp.Instance(), iter.Take(), v)
 			if err2 != nil {
-				err = c.eHandle.LWarpErrorDesc(common.ErrClient, "CheckCoderType failed", err2.Error())
+				return c.eHandle.LWarpErrorDesc(common.ErrClient, "CheckCoderType failed", err2.Error())
 			}
 			rep[k] = returnV
 		}
@@ -111,54 +103,6 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msg *protocol.Messag
 		}
 	}
 	return c.handleProcessRetErr(msg)
-}
-
-func (c *Client) readMessageFromServer(ctx context.Context, lc *lockConn, msg *protocol.Message, readBuf *[]byte, complete *[]byte) perror.LErrorDesc {
-	var iErr error
-	err := common.MuxReadAll(lc.ReadLocker(), *readBuf, func(c common.ReadLocker) bool {
-		// 检查context有无被取消
-		select {
-		case <-ctx.Done():
-			// TODO 发送取消指令
-		default:
-			// 没有被取消则继续
-		}
-		// 检查其它过程是否将属于自己的数据读取完毕
-		if p, ok := lc.noReadyBuffer[msg.MsgId]; ok && len(p.MessageBuffer) == int(p.MessageLength) {
-			*complete = p.MessageBuffer
-			delete(lc.noReadyBuffer, msg.MsgId)
-			return false
-		}
-		return true
-	}, func(mm protocol.MuxBlock) bool {
-		// 将数据直接添加到缓冲区中,在到达检查点时检查其是否完成
-		buf, ok := lc.noReadyBuffer[mm.MsgId]
-		if !ok {
-			// 缓冲区没有MsgId对应的数据说明该数据对应的MuxBlock是首次到来
-			// 如果消息的长度在MuxBlock能承载的载荷大小之内就不用加入缓冲区了,前提是自己的数据
-			var baseMsg protocol.Message
-			err := protocol.UnmarshalMessageOnMux(mm.Payloads, &baseMsg)
-			if err != nil {
-				iErr = err
-				return false
-			}
-			buf.MessageBuffer = make([]byte, 0, baseMsg.PayloadLength)
-			buf.MessageLength = int64(baseMsg.PayloadLength)
-			buf.MessageBuffer = append(buf.MessageBuffer, mm.Payloads...)
-			lc.noReadyBuffer[mm.MsgId] = buf
-			return true
-		}
-		buf.MessageBuffer = append(buf.MessageBuffer, mm.Payloads...)
-		lc.noReadyBuffer[mm.MsgId] = buf
-		return true
-	})
-	if iErr != nil {
-		return c.eHandle.LNewErrorDesc(perror.ClientError, "UnmarshalMessageOnMux failed", iErr)
-	}
-	if err != nil {
-		return c.eHandle.LNewErrorDesc(perror.ClientError, "MuxReadAll failed", err)
-	}
-	return nil
 }
 
 // return method
@@ -216,8 +160,10 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 	msg.SetCodecType(uint8(c.codecWp.Index()))
 	msg.SetEncoderType(uint8(c.encoderWp.Index()))
 	// request body
-	memBuffer := lc.bytesBuffer.Get().(*container.Slice[byte])
-	defer lc.bytesBuffer.Put(memBuffer)
+	bp := sharedPool.TakeBytesPool()
+	memBuffer := bp.Get().(*container.Slice[byte])
+	memBuffer.Reset()
+	defer bp.Put(memBuffer)
 	// write header
 	// encoder类型为text不需要额外拷贝内存
 	if c.encoderWp.Index() != int(protocol.DefaultEncodingType) {
@@ -240,8 +186,11 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 	}
 	// 要发送的数据小于一个MuxBlock的长度则直接发送
 	// 大于一个MuxBlock时则分片发送
-	sendBuf := lc.bytesBuffer.Get().(*container.Slice[byte])
-	defer lc.bytesBuffer.Put(sendBuf)
+	sendBuf := bp.Get().(*container.Slice[byte])
+	*sendBuf = (*sendBuf)[:sendBuf.Cap()]
+	defer bp.Put(sendBuf)
+	// 注册用于通知的Channel
+	lc.notify.Store(msg.MsgId, make(chan Complete, 1))
 	stdErr := common.MuxWriteAll(lc.WriteLocker(), muxMsg, sendBuf, *memBuffer, func() {
 		select {
 		case <-ctx.Done():

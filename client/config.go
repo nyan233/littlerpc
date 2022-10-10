@@ -2,7 +2,6 @@ package client
 
 import (
 	"crypto/tls"
-	transport2 "github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/balance"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
@@ -51,27 +50,4 @@ type Config struct {
 	// 自定义Goroutine Pool的建造器, 在客户端不推荐使用
 	// 在不需要使用异步回调模式时可以关闭
 	ExecPoolBuilder export.TaskPoolBuilder
-}
-
-type NewProtocolSupport func(config Config) (transport2.ClientTransport, error)
-
-var (
-	clientSupportCollection = make(map[string]NewProtocolSupport)
-)
-
-func RegisterProtocol(scheme string, newFn NewProtocolSupport) {
-	clientSupportCollection[scheme] = newFn
-}
-
-func newTcpClient(config Config) (transport2.ClientTransport, error) {
-	return transport2.NewTcpTransClient(config.TlsConfig, config.ServerAddr)
-}
-
-func newWebSocketClient(config Config) (transport2.ClientTransport, error) {
-	return transport2.NewWebSocketTransClient(config.TlsConfig, config.ServerAddr)
-}
-
-func init() {
-	RegisterProtocol("tcp", newTcpClient)
-	RegisterProtocol("websocket", newWebSocketClient)
 }

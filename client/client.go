@@ -3,8 +3,10 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/nyan233/littlerpc/internal/pool"
 	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	container2 "github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
@@ -17,33 +19,22 @@ import (
 	"reflect"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
-const (
-	Default_Conn_Timeout = time.Second * 10
-)
-
-type readyDesc struct {
-	MessageLength int64
-	MessageBuffer []byte
+type Complete struct {
+	Message *protocol.Message
+	Error   error
 }
 
 type lockConn struct {
-	rmu sync.Mutex
-	wmu sync.Mutex
-	transport.ClientTransport
-	// 消息缓冲池，用于减少重复创建Message的开销
-	msgBuffer sync.Pool
-	// 发送数据的缓冲池, 用于减少重复创建bytes slice的开销
-	bytesBuffer sync.Pool
+	wmu  sync.Mutex
+	conn transport.ConnAdapter
 	// message ID的起始, 开始时随机分配
 	initSeq uint64
-	// MessageId : message
-	//	用来存储Mux模式下未被读完的响应, Mux模式下响应该始终在同一个连接上发送
-	//	对于readyBuffer,Value的[]byte类型按照约定,len == 已被读取的字节数
-	//	cap == 回复消息的总长度
-	noReadyBuffer map[uint64]readyDesc
+	// 负责消息的解析
+	parser *msgparser.LMessageParser
+	// 用于事件循环读取完毕的通知
+	notify container2.MutexMap[uint64, chan Complete]
 }
 
 func (lc *lockConn) WriteLocker() common.WriteLocker {
@@ -52,17 +43,7 @@ func (lc *lockConn) WriteLocker() common.WriteLocker {
 		io.Writer
 	}{
 		&lc.wmu,
-		lc.ClientTransport,
-	}
-}
-
-func (lc *lockConn) ReadLocker() common.ReadLocker {
-	return &struct {
-		*sync.Mutex
-		io.Reader
-	}{
-		&lc.rmu,
-		lc.ClientTransport,
+		lc.conn,
 	}
 }
 
@@ -73,17 +54,21 @@ func (lc *lockConn) GetMsgId() uint64 {
 // Client 在Client中同时使用同步调用和异步调用将导致同步调用阻塞某一连接上的所有异步调用
 // 请求的发送
 type Client struct {
-	// 连接通道的数量
-	concurrentConnect []*lockConn
+	// 客户端的事件驱动引擎
+	engine transport.ClientEngineBuilder
 	// 连接通道轮询的计数器
 	concurrentConnCount int64
+	// 连接通道的数量
+	concurrentConnect []*lockConn
+	// 为每个连接分配的资源
+	connDesc *container2.RWMutexMap[transport.ConnAdapter, *lockConn]
 	// elems 可以支持不同实例的调用
 	// 所有的操作都是线程安全的
 	elems  container2.SyncMap118[string, common.ElemMeta]
 	logger bilog.Logger
-	// 字节流编码器包装器
+	// 默认的字节流编码器包装器
 	encoderWp packet.Wrapper
-	// 结构化数据编码器包装器
+	// 默认的结构化数据编码器包装器
 	codecWp codec.Wrapper
 	// 注册的所有异步调用的回调函数
 	// processName:func(rep []interface{},err error)
@@ -99,7 +84,8 @@ type Client struct {
 	pluginManager *pluginManager
 	// 地址管理器
 	addrManager AddrManager
-	eHandle     lerror.LErrors
+	// 错误处理接口
+	eHandle lerror.LErrors
 }
 
 func NewClient(opts ...clientOption) (*Client, error) {
@@ -123,31 +109,37 @@ func NewClient(opts ...clientOption) (*Client, error) {
 		manager = tmp
 	}
 	client.addrManager = manager
+	// init engine
+	client.engine = transport.EngineManager.GetClientEngine(config.NetWork)()
+	eventD := client.engine.EventDriveInter()
+	eventD.OnOpen(client.onOpen)
+	eventD.OnMessage(client.onMessage)
+	eventD.OnClose(client.onClose)
+	err := client.engine.Client().Start()
+	if err != nil {
+		return nil, err
+	}
 	// 使用负载均衡器选出一个地址
 	config.ServerAddr = client.addrManager.Target()
 	// init multi connection
 	client.concurrentConnect = make([]*lockConn, config.MuxConnection)
+	client.connDesc = &container2.RWMutexMap[transport.ConnAdapter, *lockConn]{}
 	for k := range client.concurrentConnect {
-		conn, err := clientSupportCollection[config.NetWork](*config)
+		conn, err := client.engine.Client().NewConn(transport.NetworkClientConfig{
+			ServerAddr: config.ServerAddr,
+			KeepAlive:  config.KeepAlive,
+			Dialer:     nil,
+		})
 		if err != nil {
 			return nil, err
 		}
-		client.concurrentConnect[k] = &lockConn{
-			ClientTransport: conn,
-			noReadyBuffer:   make(map[uint64]readyDesc, 256),
-			initSeq:         uint64(random.FastRand()),
-			msgBuffer: sync.Pool{
-				New: func() interface{} {
-					return protocol.NewMessage()
-				},
-			},
-			bytesBuffer: sync.Pool{
-				New: func() interface{} {
-					var tmp container2.Slice[byte] = make([]byte, 0, 128)
-					return &tmp
-				},
-			},
+		desc := &lockConn{
+			conn:    conn,
+			parser:  msgparser.NewLMessageParser(msgparser.NewSimpleAllocTor(sharedPool.TakeMessagePool())),
+			initSeq: uint64(random.FastRand()),
 		}
+		client.concurrentConnect[k] = desc
+		client.connDesc.Store(conn, desc)
 	}
 	// init goroutine pool
 	if config.PoolSize <= 0 {
@@ -155,10 +147,14 @@ func NewClient(opts ...clientOption) (*Client, error) {
 		client.gp = nil
 	} else if config.ExecPoolBuilder != nil {
 		client.gp = config.ExecPoolBuilder.Builder(
-			pool.MaxTaskPoolSize/4, config.PoolSize, config.PoolSize*2)
+			pool.MaxTaskPoolSize/4, config.PoolSize, config.PoolSize*2, func(poolId int, err interface{}) {
+				client.logger.ErrorFromString(fmt.Sprintf("poolId : %d -> Panic : %v", poolId, err))
+			})
 	} else {
 		client.gp = pool.NewTaskPool(
-			pool.MaxTaskPoolSize/4, config.PoolSize, config.PoolSize*2)
+			pool.MaxTaskPoolSize/4, config.PoolSize, config.PoolSize*2, func(poolId int, err interface{}) {
+				client.logger.ErrorFromString(fmt.Sprintf("poolId : %d -> Panic : %v", poolId, err))
+			})
 	}
 	// plugins
 	client.pluginManager = &pluginManager{plugins: config.Plugins}
@@ -203,14 +199,26 @@ func (c *Client) BindFunc(instanceName string, i interface{}) error {
 	return nil
 }
 
+// RawCall 该调用和Client.Call不同, 这个调用不会识别Method和对应的in/out list
+// 只会对args/reps直接序列化, 所以不可能携带正确的类型信息
+func (c *Client) RawCall(processName string, args ...interface{}) ([]interface{}, error) {
+	return nil, nil
+}
+
+// RestfulCall req/rep风格的RPC调用, 这要求rep必须是指针类型, 否则会panic
+func (c *Client) RestfulCall(processName string, ctx context.Context, req interface{}, rep interface{}) error {
+	return nil
+}
+
 // Call 远程过程返回的所有值都在rep中,sErr是调用过程中的错误，不是远程过程返回的错误
 // 现在的onErr回调函数将不起作用，sErr表示Client.Call()在调用一些函数返回的错误或者调用远程过程时返回的错误
 // 用户定义的远程过程返回的错误应该被安排在rep的最后一个槽位中
 // 生成器应该将优先将sErr错误返回
 func (c *Client) Call(processName string, args ...interface{}) ([]interface{}, error) {
 	conn := getConnFromMux(c)
-	msg := conn.msgBuffer.Get().(*protocol.Message)
-	defer conn.msgBuffer.Put(msg)
+	mp := sharedPool.TakeMessagePool()
+	msg := mp.Get().(*protocol.Message)
+	defer mp.Put(msg)
 	msg.Reset()
 	method, ctx, err := c.identArgAndEncode(processName, msg, args)
 	if err != nil {
@@ -225,7 +233,7 @@ func (c *Client) Call(processName string, args ...interface{}) ([]interface{}, e
 		return nil, err
 	}
 	rep := make([]interface{}, method.Type().NumOut()-1)
-	err = c.readMsgAndDecodeReply(ctx, msg, conn, method, rep)
+	err = c.readMsgAndDecodeReply(ctx, msg.MsgId, conn, method, rep)
 	c.pluginManager.OnResult(msg, &rep, err)
 	if err != nil {
 		return rep, err
@@ -256,7 +264,7 @@ func (c *Client) AsyncCall(processName string, args ...interface{}) error {
 			return
 		}
 		rep := make([]interface{}, method.Type().NumOut()-1)
-		err = c.readMsgAndDecodeReply(ctx, msg, conn, method, rep)
+		err = c.readMsgAndDecodeReply(ctx, msg.MsgId, conn, method, rep)
 		if err != nil && callBackIsOk {
 			cbFn(nil, err)
 			return
@@ -274,14 +282,20 @@ func (c *Client) RegisterCallBack(processName string, fn func(rep []interface{},
 }
 
 func (c *Client) Close() error {
-	if err := c.gp.Stop(); err != nil {
-		return err
+	if c.gp != nil {
+		if err := c.gp.Stop(); err != nil {
+			return err
+		}
 	}
 	for _, v := range c.concurrentConnect {
-		err := v.ClientTransport.Close()
+		err := v.conn.Close()
 		if err != nil {
 			return err
 		}
+	}
+	err := c.engine.Client().Stop()
+	if err != nil {
+		return err
 	}
 	return nil
 }
