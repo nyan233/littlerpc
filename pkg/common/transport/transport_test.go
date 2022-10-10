@@ -1,10 +1,8 @@
 package transport
 
 import (
-	"github.com/lesismal/nbio"
-	"github.com/lesismal/nbio/nbhttp"
 	"github.com/nyan233/littlerpc/pkg/common"
-	"runtime"
+	"log"
 	"testing"
 )
 
@@ -12,35 +10,39 @@ func tcpOnMessage(conn ConnAdapter, data []byte) {
 	_, _ = conn.Write(data)
 }
 
+func tcpClientOnMessage(conn ConnAdapter, data []byte) {
+	log.Println(string(data))
+}
+
 func TestTcpTransport(t *testing.T) {
 	// 关闭服务器烦人的日志
 	common.SetOpenLogger(false)
-	config := nbio.Config{
-		Network: "tcp",
-		Addrs:   []string{":1234"},
-		NPoller: runtime.NumCPU() * 4,
-	}
-	builder := NewTcpTransServer(nil, config)
-	builder.SetOnErr(func(err error) {
-		t.Fatal(err)
+	builder := NewNBioTcpServerEngine(NetworkServerConfig{
+		Addrs: []string{"127.0.0.1:9090", "127.0.0.2:9090"},
 	})
-	builder.SetOnMessage(tcpOnMessage)
-	server := builder.Instance()
+	eventD := builder.EventDriveInter()
+	eventD.OnMessage(tcpOnMessage)
+	server := builder.Server()
 	err := server.Start()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	client, err := NewTcpTransClient(nil, ":1234")
+	clientBuilder := NewNBioTcpClientEngine()
+	clientBuilder.EventDriveInter().OnMessage(tcpClientOnMessage)
+	err = clientBuilder.Client().Start()
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.Write([]byte("hello world!"))
+	defer clientBuilder.Client().Stop()
+	conn, err := clientBuilder.Client().NewConn(NetworkClientConfig{
+		ServerAddr: "127.0.0.1:9090",
+		KeepAlive:  false,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var buf [256]byte
-	_, err = client.Read(buf[:])
+	_, err = conn.Write([]byte("hello world!"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,34 +55,29 @@ func wsOnMessage(conn ConnAdapter, data []byte) {
 func TestWebSocketTransport(t *testing.T) {
 	// 关闭服务器烦人的日志
 	common.SetOpenLogger(false)
-	config := nbhttp.Config{
-		Network:                 "tcp",
-		Addrs:                   []string{":25564"},
-		NPoller:                 runtime.NumCPU() * 4,
-		ReleaseWebsocketPayload: true,
-	}
-	builder := NewWebSocketServer(nil, config)
-	builder.SetOnErr(func(err error) {
-		t.Fatal(err)
+	builder := NewNBioWebsocketServerEngine(NetworkServerConfig{
+		Addrs:     []string{"127.0.0.1:8083", "127.0.0.2:8054"},
+		KeepAlive: false,
 	})
-	builder.SetOnMessage(wsOnMessage)
-	server := builder.Instance()
+	builder.EventDriveInter().OnMessage(wsOnMessage)
+	server := builder.Server()
 	err := server.Start()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	client, err := NewWebSocketTransClient(nil, ":25564")
+	clientBuilder := NewNBioWebsocketClientEngine()
+	clientBuilder.EventDriveInter().OnMessage(tcpClientOnMessage)
+	clientBuilder.Client().Start()
+	defer clientBuilder.Client().Stop()
+	conn, err := clientBuilder.Client().NewConn(NetworkClientConfig{
+		ServerAddr: "127.0.0.1:8083",
+		KeepAlive:  false,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
-	_, err = client.Write([]byte("hello world!"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var buf [256]byte
-	_, err = client.Read(buf[:])
+	_, err = conn.Write([]byte("hello world!"))
 	if err != nil {
 		t.Fatal(err)
 	}
