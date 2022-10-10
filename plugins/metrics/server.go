@@ -6,13 +6,16 @@ import (
 )
 
 var (
-	ServerCallMetrics = &CallMetrics{}
+	ServerCallMetrics            = &CallMetrics{}
+	ServerUploadTrafficMetrics   = &TrafficMetrics{}
+	ServerDownloadTrafficMetrics = &TrafficMetrics{}
 )
 
 type ServerMetricsPlugin struct {
 }
 
 func (s *ServerMetricsPlugin) OnMessage(msg *protocol.Message, bytes *[]byte) error {
+	ServerDownloadTrafficMetrics.Add(int64(len(*bytes)))
 	ServerCallMetrics.IncCount()
 	return nil
 }
@@ -32,6 +35,7 @@ func (s *ServerMetricsPlugin) OnReplyMessage(msg *protocol.Message, bytes *[]byt
 	if err != nil {
 		ServerCallMetrics.IncFailed()
 	}
+	ServerUploadTrafficMetrics.Add(int64(len(*bytes)))
 	return nil
 }
 
