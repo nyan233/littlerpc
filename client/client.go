@@ -17,6 +17,7 @@ import (
 	"github.com/zbh255/bilog"
 	"io"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -202,12 +203,83 @@ func (c *Client) BindFunc(instanceName string, i interface{}) error {
 // RawCall 该调用和Client.Call不同, 这个调用不会识别Method和对应的in/out list
 // 只会对args/reps直接序列化, 所以不可能携带正确的类型信息
 func (c *Client) RawCall(processName string, args ...interface{}) ([]interface{}, error) {
-	return nil, nil
+	conn := getConnFromMux(c)
+	mp := sharedPool.TakeMessagePool()
+	msg := mp.Get().(*protocol.Message)
+	msg.Reset()
+	defer mp.Put(msg)
+	proceSplit := strings.Split(processName, ".")
+	msg.SetInstanceName(proceSplit[0])
+	msg.SetMethodName(proceSplit[1])
+	msg.SetMsgType(protocol.MessageCall)
+	for _, arg := range args {
+		bytes, err := c.codecWp.Instance().Marshal(arg)
+		if err != nil {
+			return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, err.Error())
+		}
+		msg.AppendPayloads(bytes)
+	}
+	if err := c.sendCallMsg(context.Background(), msg, conn); err != nil {
+		return nil, err
+	}
+	rMsg, err := c.readMsg(context.Background(), msg.MsgId, conn)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.parser.FreeMessage(rMsg)
+	resultSet := make([]interface{}, 0, 4)
+	iter := rMsg.PayloadsIterator()
+	for iter.Next() {
+		bytes := iter.Take()
+		if len(bytes) == 0 {
+			resultSet = append(resultSet, nil)
+			continue
+		}
+		var result interface{}
+		err := c.codecWp.Instance().Unmarshal(bytes, &result)
+		if err != nil {
+			return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, err)
+		}
+		resultSet = append(resultSet, result)
+	}
+	return resultSet, c.handleProcessRetErr(msg)
 }
 
-// RestfulCall req/rep风格的RPC调用, 这要求rep必须是指针类型, 否则会panic
-func (c *Client) RestfulCall(processName string, ctx context.Context, req interface{}, rep interface{}) error {
-	return nil
+// SingleCall req/rep风格的RPC调用, 这要求rep必须是指针类型, 否则会panic
+func (c *Client) SingleCall(processName string, ctx context.Context, req interface{}, rep interface{}) error {
+	conn := getConnFromMux(c)
+	mp := sharedPool.TakeMessagePool()
+	msg := mp.Get().(*protocol.Message)
+	msg.Reset()
+	defer mp.Put(msg)
+	proceSplit := strings.Split(processName, ".")
+	msg.SetInstanceName(proceSplit[0])
+	msg.SetMethodName(proceSplit[1])
+	msg.SetMsgType(protocol.MessageCall)
+	bytes, err := c.codecWp.Instance().Marshal(req)
+	if err != nil {
+		return c.eHandle.LWarpErrorDesc(common.ErrClient, err.Error())
+	}
+	msg.AppendPayloads(bytes)
+	if err := c.sendCallMsg(ctx, msg, conn); err != nil {
+		return err
+	}
+	rMsg, err := c.readMsg(ctx, msg.MsgId, conn)
+	if err != nil {
+		return err
+	}
+	defer conn.parser.FreeMessage(rMsg)
+	switch {
+	case rMsg.PayloadLayout == nil || len(rMsg.PayloadLayout) == 0,
+		rMsg.Payloads == nil || rMsg.Payloads.Len() == 0:
+		return c.handleProcessRetErr(msg)
+	default:
+		err := c.codecWp.Instance().Unmarshal(rMsg.Payloads, rep)
+		if err != nil {
+			return c.eHandle.LWarpErrorDesc(common.ErrClient, err)
+		}
+		return c.handleProcessRetErr(msg)
+	}
 }
 
 // Call 远程过程返回的所有值都在rep中,sErr是调用过程中的错误，不是远程过程返回的错误
