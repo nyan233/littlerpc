@@ -2,15 +2,11 @@ package server
 
 import (
 	"github.com/lesismal/llib/std/crypto/tls"
-	"github.com/lesismal/nbio"
-	"github.com/lesismal/nbio/nbhttp"
-	transport2 "github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
-	"runtime"
 	"time"
 )
 
@@ -33,56 +29,4 @@ type Config struct {
 	PoolMaxSize     int32
 	PoolBufferSize  int32
 	ExecPoolBuilder export.TaskPoolBuilder
-}
-
-type NewProtocolSupport func(config Config) transport2.ServerTransportBuilder
-
-var (
-	serverSupportProtocol = make(map[string]NewProtocolSupport)
-)
-
-func RegisterProtocolNew(key string, support NewProtocolSupport) {
-	serverSupportProtocol[key] = support
-}
-
-func newTcpSupport(config Config) transport2.ServerTransportBuilder {
-	nbioCfg := nbio.Config{
-		Name:         "LittleRpc-Server-Tcp",
-		Network:      "tcp",
-		Addrs:        config.Address,
-		NPoller:      runtime.NumCPU() * 2,
-		LockListener: false,
-		LockPoller:   false,
-	}
-	return transport2.NewTcpTransServer(config.TlsConfig, nbioCfg)
-}
-
-func newWebSocketSupport(config Config) transport2.ServerTransportBuilder {
-	nbioCfg := nbhttp.Config{
-		Name:                    "LittleRpc-Server-WebSocket",
-		Network:                 "tcp",
-		LockListener:            false,
-		LockPoller:              false,
-		ReleaseWebsocketPayload: true,
-	}
-	if config.TlsConfig == nil {
-		nbioCfg.Addrs = config.Address
-	} else {
-		nbioCfg.AddrsTLS = config.Address
-	}
-	return transport2.NewWebSocketServer(config.TlsConfig, nbioCfg)
-}
-
-func newStdTcpServer(config Config) transport2.ServerTransportBuilder {
-	return transport2.NewStdTcpTransServer(&transport2.StdTcpOption{
-		Network:           "tcp",
-		MaxReadBufferSize: transport2.ReadBufferSize,
-		Addrs:             config.Address,
-	})
-}
-
-func init() {
-	RegisterProtocolNew("tcp", newTcpSupport)
-	RegisterProtocolNew("websocket", newWebSocketSupport)
-	RegisterProtocolNew("std_tcp", newStdTcpServer)
 }
