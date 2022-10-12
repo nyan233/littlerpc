@@ -50,4 +50,6 @@ type Config struct {
 	// 自定义Goroutine Pool的建造器, 在客户端不推荐使用
 	// 在不需要使用异步回调模式时可以关闭
 	ExecPoolBuilder export.TaskPoolBuilder
+	// 是否使用Mux模式的消息
+	UseMux bool
 }

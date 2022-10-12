@@ -14,13 +14,19 @@ import (
 	"time"
 )
 
-type clientOption func(config *Config)
+type Option func(config *Config)
 
-func (opt clientOption) apply(config *Config) {
+func (opt Option) apply(config *Config) {
 	opt(config)
 }
 
-func WithDefaultClient() clientOption {
+func DirectConfig(uCfg *Config) Option {
+	return func(config *Config) {
+		*config = *uCfg
+	}
+}
+
+func WithDefaultClient() Option {
 	return func(config *Config) {
 		config.TlsConfig = nil
 		config.KeepAlive = false
@@ -37,56 +43,56 @@ func WithDefaultClient() clientOption {
 	}
 }
 
-func WithResolver(bScheme, url string) clientOption {
+func WithResolver(bScheme, url string) Option {
 	return func(config *Config) {
 		config.Resolver = resolver.GetResolver(bScheme)
 		config.ResolverParseUrl = url
 	}
 }
 
-func WithBalance(scheme string) clientOption {
+func WithBalance(scheme string) Option {
 	return func(config *Config) {
 		config.Balancer = balance.GetBalancer(scheme)
 	}
 }
 
-func WithTlsClient(tlsC *tls.Config) clientOption {
+func WithTlsClient(tlsC *tls.Config) Option {
 	return func(config *Config) {
 		config.TlsConfig = tlsC
 	}
 }
 
-func WithAddressClient(addr string) clientOption {
+func WithAddressClient(addr string) Option {
 	return func(config *Config) {
 		config.ServerAddr = addr
 	}
 }
 
-func WithCustomLoggerClient(logger bilog.Logger) clientOption {
+func WithCustomLoggerClient(logger bilog.Logger) Option {
 	return func(config *Config) {
 		config.Logger = logger
 	}
 }
 
-func WithCallOnErr(fn func(err error)) clientOption {
+func WithCallOnErr(fn func(err error)) Option {
 	return func(config *Config) {
 		config.CallOnErr = fn
 	}
 }
 
-func WithClientEncoder(scheme string) clientOption {
+func WithClientEncoder(scheme string) Option {
 	return func(config *Config) {
 		config.Encoder = packet.GetEncoderFromScheme(scheme)
 	}
 }
 
-func WithClientCodec(scheme string) clientOption {
+func WithClientCodec(scheme string) Option {
 	return func(config *Config) {
 		config.Codec = codec.GetCodecFromScheme(scheme)
 	}
 }
 
-func WithMuxConnection(ok bool) clientOption {
+func WithMuxConnection(ok bool) Option {
 	return func(config *Config) {
 		if !ok {
 			config.MuxConnection = 1
@@ -94,19 +100,19 @@ func WithMuxConnection(ok bool) clientOption {
 	}
 }
 
-func WithMuxConnectionNumber(n int) clientOption {
+func WithMuxConnectionNumber(n int) Option {
 	return func(config *Config) {
 		config.MuxConnection = n
 	}
 }
 
-func WithProtocol(scheme string) clientOption {
+func WithProtocol(scheme string) Option {
 	return func(config *Config) {
 		config.NetWork = scheme
 	}
 }
 
-func WithPoolSize(size int) clientOption {
+func WithPoolSize(size int) Option {
 	return func(config *Config) {
 		if size == 0 {
 			config.PoolSize = int32(size)
@@ -114,14 +120,20 @@ func WithPoolSize(size int) clientOption {
 	}
 }
 
-func WithPlugin(plugin plugin.ClientPlugin) clientOption {
+func WithPlugin(plugin plugin.ClientPlugin) Option {
 	return func(config *Config) {
 		config.Plugins = append(config.Plugins, plugin)
 	}
 }
 
-func WithErrHandler(eh perror.LErrors) clientOption {
+func WithErrHandler(eh perror.LErrors) Option {
 	return func(config *Config) {
 		config.ErrHandler = eh
+	}
+}
+
+func WithUseMux(use bool) Option {
+	return func(config *Config) {
+		config.UseMux = use
 	}
 }
