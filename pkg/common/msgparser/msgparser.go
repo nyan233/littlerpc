@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	_ScanInit int = iota
-	_ScanMsgParse1
-	_ScanMsgParse2
+	_ScanInit      int = iota // 初始化状态, 扫描到数据包的第1个Byte时
+	_ScanMsgParse1            // 扫描基本信息状态, 扫描到描述数据包的基本信息, 这些信息可以确定数据包的长度/MsgId
+	_ScanMsgParse2            // 扫描完整数据状态, 扫描完整数据包
 )
 
 type ParserMessage struct {
@@ -59,6 +59,8 @@ func NewLMessageParser(allocTor AllocTor) *LMessageParser {
 
 // ParseMsg io.Reader主要用来标识一个读取到半包的连接, 并不会真正去调用他的方法
 func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if h.clickInterval == 1 && len(data) == 0 {
 		return nil, errors.New("data length == 0")
 	}
@@ -74,6 +76,7 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 			if handler := GetMessageHandler(h.halfBuffer[0]); handler != nil {
 				h.handler = handler
 			} else {
+				h.ResetScan()
 				return nil, errors.New(fmt.Sprintf("MagicNumber no MessageHandler -> %d", data[0]))
 			}
 			h.state = _ScanMsgParse1
@@ -100,6 +103,8 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 			msg.Reset()
 			action, err := h.handler.Unmarshal(h.halfBuffer, msg)
 			if err != nil {
+				h.ResetScan()
+				h.allocTor.FreeMessage(msg)
 				return nil, err
 			}
 			switch action {
@@ -114,18 +119,18 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 				}
 				buf.RawBytes = append(buf.RawBytes, readData...)
 				if uint32(len(buf.RawBytes)) == buf.PayloadLength {
+					defer h.deleteNoReadyBuffer(msg.MsgId)
 					msg.Reset()
 					err := protocol.UnmarshalMessage(buf.RawBytes, msg)
 					if err != nil {
+						h.allocTor.FreeMessage(msg)
+						h.ResetScan()
 						return nil, err
 					}
 					allMsg = append(allMsg, ParserMessage{
 						Message: msg,
 						Header:  buf.RawBytes[0],
 					})
-					// 置空/删除Map Key让内存得以回收
-					h.noReadyBuffer[msg.MsgId] = readyBuffer{}
-					delete(h.noReadyBuffer, msg.MsgId)
 				}
 			case UnmarshalComplete:
 				allMsg = append(allMsg, ParserMessage{
@@ -133,13 +138,31 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 					Header:  h.halfBuffer[0],
 				})
 			}
-			h.clickInterval = 1
-			h.state = _ScanInit
-			h.halfBuffer = h.halfBuffer[:0]
+			h.ResetScan()
 		}
 	}
 }
 
 func (h *LMessageParser) FreeMessage(msg *protocol.Message) {
 	h.allocTor.FreeMessage(msg)
+}
+
+func (h *LMessageParser) ResetScan() {
+	h.handler = nil
+	h.halfBuffer = h.halfBuffer[:0]
+	h.clickInterval = 1
+	h.state = _ScanInit
+}
+
+func (h *LMessageParser) deleteNoReadyBuffer(msgId uint64) {
+	// 置空/删除Map Key让内存得以回收
+	h.noReadyBuffer[msgId] = readyBuffer{}
+	delete(h.noReadyBuffer, msgId)
+}
+
+// State 下个状态的触发间隔&当前的状态&缓冲区的长度
+func (h *LMessageParser) State() (int, int, int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.clickInterval, h.state, len(h.halfBuffer)
 }

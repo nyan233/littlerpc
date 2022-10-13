@@ -5,6 +5,8 @@ import (
 	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol"
 	"github.com/stretchr/testify/assert"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -44,4 +46,15 @@ func TestParser(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, len(allMasg), 2)
+}
+
+func parserOnBytes(s string) []byte {
+	s = s[1 : len(s)-1]
+	sp := strings.Split(s, " ")
+	bs := make([]byte, 0, len(sp))
+	for _, ss := range sp {
+		b, _ := strconv.Atoi(ss)
+		bs = append(bs, byte(b))
+	}
+	return bs
 }
