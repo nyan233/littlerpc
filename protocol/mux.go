@@ -7,14 +7,6 @@ import (
 const (
 	// MuxEnabled 指示在Stream中开启Mux的功能
 	MuxEnabled uint8 = 0b01
-	// MuxDisabled 指示在Stream中关闭Mux的功能
-	MuxDisabled uint8 = 0b11
-	// OnComplete 指示消息接收完成,这个标志被设置证明这是MsgId对应的数据的最后一段载荷
-	// 在Mux关闭时,它应该总是被设置,只有这样LittleRpc才能读取完后续的载荷数据
-	OnComplete uint8 = 0b00001
-	// NoComplete 指示消息接收未完成,当MsgId对应的数据还存在未发送完的载荷数据时
-	// Client应该去设置这个值,否则LittleRpc将丢弃后续的数据,未发送完的数据可能会被解析失败并返回错误
-	NoComplete uint8 = 0b00011
 )
 
 const (

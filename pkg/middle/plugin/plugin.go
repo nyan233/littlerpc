@@ -20,6 +20,7 @@ type ClientPlugin interface {
 	//	奇怪的数据
 	OnSendMessage(msg *protocol.Message, bytes *[]byte) error
 	// OnReceiveMessage 调用该阶段时Msg必须是Reset过的消息,该阶段在接收完服务器消息，并在使用Codec解码数据之前调用
+	// TODO 在客户端使用MsgParser时bytes并没有意义, 预计删除
 	OnReceiveMessage(msg *protocol.Message, bytes *[]byte) error
 	// OnResult 客户端将正确的结果返回客户端之前调用
 	// 如果服务器的返回并不是正确的结果，那么err != nil
