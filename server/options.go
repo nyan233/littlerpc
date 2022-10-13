@@ -39,7 +39,7 @@ func WithDefaultServer() Option {
 		config.ServerPPTimeout = 5 * time.Second
 		config.ServerTimeout = 90 * time.Second
 		config.Encoder = packet.GetEncoderFromIndex(int(protocol.DefaultEncodingType))
-		config.NetWork = "tcp"
+		config.NetWork = "nbio_tcp"
 		config.ErrHandler = common2.DefaultErrHandler
 		config.PoolBufferSize = 8192
 		config.PoolMinSize = int32(runtime.NumCPU() * 4)

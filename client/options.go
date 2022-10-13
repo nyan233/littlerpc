@@ -35,7 +35,7 @@ func WithDefaultClient() Option {
 		config.Logger = common2.Logger
 		config.Encoder = packet.GetEncoderFromIndex(int(protocol.DefaultEncodingType))
 		config.Codec = codec.GetCodecFromIndex(int(protocol.DefaultCodecType))
-		config.NetWork = "tcp"
+		config.NetWork = "nbio_tcp"
 		config.MuxConnection = 8
 		config.ErrHandler = common2.DefaultErrHandler
 		// 小于等于0表示不能使用Async模式
