@@ -24,7 +24,7 @@ func (c *ClientMetricsPlugin) OnSendMessage(msg *protocol.Message, bytes *[]byte
 }
 
 func (c *ClientMetricsPlugin) OnReceiveMessage(msg *protocol.Message, bytes *[]byte) error {
-	ClientDownloadTrafficMetrics.Add(int64(len(*bytes)))
+	ClientDownloadTrafficMetrics.Add(0)
 	return nil
 }
 
