@@ -1,9 +1,12 @@
 package metrics
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+)
 
 type Gauge struct {
 	_count int64
+	_      [128 - 8]byte
 }
 
 func (g *Gauge) Inc() {
