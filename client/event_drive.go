@@ -4,9 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
+	"github.com/nyan233/littlerpc/pkg/utils/message"
+	"io"
 )
 
 func (c *Client) onMessage(conn transport.ConnAdapter, bytes []byte) {
+	if c.debug {
+		c.logger.Debug(message.AnalysisMessage(bytes).String())
+	}
 	desc, ok := c.connDesc.LoadOk(conn)
 	if !ok {
 		c.logger.ErrorFromString("OnMessage lookup conn failed")
@@ -15,6 +20,9 @@ func (c *Client) onMessage(conn transport.ConnAdapter, bytes []byte) {
 			c.logger.ErrorFromErr(err)
 		}
 		return
+	}
+	if c.debug {
+		c.logger.Debug(fmt.Sprintln(desc.parser.State()))
 	}
 	allMsg, err := desc.parser.ParseMsg(bytes)
 	if err != nil {
@@ -26,6 +34,9 @@ func (c *Client) onMessage(conn transport.ConnAdapter, bytes []byte) {
 		return
 	}
 	if allMsg == nil || len(allMsg) <= 0 {
+		if c.debug {
+			c.logger.Debug(message.AnalysisMessage(bytes).String())
+		}
 		return
 	}
 	for _, pMsg := range allMsg {
@@ -60,7 +71,7 @@ func (c *Client) onClose(conn transport.ConnAdapter, err error) {
 		}
 		return true
 	})
-	if err != nil {
+	if err != nil && err != io.EOF {
 		c.logger.ErrorFromString(fmt.Sprintf("OnClose err : %v", err))
 	}
 }

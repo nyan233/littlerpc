@@ -36,26 +36,25 @@ func (c *Client) handleProcessRetErr(msg *protocol.Message) perror.LErrorDesc {
 	return desc
 }
 
-func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lockConn, method reflect.Value, rep []interface{}) perror.LErrorDesc {
+func (c *Client) readMsg(ctx context.Context, msgId uint64, lc *lockConn) (*protocol.Message, perror.LErrorDesc) {
 	// 接收服务器返回的调用结果并将header反序列化
 	done, ok := lc.notify.LoadOk(msgId)
 	if !ok {
-		return c.eHandle.LWarpErrorDesc(common.ErrClient, "readMessage Lookup done channel failed")
+		return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, "readMessage Lookup done channel failed")
 	}
 	defer lc.notify.Delete(msgId)
 	pMsg := <-done
 	if pMsg.Error != nil {
-		return c.eHandle.LWarpErrorDesc(common.ErrClient, pMsg.Error.Error())
+		return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, pMsg.Error.Error())
 	}
 	msg := pMsg.Message
-	defer lc.parser.FreeMessage(msg)
 	// TODO : Client Handle Ping&Pong
 	// encoder类型为text时不需要额外的内存拷贝
 	// 默认的encoder即text
 	if msg.GetEncoderType() != protocol.DefaultEncodingType {
 		packet, err := c.encoderWp.Instance().UnPacket(msg.Payloads)
 		if err != nil {
-			return c.eHandle.LNewErrorDesc(perror.ClientError, "UnPacket failed", err)
+			return nil, c.eHandle.LNewErrorDesc(perror.ClientError, "UnPacket failed", err)
 		}
 		msg.Payloads = append(msg.Payloads[:0], packet...)
 	}
@@ -64,6 +63,15 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lo
 	if stdErr != nil {
 		c.logger.ErrorFromErr(stdErr)
 	}
+	return msg, nil
+}
+
+func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lockConn, method reflect.Value, rep []interface{}) perror.LErrorDesc {
+	msg, err := c.readMsg(ctx, msgId, lc)
+	if err != nil {
+		return err
+	}
+	defer lc.parser.FreeMessage(msg)
 	// 没有参数布局则表示该过程之后一个error类型的返回值
 	// 但error是不在返回值列表中处理的
 	if msg.PayloadLayout.Len() > 0 {
@@ -75,7 +83,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lo
 		iter := msg.PayloadsIterator()
 		outputList := lreflect.FuncOutputTypeList(method, func(i int) bool {
 			// 最后的是error, false/true都可以
-			if i == msg.PayloadLayout.Len() {
+			if i >= msg.PayloadLayout.Len() {
 				return false
 			}
 			if msg.PayloadLayout[i] == 0 {
@@ -179,6 +187,15 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 	if err := c.pluginManager.OnSendMessage(msg, (*[]byte)(memBuffer)); err != nil {
 		c.logger.ErrorFromErr(err)
 	}
+	// 注册用于通知的Channel
+	lc.notify.Store(msg.MsgId, make(chan Complete, 1))
+	if !c.useMux {
+		err := common.WriteControl(lc.conn, *memBuffer)
+		if err != nil {
+			return c.eHandle.LWarpErrorDesc(common.ErrClient, err, lc.conn.Close())
+		}
+		return nil
+	}
 	muxMsg := &protocol.MuxBlock{
 		Flags:    protocol.MuxEnabled,
 		StreamId: random.FastRand(),
@@ -189,9 +206,7 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 	sendBuf := bp.Get().(*container.Slice[byte])
 	*sendBuf = (*sendBuf)[:sendBuf.Cap()]
 	defer bp.Put(sendBuf)
-	// 注册用于通知的Channel
-	lc.notify.Store(msg.MsgId, make(chan Complete, 1))
-	stdErr := common.MuxWriteAll(lc.WriteLocker(), muxMsg, sendBuf, *memBuffer, func() {
+	stdErr := common.MuxWriteAll(lc.conn, muxMsg, sendBuf, *memBuffer, func() {
 		select {
 		case <-ctx.Done():
 			// 发送取消消息之后退出
@@ -201,7 +216,7 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 		}
 	})
 	if stdErr != nil {
-		return c.eHandle.LWarpErrorDesc(common.ErrClient, stdErr.Error())
+		return c.eHandle.LWarpErrorDesc(common.ErrClient, stdErr.Error(), lc.conn.Close())
 	}
 	return nil
 }
