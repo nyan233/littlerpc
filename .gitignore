@@ -1,1 +1,3 @@
 .idea
+
+./cmd/pxtor/test/Test_proxy.go

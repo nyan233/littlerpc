@@ -233,7 +233,7 @@ func (c *Client) RawCall(processName string, args ...interface{}) ([]interface{}
 		}
 		resultSet = append(resultSet, result)
 	}
-	return resultSet, c.handleProcessRetErr(msg)
+	return resultSet, c.handleProcessRetErr(rMsg)
 }
 
 // SingleCall req/rep风格的RPC调用, 这要求rep必须是指针类型, 否则会panic
@@ -268,7 +268,7 @@ func (c *Client) SingleCall(processName string, ctx context.Context, req interfa
 		if err != nil {
 			return c.eHandle.LWarpErrorDesc(common.ErrClient, err)
 		}
-		return c.handleProcessRetErr(msg)
+		return c.handleProcessRetErr(rMsg)
 	}
 }
 
