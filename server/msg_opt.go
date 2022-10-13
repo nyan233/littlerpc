@@ -37,15 +37,12 @@ func (c *messageOpt) SelectCodecAndEncoder() {
 	// 根据读取的头信息初始化一些需要的Codec/Encoder
 	cwp := safeIndexCodecWps(c.Server.cacheCodec, int(c.Message.GetCodecType()))
 	ewp := safeIndexEncoderWps(c.Server.cacheEncoder, int(c.Message.GetEncoderType()))
-	var sArg serverCallContext
 	if cwp == nil || ewp == nil {
-		sArg.Codec = safeIndexCodecWps(c.Server.cacheCodec, int(protocol.DefaultCodecType)).Instance()
-		sArg.Encoder = safeIndexEncoderWps(c.Server.cacheEncoder, int(protocol.DefaultEncodingType)).Instance()
+		c.Codec = safeIndexCodecWps(c.Server.cacheCodec, int(protocol.DefaultCodecType)).Instance()
+		c.Encoder = safeIndexEncoderWps(c.Server.cacheEncoder, int(protocol.DefaultEncodingType)).Instance()
 	} else {
-		sArg = serverCallContext{
-			Codec:   cwp.Instance(),
-			Encoder: ewp.Instance(),
-		}
+		c.Codec = cwp.Instance()
+		c.Encoder = ewp.Instance()
 	}
 }
 
@@ -59,7 +56,7 @@ func (c *messageOpt) RealPayload() perror.LErrorDesc {
 		}
 	}
 	// Plugin OnMessage
-	err = c.Server.pManager.OnMessage(c.Message, nil)
+	err = c.Server.pManager.OnMessage(c.Message, (*[]byte)(&c.Message.Payloads))
 	if err != nil {
 		c.Server.logger.ErrorFromErr(err)
 	}
@@ -74,17 +71,6 @@ func (c *messageOpt) FreeMessage(parser *msgparser.LMessageParser) {
 
 func (c *messageOpt) UseMux() bool {
 	return c.Message.Scope[0] == protocol.MuxEnabled
-}
-
-func (c *messageOpt) WriteLocker() common.WriteLocker {
-	type Wr struct {
-		*sync.Mutex
-		transport.ConnAdapter
-	}
-	return &Wr{
-		&c.mu,
-		c.Conn,
-	}
 }
 
 func (c *messageOpt) Check() perror.LErrorDesc {
