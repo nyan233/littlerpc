@@ -10,7 +10,9 @@ import (
 const nTask = 1000
 
 func TestTaskPool(t *testing.T) {
-	var pool TaskPool = NewTaskPool(32, int32(runtime.NumCPU()*4), 1024)
+	var pool TaskPool = NewTaskPool(32, int32(runtime.NumCPU()*4), 1024, func(poolId int, err interface{}) {
+		return
+	})
 	defer pool.Stop()
 	go func() {
 		for {
@@ -30,7 +32,9 @@ func TestTaskPool(t *testing.T) {
 }
 
 func BenchmarkTaskPool(b *testing.B) {
-	pool := NewTaskPool(512, 512, 2048)
+	pool := NewTaskPool(512, 512, 2048, func(poolId int, err interface{}) {
+		return
+	})
 	defer pool.Stop()
 	b.Run("DynamicTaskPool", func(b *testing.B) {
 		b.ReportAllocs()
