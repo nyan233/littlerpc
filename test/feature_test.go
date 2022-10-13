@@ -3,10 +3,15 @@ package main
 import (
 	lclient "github.com/nyan233/littlerpc/client"
 	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/plugins/metrics"
 	lserver "github.com/nyan233/littlerpc/server"
+	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type User struct {
@@ -53,11 +58,14 @@ func (t *HelloTest) ModifyUser(uid int, user User) (bool, error) {
 }
 
 func TestNoTlsServerAndClient(t *testing.T) {
+	go func() {
+		log.Println(http.ListenAndServe("127.0.0.1:7878", nil))
+	}()
 	// 关闭服务器烦人的日志
 	common.SetOpenLogger(false)
 	server := lserver.NewServer(
 		lserver.WithAddressServer(":1234"),
-		lserver.WithTransProtocol("std_tcp"),
+		lserver.WithTransProtocol("nbio_tcp"),
 		lserver.WithServerEncoder("gzip"),
 		lserver.WithOpenLogger(false),
 	)
@@ -75,25 +83,29 @@ func TestNoTlsServerAndClient(t *testing.T) {
 
 	var wg sync.WaitGroup
 	// 启动多少的客户端
-	nGoroutine := 100
+	nGoroutine := 1000
 	// 一个客户端连续发送多少次消息
-	sendN := 5
+	sendN := 50
 	// 统计触发错误的次数
 	var errCount int64
 	addV := 65536
 	wg.Add(nGoroutine)
+	client, err := lclient.NewClient(
+		lclient.WithCallOnErr(func(err error) { atomic.AddInt64(&errCount, 1) }),
+		lclient.WithAddressClient(":1234"),
+		lclient.WithClientCodec("json"),
+		//lclient.WithClientEncoder("gzip"),
+		lclient.WithProtocol("nbio_tcp"),
+		lclient.WithMuxConnectionNumber(64),
+		lclient.WithUseMux(true),
+		lclient.WithPlugin(&metrics.ClientMetricsPlugin{}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := NewHelloTestProxy(client)
 	for i := 0; i < nGoroutine; i++ {
 		j := i
-		client, err := lclient.NewClient(
-			lclient.WithCallOnErr(func(err error) { atomic.AddInt64(&errCount, 1) }),
-			lclient.WithAddressClient(":1234"),
-			lclient.WithClientCodec("json"),
-			lclient.WithClientEncoder("gzip"),
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-		proxy := NewHelloTestProxy(client)
 		go func() {
 			for i := 0; i < sendN; i++ {
 				_ = proxy.Add(int64(addV))
@@ -101,9 +113,9 @@ func TestNoTlsServerAndClient(t *testing.T) {
 					Id:   j + 100,
 					Name: "Jeni",
 				})
-				user, ok, _ := proxy.SelectUser(j + 100)
-				if !ok {
-					panic(interface{}("the no value"))
+				user, _, err := proxy.SelectUser(j + 100)
+				if err != nil {
+					panic(err)
 				}
 				if user.Name != "Jeni" {
 					panic(interface{}("the no value"))
@@ -112,7 +124,7 @@ func TestNoTlsServerAndClient(t *testing.T) {
 					Id:   j + 100,
 					Name: "Tony",
 				})
-				_, _, err := proxy.GetCount()
+				_, _, err = proxy.GetCount()
 				if err != nil {
 					t.Error(err)
 				}
@@ -120,6 +132,9 @@ func TestNoTlsServerAndClient(t *testing.T) {
 				pp := proxy.(*HelloTestProxy)
 				// 构造一次错误的请求
 				_, err = pp.Call("HelloTest.DeleteUser", "string")
+				if err == nil {
+					t.Error("call error is equal nil")
+				}
 				if err != nil {
 					atomic.AddInt64(&errCount, 1)
 				}
@@ -127,6 +142,16 @@ func TestNoTlsServerAndClient(t *testing.T) {
 			wg.Done()
 		}()
 	}
+	go func() {
+		for {
+			time.Sleep(time.Second * 1000)
+			t.Log(metrics.ServerCallMetrics.LoadCount())
+			t.Log(metrics.ClientCallMetrics.LoadCount())
+			t.Log(proxy.GetCount())
+			t.Log(atomic.LoadInt64(&errCount))
+			t.Log(atomic.LoadInt64(&h.count))
+		}
+	}()
 	wg.Wait()
 	if atomic.LoadInt64(&h.count) != int64(addV*nGoroutine)*int64(sendN) {
 		t.Fatal("h.count no correct")
