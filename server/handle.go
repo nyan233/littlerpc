@@ -9,11 +9,13 @@ import (
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/stream"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
+	"github.com/nyan233/littlerpc/pkg/utils/message"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"reflect"
 	"strconv"
+	"sync"
 )
 
 // 必须在其结果集中首先处理错误在处理其余结果
@@ -54,7 +56,7 @@ func (s *Server) processAndSendMsg(msgOpt *messageOpt, msg *protocol.Message, us
 	// TODO : implement text encoding and gzip encoding
 	// rep Header已经被调用者提前设置好内容，所以这里发送消息的逻辑不用设置
 	// write header
-	bytesBuffer := sharedPool.TakeMessagePool()
+	bytesBuffer := sharedPool.TakeBytesPool()
 	bp := bytesBuffer.Get().(*container.Slice[byte])
 	bp.Reset()
 	defer bytesBuffer.Put(bp)
@@ -72,12 +74,27 @@ func (s *Server) processAndSendMsg(msgOpt *messageOpt, msg *protocol.Message, us
 	protocol.MarshalMessage(msg, bp)
 	// 不使用Mux消息的情况
 	if !useMux {
-		err := common2.WriteControl(msgOpt.Conn, *bp)
-		if err != nil {
-			s.logger.ErrorFromString(fmt.Sprintf("Write NoMuxMessage failed: %v", msgOpt.Conn.Close()))
-		}
-		return
+		s.sendOnNoMux(msgOpt, msg, *bp)
+	} else {
+		s.sendOnMux(msgOpt, bytesBuffer, msg, *bp)
 	}
+}
+
+func (s *Server) sendOnNoMux(msgOpt *messageOpt, msg *protocol.Message, bytes []byte) {
+	err := common2.WriteControl(msgOpt.Conn, bytes)
+	if err != nil {
+		s.logger.ErrorFromString(fmt.Sprintf("Write NoMuxMessage failed: %v", msgOpt.Conn.Close()))
+	}
+	if s.debug {
+		s.logger.Debug(message.AnalysisMessage(bytes).String())
+	}
+	if err := s.pManager.OnComplete(msg, err); err != nil {
+		s.logger.ErrorFromErr(err)
+	}
+	return
+}
+
+func (s *Server) sendOnMux(msgOpt *messageOpt, bytesBuffer *sync.Pool, msg *protocol.Message, bytes []byte) {
 	muxMsg := &protocol.MuxBlock{
 		Flags:    protocol.MuxEnabled,
 		StreamId: random.FastRand(),
@@ -87,12 +104,12 @@ func (s *Server) processAndSendMsg(msgOpt *messageOpt, msg *protocol.Message, us
 	// 大于一个MuxBlock时则分片发送
 	sendBuf := bytesBuffer.Get().(*container.Slice[byte])
 	defer bytesBuffer.Put(sendBuf)
-	err := common2.MuxWriteAll(msgOpt.WriteLocker(), muxMsg, sendBuf, *bp, nil)
+	err := common2.MuxWriteAll(msgOpt.Conn, muxMsg, sendBuf, bytes, nil)
 	if err != nil {
 		s.logger.ErrorFromString(fmt.Sprintf("Write MuxMessage failed: %v", msgOpt.Conn.Close()))
 		return
 	}
-	if err := s.pManager.OnComplete(msg, nil); err != nil {
+	if err := s.pManager.OnComplete(msg, err); err != nil {
 		s.logger.ErrorFromErr(err)
 	}
 }
@@ -202,7 +219,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 // NOTE: 轻微错误 -> 除了严重错误都是
 // Update: LittleRpc现在的错误返回统一使用NoMux类型的消息
 func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo perror.LErrorDesc) {
-	bytesBuffer := sharedPool.TakeMessagePool()
+	bytesBuffer := sharedPool.TakeBytesPool()
 	switch errNo.Code() {
 	case perror.UnsafeOption, perror.MessageDecodingFailed, perror.MessageEncodingFailed:
 		// 严重影响到后续运行的错误需要关闭连接
@@ -220,7 +237,7 @@ func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo per
 		msg.SetMetaData("littlerpc-message", errNo.Message())
 		// 为空则不序列化Mores, 否则会造成空间浪费
 		mores := errNo.Mores()
-		if mores == nil || len(mores) == 0 {
+		if mores != nil && len(mores) > 0 {
 			bytes, err := errNo.MarshalMores()
 			if err != nil {
 				s.logger.ErrorFromErr(err)

@@ -10,6 +10,9 @@ import (
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/middle/plugin"
+	"github.com/nyan233/littlerpc/pkg/utils/message"
+	"github.com/nyan233/littlerpc/plugins/metrics"
 	"github.com/nyan233/littlerpc/protocol"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
@@ -27,7 +30,7 @@ type Server struct {
 	// Map[TypeName]:[ElemMeta]
 	elems container.SyncMap118[string, common.ElemMeta]
 	// Server Engine
-	server transport.ServerTransport
+	server transport.ServerEngine
 	// 任务池
 	taskPool pool.TaskPool
 	// 简单的缓冲内存池
@@ -42,9 +45,11 @@ type Server struct {
 	pManager *pluginManager
 	// Error Handler
 	eHandle lerror.LErrors
+	// 是否开启调试模式
+	debug bool
 }
 
-func NewServer(opts ...serverOption) *Server {
+func NewServer(opts ...Option) *Server {
 	server := &Server{}
 	sc := &Config{}
 	WithDefaultServer()(sc)
@@ -56,13 +61,17 @@ func NewServer(opts ...serverOption) *Server {
 	} else {
 		server.logger = common.Logger
 	}
-	builder := serverSupportProtocol[sc.NetWork](*sc)
-	builder.SetOnMessage(server.onMessage)
-	builder.SetOnClose(server.onClose)
-	builder.SetOnErr(server.onErr)
-	builder.SetOnOpen(server.onOpen)
+	builder := transport.EngineManager.GetServerEngine(sc.NetWork)(transport.NetworkServerConfig{
+		Addrs:     sc.Address,
+		KeepAlive: sc.ServerKeepAlive,
+		TLSPubPem: nil,
+	})
+	eventD := builder.EventDriveInter()
+	eventD.OnMessage(server.onMessage)
+	eventD.OnClose(server.onClose)
+	eventD.OnOpen(server.onOpen)
 	// server engine
-	server.server = builder.Instance()
+	server.server = builder.Server()
 	// init encoder cache
 	for i := 0; i < math.MaxUint8; i++ {
 		wp := packet.GetEncoderFromIndex(i)
@@ -82,16 +91,20 @@ func NewServer(opts ...serverOption) *Server {
 		}
 	}
 	// init plugin manager
-	server.pManager = &pluginManager{plugins: sc.Plugins}
+	server.pManager = &pluginManager{
+		plugins: append([]plugin.ServerPlugin{
+			&metrics.ServerMetricsPlugin{},
+		}, sc.Plugins...),
+	}
 	// init ErrorHandler
 	server.eHandle = sc.ErrHandler
 	// New TaskPool
 	if sc.ExecPoolBuilder != nil {
 		server.taskPool = sc.ExecPoolBuilder.Builder(
-			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize)
+			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, serverRecover(server.logger))
 	} else {
 		server.taskPool = pool.NewTaskPool(
-			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize)
+			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, serverRecover(server.logger))
 	}
 	return server
 }
@@ -125,24 +138,26 @@ func (s *Server) Elem(i interface{}) error {
 }
 
 func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
-	// TODO : Handle Ping-Pong message
-	// TODO : Handle Control Header
 	pasrser, ok := s.noReadyBufferDesc.LoadOk(c)
 	if !ok {
 		s.logger.ErrorFromErr(errors.New("no register message-parser"))
 		_ = c.Close()
 		return
 	}
+	if s.debug {
+		s.logger.Debug(message.AnalysisMessage(data).String())
+	}
 	msgs, err := pasrser.ParseMsg(data)
 	if err != nil {
-		// 错误处理过程会在严重错误时关闭连接, 所以msgId == -1也没有关系
+		// 错误处理过程会在严重错误时关闭连接, 所以msgId == 0也没有关系
 		// 在解码消息失败时也不可能拿到正确的msgId
-		s.handleError(nil, -1, s.eHandle.LWarpErrorDesc(common.ErrMessageDecoding, err.Error()))
+		s.handleError(nil, 0, s.eHandle.LWarpErrorDesc(common.ErrMessageDecoding, err.Error()))
 		return
 	}
 	for _, pMsg := range msgs {
 		// 根据读取的头信息初始化一些需要的Codec/Encoder
 		msgOpt := newConnDesc(s, pMsg.Message, c)
+		msgId := pMsg.Message.MsgId
 		switch pMsg.Message.GetMsgType() {
 		case protocol.MessagePing:
 			pMsg.Message.SetMsgType(protocol.MessagePong)
@@ -161,14 +176,13 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		lErr := msgOpt.RealPayload()
 		if lErr != nil {
 			msgOpt.FreeMessage(pasrser)
-			s.handleError(c, pMsg.Message.MsgId, lErr)
+			s.handleError(c, msgId, lErr)
 			continue
 		}
-		msgId := pMsg.Message.MsgId
 		lErr = msgOpt.Check()
 		if lErr != nil {
 			msgOpt.FreeMessage(pasrser)
-			s.handleError(c, pMsg.Message.MsgId, lErr)
+			s.handleError(c, msgId, lErr)
 			continue
 		}
 		var useMux bool
@@ -178,10 +192,11 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		case protocol.MuxEnabled:
 			useMux = true
 		}
+		codecI, encoderI := msgOpt.Message.GetCodecType(), msgOpt.Message.GetEncoderType()
 		// 将使用完的Message归还给Parser
 		msgOpt.FreeMessage(pasrser)
 		err = s.taskPool.Push(func() {
-			s.callHandleUnit(msgOpt, msgId, useMux)
+			s.callHandleUnit(msgOpt, msgId, codecI, encoderI, useMux)
 		})
 		if err != nil {
 			s.handleError(c, msgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
@@ -191,9 +206,10 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 
 // 提供用于任务池的处理调用用户过程的单元
 // 因为用户过程可能会有阻塞操作
-func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, useMux bool) {
+func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, codecI, encoderI uint8, useMux bool) {
 	messageBuffer := sharedPool.TakeMessagePool()
 	msg := messageBuffer.Get().(*protocol.Message)
+	msg.Reset()
 	defer func() {
 		protocol.ResetMsg(msg, false, true, true, 1024)
 		messageBuffer.Put(msg)
@@ -205,6 +221,8 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, useMux bool) {
 	}
 	// TODO 正确设置消息
 	msg.SetMsgType(protocol.MessageReturn)
+	msg.SetCodecType(codecI)
+	msg.SetEncoderType(encoderI)
 	msg.MsgId = msgId
 	// OnCallResult Plugin
 	if err := s.pManager.OnCallResult(msg, &callResult); err != nil {
