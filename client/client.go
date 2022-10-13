@@ -15,7 +15,6 @@ import (
 	"github.com/nyan233/littlerpc/protocol"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/zbh255/bilog"
-	"io"
 	"reflect"
 	"strings"
 	"sync"
@@ -28,7 +27,6 @@ type Complete struct {
 }
 
 type lockConn struct {
-	wmu  sync.Mutex
 	conn transport.ConnAdapter
 	// message ID的起始, 开始时随机分配
 	initSeq uint64
@@ -36,16 +34,6 @@ type lockConn struct {
 	parser *msgparser.LMessageParser
 	// 用于事件循环读取完毕的通知
 	notify container2.MutexMap[uint64, chan Complete]
-}
-
-func (lc *lockConn) WriteLocker() common.WriteLocker {
-	return &struct {
-		*sync.Mutex
-		io.Writer
-	}{
-		&lc.wmu,
-		lc.conn,
-	}
 }
 
 func (lc *lockConn) GetMsgId() uint64 {
@@ -67,6 +55,10 @@ type Client struct {
 	// 所有的操作都是线程安全的
 	elems  container2.SyncMap118[string, common.ElemMeta]
 	logger bilog.Logger
+	// 是否开启调试模式
+	debug bool
+	// 在发送消息时是否默认使用Mux
+	useMux bool
 	// 默认的字节流编码器包装器
 	encoderWp packet.Wrapper
 	// 默认的结构化数据编码器包装器
@@ -89,7 +81,7 @@ type Client struct {
 	eHandle lerror.LErrors
 }
 
-func NewClient(opts ...clientOption) (*Client, error) {
+func NewClient(opts ...Option) (*Client, error) {
 	config := &Config{}
 	WithDefaultClient()(config)
 	for _, v := range opts {
@@ -211,7 +203,6 @@ func (c *Client) RawCall(processName string, args ...interface{}) ([]interface{}
 	proceSplit := strings.Split(processName, ".")
 	msg.SetInstanceName(proceSplit[0])
 	msg.SetMethodName(proceSplit[1])
-	msg.SetMsgType(protocol.MessageCall)
 	for _, arg := range args {
 		bytes, err := c.codecWp.Instance().Marshal(arg)
 		if err != nil {
@@ -255,7 +246,6 @@ func (c *Client) SingleCall(processName string, ctx context.Context, req interfa
 	proceSplit := strings.Split(processName, ".")
 	msg.SetInstanceName(proceSplit[0])
 	msg.SetMethodName(proceSplit[1])
-	msg.SetMsgType(protocol.MessageCall)
 	bytes, err := c.codecWp.Instance().Marshal(req)
 	if err != nil {
 		return c.eHandle.LWarpErrorDesc(common.ErrClient, err.Error())
