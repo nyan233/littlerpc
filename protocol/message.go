@@ -22,6 +22,10 @@ const (
 	MessageBaseLen            = 4 + 4 + 8
 	DefaultEncodingType uint8 = 0 // text == json
 	DefaultCodecType    uint8 = 0 // encoding == text
+
+	ErrorCode    string = "code"
+	ErrorMessage string = "message"
+	ErrorMore    string = "bin"
 )
 
 var (
@@ -59,6 +63,7 @@ type Message struct {
 	PayloadLength uint32
 	// 实例名和调用方法名的布局
 	//	InstanceName-Size|MethodName-Size
+	// TODO 去除不必要的表示, 在Serialization/UnSerialization时存在即可
 	NameLayout [2]uint32
 	// 实例名
 	InstanceName string
@@ -189,7 +194,7 @@ func (m *Message) PayloadsIterator() *container2.Iterator[[]byte] {
 	return container2.NewIterator[[]byte](func() ([]byte, bool) {
 		i++
 		if m.PayloadLayout == nil || m.PayloadLayout.Len() == 0 {
-			return make([]byte, 0), true
+			return nil, true
 		}
 		if i == m.PayloadLayout.Len()-1 {
 			return m.Payloads[rangCount : rangCount+int(m.PayloadLayout[i])], true
@@ -210,6 +215,7 @@ func (m *Message) Reset() {
 	m.PayloadLayout = nil
 	m.Payloads = nil
 	*(*uint32)(unsafe.Pointer(&m.Scope)) = 0
+	m.NameLayout = [2]uint32{}
 	m.InstanceName = ""
 	m.MethodName = ""
 	m.MsgId = 0

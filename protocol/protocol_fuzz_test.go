@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func FuzzMessage(f *testing.F) {
+func FuzzMessageBytes(f *testing.F) {
 	bytes := make([]byte, 0)
 	msg := NewMessage()
 	msg.Scope = [4]uint8{
@@ -30,6 +30,23 @@ func FuzzMessage(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		msg := NewMessage()
 		_ = UnmarshalMessage(data, msg)
+	})
+}
+
+func FuzzMessageReal(f *testing.F) {
+	f.Fuzz(func(t *testing.T, msgT, codecT, encoderT uint8, msgId uint64, iName, mName string,
+		key, value string, payloads []byte) {
+		msg := NewMessage()
+		msg.SetMsgType(msgT)
+		msg.SetCodecType(codecT)
+		msg.SetEncoderType(encoderT)
+		msg.SetMsgId(msgId)
+		msg.SetInstanceName(iName)
+		msg.SetMethodName(mName)
+		msg.MetaData.Store(key, value)
+		msg.AppendPayloads(payloads)
+		var bytes []byte
+		MarshalMessage(msg, (*container.Slice[byte])(&bytes))
 	})
 }
 
