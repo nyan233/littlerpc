@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package protobuf_test;
+
+option go_package = "./";
+
+message Student {
+  string name = 1;
+  bool male = 2;
+  repeated int32 scores = 3;
+}
