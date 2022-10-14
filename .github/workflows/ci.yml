@@ -20,9 +20,10 @@ jobs:
         go-version: ${{matrix.go_version}}
     - name: CheckOut Code
       uses: actions/checkout@v2
-    - if: ${{matrix.os}} == 'macos-latest'
-      name: Init Environment
-      run: bash ./macos_init.sh
+    - name: Init Environment
+      if: matrix.os == 'macos-latest'
+      run:
+        bash ./macos_init.sh
     - name: Test
       run:  make cover-test
     - name: Upload coverage to Codecov
