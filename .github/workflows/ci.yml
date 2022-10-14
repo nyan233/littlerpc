@@ -14,15 +14,15 @@ jobs:
         go_version: ["1.18","1.19"]
     runs-on: ${{matrix.os}}
     steps:
-    - if: ${{matrix.os}} == 'macos-latest'
-      name: Init Environment
-      run: bash ./macos_init.sh
     - name: Install Go
       uses: actions/setup-go@v2
       with:
         go-version: ${{matrix.go_version}}
     - name: CheckOut Code
       uses: actions/checkout@v2
+    - if: ${{matrix.os}} == 'macos-latest'
+      name: Init Environment
+      run: bash ./macos_init.sh
     - name: Test
       run:  make cover-test
     - name: Upload coverage to Codecov
