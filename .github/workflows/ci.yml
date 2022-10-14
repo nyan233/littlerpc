@@ -28,3 +28,8 @@ jobs:
       run:  make cover-test
     - name: Upload coverage to Codecov
       run: bash <(curl -s https://codecov.io/bash)
+    - name: Upload coverage to Codecov On Windows
+      if: matrix.os == 'windows-latest'
+      run:
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri https://uploader.codecov.io/latest/windows/codecov.exe -Outfile codecov.exe .\codecov.exe
