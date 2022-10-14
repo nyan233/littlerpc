@@ -14,8 +14,8 @@ jobs:
         go_version: ["1.18","1.19"]
     runs-on: ${{matrix.os}}
     steps:
-    - name: Init Environment
-      if: ${{matrix.os}} == 'macos-latest'
+    - if: ${{matrix.os}} == 'macos-latest'
+      name: Init Environment
       run: bash ./macos_init.sh
     - name: Install Go
       uses: actions/setup-go@v2
