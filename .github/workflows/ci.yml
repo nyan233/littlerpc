@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{matrix.os}}
     steps:
     - name: Init Environment
-      if: matrix.os == "macos-latest"
+      if: ${{matrix.os}} == 'macos-latest'
       run: bash ./macos_init.sh
     - name: Install Go
       uses: actions/setup-go@v2
