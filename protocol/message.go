@@ -2,7 +2,6 @@ package protocol
 
 import (
 	container2 "github.com/nyan233/littlerpc/pkg/container"
-	"unsafe"
 )
 
 const (
@@ -40,8 +39,9 @@ type Reset interface {
 func NewMessage() *Message {
 	return &Message{
 		MetaData:      container2.NewSliceMap[string, string](4),
-		PayloadLayout: make([]uint32, 0, 2),
-		Payloads:      nil,
+		scope:         [4]uint8{MagicNumber},
+		payloadLayout: make([]uint32, 0, 2),
+		payloads:      nil,
 	}
 }
 
@@ -56,19 +56,17 @@ type Message struct {
 	//	[1] == MsgType (call/return & ping/pong)
 	//	[2] == Encoding (default text/gzip)
 	//	[3] == CodecType (default json)
-	Scope [4]uint8
+	scope [4]uint8
 	// 消息ID，用于表示一次完整的call/return的回复
-	MsgId uint64
+	msgId uint64
 	// 载荷数据的总长度
-	PayloadLength uint32
+	payloadLength uint32
 	// 实例名和调用方法名的布局
 	//	InstanceName-Size|MethodName-Size
-	// TODO 去除不必要的表示, 在Serialization/UnSerialization时存在即可
-	NameLayout [2]uint32
 	// 实例名
-	InstanceName string
+	instanceName string
 	// 要调用的方法名
-	MethodName string
+	methodName string
 	// NOTE:
 	//	有效载荷和元数据的范围
 	//	在Mux模式中MetaData及其Desc必须能在一个MuxBlock下被装下，否则将会丢失数据
@@ -86,10 +84,10 @@ type Message struct {
 	//	{"mypyload1":"haha"},{"mypyload2":"hehe"}
 	// OutPut:
 	//	0x00000002|0x00000014|0x00000014
-	PayloadLayout container2.Slice[uint32]
+	payloadLayout container2.Slice[uint32]
 	// 调用参数序列化后的载荷数据
 	// 如果被压缩了那么在反序列化时,最后剩下的数据均为参数载荷
-	Payloads container2.Slice[byte]
+	payloads container2.Slice[byte]
 }
 
 // BaseLength 获取基本数据的长度防止输入过短的数据导致panic
@@ -101,12 +99,15 @@ func (m *Message) BaseLength() int {
 
 // GetLength 根据结构计算序列化之后的数据长度
 func (m *Message) GetLength() int {
+	if m.payloadLength > 0 {
+		return int(m.payloadLength)
+	}
 	// Scope & MsgId & PayloadLength
 	baseLen := MessageBaseLen
 	// NameLayout
-	baseLen += len(m.NameLayout) * 4
+	baseLen += 8
 	// InstanceName & MethodName
-	baseLen += int(m.NameLayout[0] + m.NameLayout[1])
+	baseLen += len(m.instanceName) + len(m.methodName)
 	// NMetaData
 	baseLen += 4
 	if m.MetaData != nil && m.MetaData.Len() > 0 {
@@ -120,72 +121,62 @@ func (m *Message) GetLength() int {
 	}
 	// NArgs
 	baseLen += 4
-	baseLen += m.PayloadLayout.Len() * 4
-	baseLen += m.Payloads.Len()
+	baseLen += m.payloadLayout.Len() * 4
+	baseLen += m.payloads.Len()
 	return baseLen
 }
 
 func (m *Message) GetCodecType() uint8 {
-	return m.Scope[3]
+	return m.scope[3]
 }
 
 func (m *Message) GetEncoderType() uint8 {
-	return m.Scope[2]
+	return m.scope[2]
 }
 
 func (m *Message) GetMsgType() uint8 {
-	return m.Scope[1]
-}
-
-func (m *Message) GetInstanceName() string {
-	return m.InstanceName
-}
-
-func (m *Message) GetMethodName() string {
-	return m.MethodName
-}
-
-func (m *Message) GetMetaData(key string) string {
-	return m.MetaData.Load(key)
-}
-
-func (m *Message) SetMetaData(key, value string) {
-	m.MetaData.Store(key, value)
-}
-
-func (m *Message) RangeMetaData(fn func(key, value string) bool) {
-	m.MetaData.Range(fn)
-}
-
-func (m *Message) SetMsgId(id uint64) {
-	m.MsgId = id
+	return m.scope[1]
 }
 
 func (m *Message) SetCodecType(codecType uint8) {
-	m.Scope[3] = codecType
+	m.scope[3] = codecType
 }
 
 func (m *Message) SetEncoderType(encoderTyp uint8) {
-	m.Scope[2] = encoderTyp
+	m.scope[2] = encoderTyp
 }
 
 func (m *Message) SetMsgType(msgTyp uint8) {
-	m.Scope[1] = msgTyp
+	m.scope[1] = msgTyp
+}
+
+func (m *Message) GetInstanceName() string {
+	return m.instanceName
 }
 
 func (m *Message) SetInstanceName(instanceName string) {
-	m.NameLayout[0] = uint32(len(instanceName))
-	m.InstanceName = instanceName
+	m.instanceName = instanceName
+}
+
+func (m *Message) GetMethodName() string {
+	return m.methodName
 }
 
 func (m *Message) SetMethodName(methodName string) {
-	m.NameLayout[1] = uint32(len(methodName))
-	m.MethodName = methodName
+	m.methodName = methodName
+}
+
+func (m *Message) GetMsgId() uint64 {
+	return m.msgId
+}
+
+func (m *Message) SetMsgId(msgId uint64) {
+	m.msgId = msgId
 }
 
 func (m *Message) AppendPayloads(p []byte) {
-	m.Payloads = append(m.Payloads, p...)
-	m.PayloadLayout = append(m.PayloadLayout, uint32(len(p)))
+	m.payloads = append(m.payloads, p...)
+	m.payloadLayout = append(m.payloadLayout, uint32(len(p)))
 }
 
 func (m *Message) PayloadsIterator() *container2.Iterator[[]byte] {
@@ -193,33 +184,30 @@ func (m *Message) PayloadsIterator() *container2.Iterator[[]byte] {
 	i := -1
 	return container2.NewIterator[[]byte](func() ([]byte, bool) {
 		i++
-		if m.PayloadLayout == nil || m.PayloadLayout.Len() == 0 {
+		if m.payloadLayout == nil || m.payloadLayout.Len() == 0 {
 			return nil, true
 		}
-		if i == m.PayloadLayout.Len()-1 {
-			return m.Payloads[rangCount : rangCount+int(m.PayloadLayout[i])], true
+		if i == m.payloadLayout.Len()-1 {
+			return m.payloads[rangCount : rangCount+int(m.payloadLayout[i])], true
 		}
 		old := rangCount
-		rangCount += int(m.PayloadLayout[i])
-		return m.Payloads[old:rangCount], false
+		rangCount += int(m.payloadLayout[i])
+		return m.payloads[old:rangCount], false
 	})
 }
 
 func (m *Message) MinMux() int {
 	// Scope + MsgId + PayloadLength
-	return len(m.Scope) + 8 + 4
+	return len(m.scope) + 8 + 4
 }
 
 // Reset 给内存复用的操作提供一致性的语义
 func (m *Message) Reset() {
-	m.PayloadLayout = nil
-	m.Payloads = nil
-	*(*uint32)(unsafe.Pointer(&m.Scope)) = 0
-	m.NameLayout = [2]uint32{}
-	m.InstanceName = ""
-	m.MethodName = ""
-	m.MsgId = 0
+	m.scope = [...]uint8{MagicNumber, 0, 0, 0}
+	m.instanceName = ""
+	m.methodName = ""
+	m.msgId = 0
 	m.MetaData.Reset()
-	m.PayloadLayout.Reset()
-	m.Payloads.Reset()
+	m.payloadLayout.Reset()
+	m.payloads.Reset()
 }

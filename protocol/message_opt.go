@@ -46,9 +46,9 @@ func UnmarshalMuxBlock(data container.Slice[byte], msg *MuxBlock) error {
 // MarshaMessageOnMux 此API只会序列化Mux功能需要的数据
 func MarshaMessageOnMux(msg *Message, payloads *container.Slice[byte]) error {
 	*payloads = (*payloads)[:msg.MinMux()]
-	*payloads = append(*payloads, msg.Scope[:]...)
-	binary.BigEndian.PutUint64((*payloads)[4:12], msg.MsgId)
-	binary.BigEndian.PutUint32((*payloads)[12:16], msg.PayloadLength)
+	*payloads = append(*payloads, msg.scope[:]...)
+	binary.BigEndian.PutUint64((*payloads)[4:12], msg.msgId)
+	binary.BigEndian.PutUint32((*payloads)[12:16], msg.payloadLength)
 	return nil
 }
 
@@ -57,9 +57,9 @@ func UnmarshalMessageOnMux(data container.Slice[byte], msg *Message) error {
 	if data.Len() < msg.MinMux() {
 		return errors.New("mux message is bad")
 	}
-	copy(msg.Scope[:], data[:4])
-	msg.MsgId = binary.BigEndian.Uint64(data[4:12])
-	msg.PayloadLength = binary.BigEndian.Uint32(data[12:16])
+	copy(msg.scope[:], data[:4])
+	msg.msgId = binary.BigEndian.Uint64(data[4:12])
+	msg.payloadLength = binary.BigEndian.Uint32(data[12:16])
 	return nil
 }
 
@@ -71,28 +71,28 @@ func UnmarshalMessage(p container.Slice[byte], msg *Message) error {
 	if p.Len() < msg.BaseLength() {
 		return errors.New("data length < baseLen")
 	}
-	*(*uint32)(unsafe.Pointer(&msg.Scope)) = *(*uint32)(unsafe.Pointer(&p[0]))
-	if msg.Scope[0] != MagicNumber {
+	*(*uint32)(unsafe.Pointer(&msg.scope)) = *(*uint32)(unsafe.Pointer(&p[0]))
+	if msg.scope[0] != MagicNumber {
 		return errors.New("not littlerpc protocol")
 	}
 	p = p[4:]
-	msg.MsgId = binary.BigEndian.Uint64(p[:8])
-	msg.PayloadLength = binary.BigEndian.Uint32(p[8:12])
+	msg.msgId = binary.BigEndian.Uint64(p[:8])
+	msg.payloadLength = binary.BigEndian.Uint32(p[8:12])
 	p = p[12:]
 	// NameLayout
-	msg.NameLayout[0] = binary.BigEndian.Uint32(p[:4])
-	msg.NameLayout[1] = binary.BigEndian.Uint32(p[4:8])
+	instanceLen := binary.BigEndian.Uint32(p[:4])
+	methodNameLen := binary.BigEndian.Uint32(p[4:8])
 	p = p[8:]
-	if p.Len() < int(msg.NameLayout[0]) {
+	if p.Len() < int(instanceLen) {
 		return ErrBadMessage
 	}
-	msg.InstanceName = string(p[:msg.NameLayout[0]])
-	p = p[msg.NameLayout[0]:]
-	if p.Len() < int(msg.NameLayout[1]) {
+	msg.SetInstanceName(string(p[:instanceLen]))
+	p = p[instanceLen:]
+	if p.Len() < int(methodNameLen) {
 		return ErrBadMessage
 	}
-	msg.MethodName = string(p[:msg.NameLayout[1]])
-	p = p[msg.NameLayout[1]:]
+	msg.SetMethodName(string(p[:methodNameLen]))
+	p = p[methodNameLen:]
 	// 有多少个元数据
 	// 在可变长数据之后, 需要校验
 	if p.Len() < 4 {
@@ -122,8 +122,8 @@ func UnmarshalMessage(p container.Slice[byte], msg *Message) error {
 	p = p[4:]
 	// 为了保证更好的反序列化体验，如果不将layout置0的话
 	// 会导致与Marshal/Unmarshal的结果重叠
-	if msg.PayloadLayout != nil {
-		msg.PayloadLayout.Reset()
+	if msg.payloadLayout != nil {
+		msg.payloadLayout.Reset()
 	}
 	for i := 0; i < int(nArgs); i++ {
 		if p.Len() < 4 {
@@ -131,13 +131,13 @@ func UnmarshalMessage(p container.Slice[byte], msg *Message) error {
 		}
 		argsSize := binary.BigEndian.Uint32(p[:4])
 		p = p[4:]
-		msg.PayloadLayout = append(msg.PayloadLayout, argsSize)
+		msg.payloadLayout = append(msg.payloadLayout, argsSize)
 	}
 	// 不根据参数布局计算所有参数的载荷数据长度, 因为参数载荷数据可能会被压缩
 	// 导致了长度不一致的情况
-	msg.Payloads.Reset()
+	msg.payloads.Reset()
 	// 剩余的数据是载荷数据
-	msg.Payloads.Append(p)
+	msg.payloads.Append(p)
 	return nil
 }
 
@@ -145,8 +145,8 @@ func UnmarshalMessage(p container.Slice[byte], msg *Message) error {
 // endAf指示是否是payloads中最后一个参数
 func RangePayloads(msg *Message, p container.Slice[byte], fn func(p []byte, endBefore bool) bool) {
 	var i int
-	nPayload := len(msg.PayloadLayout)
-	for k, v := range msg.PayloadLayout {
+	nPayload := len(msg.payloadLayout)
+	for k, v := range msg.payloadLayout {
 		endAf := false
 		if k == nPayload-1 {
 			endAf = true
@@ -163,18 +163,18 @@ func RangePayloads(msg *Message, p container.Slice[byte], fn func(p []byte, endB
 func MarshalMessage(msg *Message, p *container.Slice[byte]) {
 	p.Reset()
 	// 设置魔数值
-	msg.Scope[0] = MagicNumber
-	*p = append(*p, msg.Scope[:]...)
+	msg.scope[0] = MagicNumber
+	*p = append(*p, msg.scope[:]...)
 	p.Append(EightBytesPadding)
-	binary.BigEndian.PutUint64((*p)[len(*p)-8:], msg.MsgId)
+	binary.BigEndian.PutUint64((*p)[len(*p)-8:], msg.msgId)
 	p.Append(FourBytesPadding)
-	binary.BigEndian.PutUint32((*p)[len(*p)-4:], msg.PayloadLength)
+	binary.BigEndian.PutUint32((*p)[len(*p)-4:], msg.payloadLength)
 	p.Append(FourBytesPadding)
-	binary.BigEndian.PutUint32((*p)[len(*p)-4:], msg.NameLayout[0])
+	binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(msg.GetInstanceName())))
 	p.Append(FourBytesPadding)
-	binary.BigEndian.PutUint32((*p)[len(*p)-4:], msg.NameLayout[1])
-	*p = append(*p, msg.InstanceName...)
-	*p = append(*p, msg.MethodName...)
+	binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(msg.GetMethodName())))
+	*p = append(*p, msg.GetInstanceName()...)
+	*p = append(*p, msg.GetMethodName()...)
 	// 序列化元数据
 	p.Append(FourBytesPadding)
 	binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(msg.MetaData.Len()))
@@ -189,12 +189,12 @@ func MarshalMessage(msg *Message, p *container.Slice[byte]) {
 	})
 	// 序列化载荷数据描述信息
 	p.Append(FourBytesPadding)
-	binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(msg.PayloadLayout)))
-	for _, v := range msg.PayloadLayout {
+	binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(msg.payloadLayout)))
+	for _, v := range msg.payloadLayout {
 		p.Append(FourBytesPadding)
 		binary.BigEndian.PutUint32((*p)[len(*p)-4:], v)
 	}
-	p.Append(msg.Payloads)
+	p.Append(msg.payloads)
 }
 
 // ResetMsg 指定策略的复用，对内存重用更加友好
@@ -207,23 +207,22 @@ func ResetMsg(msg *Message, resetOther, freeMetaData, usePayload bool, useSize i
 	if freeMetaData {
 		msg.MetaData.Reset()
 	}
-	if len(msg.PayloadLayout) > useSize {
-		msg.PayloadLayout = nil
+	if len(msg.payloadLayout) > useSize {
+		msg.payloadLayout = nil
 	} else {
-		msg.PayloadLayout.Reset()
+		msg.payloadLayout.Reset()
 	}
 	if !usePayload {
-		msg.Payloads = nil
-	} else if usePayload && len(msg.Payloads) > useSize {
-		msg.Payloads = nil
+		msg.payloads = nil
+	} else if usePayload && len(msg.payloads) > useSize {
+		msg.payloads = nil
 	} else {
-		msg.Payloads.Reset()
+		msg.payloads.Reset()
 	}
 	if resetOther {
-		*(*uint32)(unsafe.Pointer(&msg.Scope)) = 0
-		*(*uint64)(unsafe.Pointer(&msg.NameLayout)) = 0
-		msg.MsgId = 0
-		msg.InstanceName = ""
-		msg.MethodName = ""
+		*(*uint32)(unsafe.Pointer(&msg.scope)) = 0
+		msg.msgId = 0
+		msg.instanceName = ""
+		msg.methodName = ""
 	}
 }

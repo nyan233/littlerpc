@@ -12,19 +12,16 @@ import (
 func FuzzMessageBytes(f *testing.F) {
 	bytes := make([]byte, 0)
 	msg := NewMessage()
-	msg.Scope = [4]uint8{
+	msg.scope = [4]uint8{
 		MagicNumber,
 		MessageCall,
 		1,
 		1,
 	}
-	msg.MsgId = 1234455
-	msg.PayloadLength = 1024
-	msg.NameLayout = [2]uint32{
-		1, 10,
-	}
-	msg.InstanceName = "hello world"
-	msg.MethodName = "jest"
+	msg.msgId = 1234455
+	msg.payloadLength = 1024
+	msg.instanceName = "hello world"
+	msg.methodName = "jest"
 	MarshalMessage(msg, (*container.Slice[byte])(&bytes))
 	f.Add(bytes)
 	f.Fuzz(func(t *testing.T, data []byte) {
