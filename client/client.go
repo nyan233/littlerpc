@@ -161,6 +161,7 @@ func NewClient(opts ...Option) (*Client, error) {
 	}
 	// init ErrHandler
 	client.eHandle = config.ErrHandler
+	client.useMux = config.UseMux
 	return client, nil
 }
 

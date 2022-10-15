@@ -106,6 +106,11 @@ func NewServer(opts ...Option) *Server {
 		server.taskPool = pool.NewTaskPool(
 			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, serverRecover(server.logger))
 	}
+	// init reflection service
+	err := server.Elem(&LittleRpcReflection{&server.elems})
+	if err != nil {
+		panic(err)
+	}
 	return server
 }
 

@@ -33,3 +33,9 @@ func (s *SyncMap118[Key, Value]) Delete(k Key) {
 func (s *SyncMap118[Key, Value]) Len() int {
 	return int(atomic.LoadInt64(&s.length))
 }
+
+func (s *SyncMap118[Key, Value]) Range(fn func(key Key, value Value) bool) {
+	s.SMap.Range(func(key, value any) bool {
+		return fn(key.(Key), value.(Value))
+	})
+}
