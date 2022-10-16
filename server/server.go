@@ -162,7 +162,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 	for _, pMsg := range msgs {
 		// 根据读取的头信息初始化一些需要的Codec/Encoder
 		msgOpt := newConnDesc(s, pMsg.Message, c)
-		msgId := pMsg.Message.MsgId
+		msgId := pMsg.Message.GetMsgId()
 		switch pMsg.Message.GetMsgType() {
 		case protocol.MessagePing:
 			pMsg.Message.SetMsgType(protocol.MessagePong)
@@ -173,7 +173,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		case protocol.MessageCall:
 			break
 		default:
-			s.handleError(c, pMsg.Message.MsgId, lerror.LWarpStdError(common.ErrServer,
+			s.handleError(c, pMsg.Message.GetMsgId(), lerror.LWarpStdError(common.ErrServer,
 				"Unknown Message Call Type", pMsg.Message.GetMsgType()))
 			continue
 		}
@@ -228,7 +228,7 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, codecI, encode
 	msg.SetMsgType(protocol.MessageReturn)
 	msg.SetCodecType(codecI)
 	msg.SetEncoderType(encoderI)
-	msg.MsgId = msgId
+	msg.SetMsgId(msgId)
 	// OnCallResult Plugin
 	if err := s.pManager.OnCallResult(msg, &callResult); err != nil {
 		s.logger.ErrorFromErr(err)
@@ -236,7 +236,7 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, codecI, encode
 	// 处理用户过程返回的错误，v0.30开始规定每个符合规范的API最后一个返回值是error接口
 	lErr := s.setErrResult(msg, callResult[len(callResult)-1])
 	if lErr != nil {
-		s.handleError(msgOpt.Conn, msg.MsgId, lErr)
+		s.handleError(msgOpt.Conn, msg.GetMsgId(), lErr)
 		return
 	}
 	s.handleResult(msgOpt, msg, callResult)

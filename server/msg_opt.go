@@ -50,13 +50,15 @@ func (c *messageOpt) SelectCodecAndEncoder() {
 func (c *messageOpt) RealPayload() perror.LErrorDesc {
 	var err error
 	if c.Encoder.Scheme() != "text" {
-		c.Message.Payloads, err = c.Encoder.UnPacket(c.Message.Payloads)
+		bytes, err := c.Encoder.UnPacket(c.Message.Payloads())
 		if err != nil {
 			return c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
 		}
+		c.Message.SetPayloads(bytes)
 	}
 	// Plugin OnMessage
-	err = c.Server.pManager.OnMessage(c.Message, (*[]byte)(&c.Message.Payloads))
+	p := c.Message.Payloads()
+	err = c.Server.pManager.OnMessage(c.Message, (*[]byte)(&p))
 	if err != nil {
 		c.Server.logger.ErrorFromErr(err)
 	}
@@ -70,7 +72,7 @@ func (c *messageOpt) FreeMessage(parser *msgparser.LMessageParser) {
 }
 
 func (c *messageOpt) UseMux() bool {
-	return c.Message.Scope[0] == protocol.MuxEnabled
+	return c.Message.First() == protocol.MuxEnabled
 }
 
 func (c *messageOpt) Check() perror.LErrorDesc {
@@ -79,12 +81,12 @@ func (c *messageOpt) Check() perror.LErrorDesc {
 	elemData, ok := c.Server.elems.LoadOk(c.Message.GetInstanceName())
 	if !ok {
 		return c.Server.eHandle.LWarpErrorDesc(
-			common.ErrElemTypeNoRegister, c.Message.InstanceName)
+			common.ErrElemTypeNoRegister, c.Message.GetInstanceName())
 	}
-	method, ok := elemData.Methods[c.Message.MethodName]
+	method, ok := elemData.Methods[c.Message.GetMethodName()]
 	if !ok {
 		return c.Server.eHandle.LWarpErrorDesc(
-			common.ErrMethodNoRegister, c.Message.MethodName)
+			common.ErrMethodNoRegister, c.Message.GetMethodName())
 	}
 	c.Method = method
 	// 从客户端校验并获得合法的调用参数
@@ -113,20 +115,20 @@ func (c *messageOpt) checkCallArgs(receiver, method reflect.Value) ([]reflect.Va
 	iter := c.Message.PayloadsIterator()
 	// 去除接收者之后的输入参数长度
 	// 校验客户端传递的参数和服务端是否一致
-	if nInput := method.Type().NumIn() - 1; nInput != c.Message.PayloadLayout.Len() {
+	if nInput := method.Type().NumIn() - 1; nInput != iter.Tail() {
 		return nil, c.Server.eHandle.LWarpErrorDesc(common.ErrServer,
 			"client input args number no equal server",
-			fmt.Sprintf("Client : %d", c.Message.PayloadLayout.Len()), fmt.Sprintf("Server : %d", nInput))
+			fmt.Sprintf("Client : %d", iter.Tail()), fmt.Sprintf("Server : %d", nInput))
 	}
 	var inputStart int
-	if c.Message.GetMetaData("context-timeout") != "" {
+	if c.Message.MetaData.Load("context-timeout") != "" {
 		inputStart++
 	}
-	if c.Message.GetMetaData("stream-id") != "" {
+	if c.Message.MetaData.Load("stream-id") != "" {
 		inputStart++
 	}
 	inputTypeList := reflect2.FuncInputTypeList(method, inputStart, true, func(i int) bool {
-		if c.Message.PayloadLayout[i] == 0 {
+		if len(iter.Take()) == 0 {
 			return true
 		}
 		return false
@@ -160,6 +162,7 @@ func (c *messageOpt) checkCallArgs(receiver, method reflect.Value) ([]reflect.Va
 			// TODO Handle Error
 		}
 	}
+	iter.Reset()
 	for i := 0; i < len(inputTypeList) && iter.Next(); i++ {
 		eface := inputTypeList[i]
 		argBytes := iter.Take()

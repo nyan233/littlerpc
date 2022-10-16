@@ -22,7 +22,7 @@ func TestParser(t *testing.T) {
 	msg.MetaData.Store("Key3", "Value3")
 	msg.AppendPayloads([]byte("hello world"))
 	msg.AppendPayloads([]byte("65536"))
-	msg.PayloadLength = uint32(msg.GetLength())
+	msg.Length()
 	var marshalBytes []byte
 	protocol.MarshalMessage(msg, (*container.Slice[byte])(&marshalBytes))
 	muxBlock := protocol.MuxBlock{

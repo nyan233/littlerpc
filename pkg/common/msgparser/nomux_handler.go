@@ -16,7 +16,7 @@ func (n *noMuxHandler) MessageLength(base []byte) int {
 	if err := protocol.UnmarshalMessageOnMux(base, &msg); err != nil {
 		return -1
 	}
-	return int(msg.PayloadLength)
+	return int(msg.Length())
 }
 
 func (n *noMuxHandler) Unmarshal(data []byte, msg *protocol.Message) (Action, error) {

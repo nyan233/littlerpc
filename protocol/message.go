@@ -97,10 +97,11 @@ func (m *Message) BaseLength() int {
 	return ml + (2 * 4) + (4 * 2)
 }
 
-// GetLength 根据结构计算序列化之后的数据长度
-func (m *Message) GetLength() int {
+// Length 根据结构计算序列化之后的数据长度
+// 会设置m.payloadLength
+func (m *Message) Length() uint32 {
 	if m.payloadLength > 0 {
-		return int(m.payloadLength)
+		return m.payloadLength
 	}
 	// Scope & MsgId & PayloadLength
 	baseLen := MessageBaseLen
@@ -123,7 +124,12 @@ func (m *Message) GetLength() int {
 	baseLen += 4
 	baseLen += m.payloadLayout.Len() * 4
 	baseLen += m.payloads.Len()
-	return baseLen
+	m.payloadLength = uint32(baseLen)
+	return uint32(baseLen)
+}
+
+func (m *Message) First() uint8 {
+	return m.scope[0]
 }
 
 func (m *Message) GetCodecType() uint8 {
@@ -179,20 +185,36 @@ func (m *Message) AppendPayloads(p []byte) {
 	m.payloadLayout = append(m.payloadLayout, uint32(len(p)))
 }
 
+func (m *Message) Payloads() container2.Slice[byte] {
+	return m.payloads
+}
+
+func (m *Message) ReWritePayload(p []byte) {
+	m.payloads.Reset()
+	m.payloads.Append(p)
+}
+
+func (m *Message) SetPayloads(payloads []byte) {
+	m.payloads = payloads
+}
+
 func (m *Message) PayloadsIterator() *container2.Iterator[[]byte] {
 	rangCount := 0
-	i := -1
-	return container2.NewIterator[[]byte](func() ([]byte, bool) {
-		i++
-		if m.payloadLayout == nil || m.payloadLayout.Len() == 0 {
-			return nil, true
-		}
-		if i == m.payloadLayout.Len()-1 {
-			return m.payloads[rangCount : rangCount+int(m.payloadLayout[i])], true
+	var length int
+	if m.payloadLayout == nil || m.payloadLayout.Len() == 0 {
+		length = 0
+	} else {
+		length = m.payloadLayout.Len()
+	}
+	return container2.NewIterator[[]byte](length, func(current int) []byte {
+		if current+1 == m.payloadLayout.Len() {
+			return m.payloads[rangCount : rangCount+int(m.payloadLayout[current])]
 		}
 		old := rangCount
-		rangCount += int(m.payloadLayout[i])
-		return m.payloads[old:rangCount], false
+		rangCount += int(m.payloadLayout[current])
+		return m.payloads[old:rangCount]
+	}, func() {
+		rangCount = 0
 	})
 }
 
@@ -207,6 +229,7 @@ func (m *Message) Reset() {
 	m.instanceName = ""
 	m.methodName = ""
 	m.msgId = 0
+	m.payloadLength = 0
 	m.MetaData.Reset()
 	m.payloadLayout.Reset()
 	m.payloads.Reset()

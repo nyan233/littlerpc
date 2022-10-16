@@ -162,6 +162,7 @@ func RangePayloads(msg *Message, p container.Slice[byte], fn func(p []byte, endB
 // *[]byte是为了提供更好的内存复用语义
 func MarshalMessage(msg *Message, p *container.Slice[byte]) {
 	p.Reset()
+	msg.payloadLength = uint32(msg.Length())
 	// 设置魔数值
 	msg.scope[0] = MagicNumber
 	*p = append(*p, msg.scope[:]...)
@@ -220,9 +221,10 @@ func ResetMsg(msg *Message, resetOther, freeMetaData, usePayload bool, useSize i
 		msg.payloads.Reset()
 	}
 	if resetOther {
-		*(*uint32)(unsafe.Pointer(&msg.scope)) = 0
-		msg.msgId = 0
+		msg.scope = [...]uint8{MagicNumber, 0, 0, 0}
 		msg.instanceName = ""
 		msg.methodName = ""
+		msg.msgId = 0
+		msg.payloadLength = 0
 	}
 }

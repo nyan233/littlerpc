@@ -23,22 +23,22 @@ func (s *Server) setErrResult(msg *protocol.Message, callResult reflect.Value) p
 	interErr := reflect2.ToValueTypeEface(callResult)
 	// 无错误
 	if interErr == error(nil) {
-		msg.SetMetaData("littlerpc-code", strconv.Itoa(common2.Success.Code()))
-		msg.SetMetaData("littlerpc-message", common2.Success.Message())
+		msg.MetaData.Store("littlerpc-code", strconv.Itoa(common2.Success.Code()))
+		msg.MetaData.Store("littlerpc-message", common2.Success.Message())
 		return nil
 	}
 	// 检查是否实现了自定义错误的接口
 	desc, ok := interErr.(perror.LErrorDesc)
 	if ok {
-		msg.SetMetaData("littlerpc-code", strconv.Itoa(desc.Code()))
-		msg.SetMetaData("littlerpc-message", desc.Message())
+		msg.MetaData.Store("littlerpc-code", strconv.Itoa(desc.Code()))
+		msg.MetaData.Store("littlerpc-message", desc.Message())
 		bytes, err := desc.MarshalMores()
 		if err != nil {
 			return s.eHandle.LWarpErrorDesc(
 				common2.ErrCodecMarshalError,
 				fmt.Sprintf("%s : %s", "littlerpc-mores-bin", err.Error()))
 		}
-		msg.SetMetaData("littlerpc-mores-bin", convert.BytesToString(bytes))
+		msg.MetaData.Store("littlerpc-mores-bin", convert.BytesToString(bytes))
 		return nil
 	}
 	err, ok := interErr.(error)
@@ -47,8 +47,8 @@ func (s *Server) setErrResult(msg *protocol.Message, callResult reflect.Value) p
 	if !ok {
 		return s.eHandle.LNewErrorDesc(perror.UnsafeOption, "Server.Elem no checker on error")
 	}
-	msg.SetMetaData("littlerpc-code", strconv.Itoa(perror.Unknown))
-	msg.SetMetaData("littlerpc-message", err.Error())
+	msg.MetaData.Store("littlerpc-code", strconv.Itoa(perror.Unknown))
+	msg.MetaData.Store("littlerpc-message", err.Error())
 	return nil
 }
 
@@ -62,15 +62,13 @@ func (s *Server) processAndSendMsg(msgOpt *messageOpt, msg *protocol.Message, us
 	defer bytesBuffer.Put(bp)
 	// write body
 	if msgOpt.Encoder.Scheme() != "text" {
-		bytes, err := msgOpt.Encoder.EnPacket(msg.Payloads)
+		bytes, err := msgOpt.Encoder.EnPacket(msg.Payloads())
 		if err != nil {
-			s.handleError(msgOpt.Conn, msg.MsgId, s.eHandle.LWarpErrorDesc(common2.ErrServer, err.Error()))
+			s.handleError(msgOpt.Conn, msg.GetMsgId(), s.eHandle.LWarpErrorDesc(common2.ErrServer, err.Error()))
 			return
 		}
-		msg.Payloads = append(msg.Payloads[:0], bytes...)
+		msg.ReWritePayload(bytes)
 	}
-	// 计算真实长度
-	msg.PayloadLength = uint32(msg.GetLength())
 	protocol.MarshalMessage(msg, bp)
 	// 不使用Mux消息的情况
 	if !useMux {
@@ -98,7 +96,7 @@ func (s *Server) sendOnMux(msgOpt *messageOpt, bytesBuffer *sync.Pool, msg *prot
 	muxMsg := &protocol.MuxBlock{
 		Flags:    protocol.MuxEnabled,
 		StreamId: random.FastRand(),
-		MsgId:    msg.MsgId,
+		MsgId:    msg.GetMsgId(),
 	}
 	// write data
 	// 大于一个MuxBlock时则分片发送
@@ -131,7 +129,7 @@ func (s *Server) handleResult(msgOpt *messageOpt, msg *protocol.Message, callRes
 		// 可替换的Codec已经不需要Any包装器了
 		bytes, err := msgOpt.Codec.Marshal(eface)
 		if err != nil {
-			s.handleError(msgOpt.Conn, msg.MsgId, common2.ErrServer)
+			s.handleError(msgOpt.Conn, msg.GetMsgId(), common2.ErrServer)
 			return
 		}
 		msg.AppendPayloads(bytes)
@@ -149,20 +147,20 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Mes
 	iter := msg.PayloadsIterator()
 	// 去除接收者之后的输入参数长度
 	// 校验客户端传递的参数和服务端是否一致
-	if nInput := method.Type().NumIn() - 1; nInput != msg.PayloadLayout.Len() {
+	if nInput := method.Type().NumIn() - 1; nInput != iter.Tail() {
 		return nil, s.eHandle.LWarpErrorDesc(common2.ErrServer,
 			"client input args number no equal server",
-			fmt.Sprintf("Client : %d", msg.PayloadLayout.Len()), fmt.Sprintf("Server : %d", nInput))
+			fmt.Sprintf("Client : %d", iter.Tail()), fmt.Sprintf("Server : %d", nInput))
 	}
 	var inputStart int
-	if msg.GetMetaData("context-timeout") != "" {
+	if msg.MetaData.Load("context-timeout") != "" {
 		inputStart++
 	}
-	if msg.GetMetaData("stream-id") != "" {
+	if msg.MetaData.Load("stream-id") != "" {
 		inputStart++
 	}
 	inputTypeList := reflect2.FuncInputTypeList(method, inputStart, true, func(i int) bool {
-		if msg.PayloadLayout[i] == 0 {
+		if len(iter.Take()) == 0 {
 			return true
 		}
 		return false
@@ -232,9 +230,9 @@ func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo per
 		// 普通一些的错误可以不关闭连接
 		msg := protocol.NewMessage()
 		msg.SetMsgType(protocol.MessageReturn)
-		msg.MsgId = msgId
-		msg.SetMetaData("littlerpc-code", strconv.Itoa(errNo.Code()))
-		msg.SetMetaData("littlerpc-message", errNo.Message())
+		msg.SetMsgId(msgId)
+		msg.MetaData.Store("littlerpc-code", strconv.Itoa(errNo.Code()))
+		msg.MetaData.Store("littlerpc-message", errNo.Message())
 		// 为空则不序列化Mores, 否则会造成空间浪费
 		mores := errNo.Mores()
 		if mores != nil && len(mores) > 0 {
@@ -244,10 +242,9 @@ func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo per
 				_ = desc.Close()
 				return
 			} else {
-				msg.SetMetaData("littlerpc-mores-bin", convert.BytesToString(bytes))
+				msg.MetaData.Store("littlerpc-mores-bin", convert.BytesToString(bytes))
 			}
 		}
-		msg.PayloadLength = uint32(msg.GetLength())
 		bp := bytesBuffer.Get().(*container.Slice[byte])
 		bp.Reset()
 		defer bytesBuffer.Put(bp)

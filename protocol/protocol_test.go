@@ -90,7 +90,7 @@ func TestProtocol(t *testing.T) {
 		t.Fatal(errors.New("payload layout failed"))
 	}
 	MarshalMessage(msg, bytes)
-	if msg.GetLength() != len(*bytes) {
+	if msg.Length() != uint32(len(*bytes)) {
 		t.Fatal("MarshalAll bytes not equal")
 	}
 	ResetMsg(msg, true, true, true, 1024)
@@ -106,6 +106,8 @@ func TestProtocolReset(t *testing.T) {
 	for i := 0; i < int(random.FastRandN(100)); i++ {
 		msg.MetaData.Store(random.GenStringOnAscii(10), random.GenStringOnAscii(10))
 	}
+	var bytes []byte
+	MarshalMessage(msg, (*container2.Slice[byte])(&bytes))
 	msg.Reset()
 	newMsg := NewMessage()
 	assert.Equal(t, msg.GetMethodName(), newMsg.GetMethodName())
@@ -114,7 +116,7 @@ func TestProtocolReset(t *testing.T) {
 	assert.Equal(t, msg.GetCodecType(), newMsg.GetCodecType())
 	assert.Equal(t, msg.GetMsgType(), newMsg.GetMsgType())
 	assert.Equal(t, msg.GetMsgId(), newMsg.GetMsgId())
-	assert.Equal(t, msg.GetLength(), newMsg.GetLength())
+	assert.Equal(t, msg.Length(), newMsg.Length())
 	assert.Equal(t, *(*uint8)(unsafe.Pointer(msg)), *(*uint8)(unsafe.Pointer(newMsg)))
 	assert.Equal(t, msg.MetaData.Len(), newMsg.MetaData.Len())
 }

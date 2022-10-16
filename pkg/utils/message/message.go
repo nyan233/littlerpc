@@ -2,11 +2,24 @@ package message
 
 import (
 	"encoding/json"
+	container2 "github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
 	"github.com/nyan233/littlerpc/protocol"
+	"unsafe"
 )
+
+type messageCopyDefined struct {
+	Scope         [4]uint8
+	MsgId         uint64
+	PayloadLength uint32
+	InstanceName  string
+	MethodName    string
+	MetaData      *container2.SliceMap[string, string]
+	PayloadLayout container2.Slice[uint32]
+	Payloads      container2.Slice[byte]
+}
 
 type Graph struct {
 	First         string
@@ -50,8 +63,9 @@ func AnalysisMessage(data []byte) *Graph {
 	g := &Graph{
 		MetaData: make(map[string]string),
 	}
-	msg := protocol.NewMessage()
-	_ = protocol.UnmarshalMessage(data, msg)
+	rawMsg := protocol.NewMessage()
+	msg := (*messageCopyDefined)(unsafe.Pointer(rawMsg))
+	_ = protocol.UnmarshalMessage(data, rawMsg)
 	switch msg.Scope[0] {
 	case protocol.MagicNumber:
 		g.First = "no_mux"
@@ -60,7 +74,7 @@ func AnalysisMessage(data []byte) *Graph {
 	default:
 		g.First = "unknown"
 	}
-	switch msg.GetMsgType() {
+	switch rawMsg.GetMsgType() {
 	case protocol.MessageCall:
 		g.MsgType = "call"
 	case protocol.MessageReturn:
@@ -74,12 +88,12 @@ func AnalysisMessage(data []byte) *Graph {
 	default:
 		g.MsgType = "unknown"
 	}
-	if w := codec.GetCodecFromIndex(int(msg.GetCodecType())); w != nil {
+	if w := codec.GetCodecFromIndex(int(rawMsg.GetCodecType())); w != nil {
 		g.Codec = w.Scheme()
 	} else {
 		g.Codec = "unknown"
 	}
-	if w := packet.GetEncoderFromIndex(int(msg.GetEncoderType())); w != nil {
+	if w := packet.GetEncoderFromIndex(int(rawMsg.GetEncoderType())); w != nil {
 		g.Encoder = w.Scheme()
 	} else {
 		g.Encoder = "unknown"

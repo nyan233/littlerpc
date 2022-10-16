@@ -109,17 +109,17 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 			}
 			switch action {
 			case UnmarshalBase:
-				buf, ok := h.noReadyBuffer[msg.MsgId]
+				buf, ok := h.noReadyBuffer[msg.GetMsgId()]
 				if !ok {
-					h.noReadyBuffer[msg.MsgId] = readyBuffer{
-						MsgId:         msg.MsgId,
-						PayloadLength: msg.PayloadLength,
+					h.noReadyBuffer[msg.GetMsgId()] = readyBuffer{
+						MsgId:         msg.GetMsgId(),
+						PayloadLength: uint32(msg.Length()),
 						RawBytes:      h.halfBuffer,
 					}
 				}
 				buf.RawBytes = append(buf.RawBytes, readData...)
 				if uint32(len(buf.RawBytes)) == buf.PayloadLength {
-					defer h.deleteNoReadyBuffer(msg.MsgId)
+					defer h.deleteNoReadyBuffer(msg.GetMsgId())
 					msg.Reset()
 					err := protocol.UnmarshalMessage(buf.RawBytes, msg)
 					if err != nil {

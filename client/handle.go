@@ -16,17 +16,17 @@ import (
 )
 
 func (c *Client) handleProcessRetErr(msg *protocol.Message) perror.LErrorDesc {
-	code, err := strconv.Atoi(msg.GetMetaData("littlerpc-code"))
+	code, err := strconv.Atoi(msg.MetaData.Load("littlerpc-code"))
 	if err != nil {
 		return perror.LWarpStdError(common.ErrClient, err.Error())
 	}
-	message := msg.GetMetaData("littlerpc-message")
+	message := msg.MetaData.Load("littlerpc-message")
 	// Success表示无错误
 	if code == common.Success.Code() && message == common.Success.Message() {
 		return nil
 	}
 	desc := c.eHandle.LNewErrorDesc(code, message)
-	moresBinStr := msg.GetMetaData("littlerpc-mores-bin")
+	moresBinStr := msg.MetaData.Load("littlerpc-mores-bin")
 	if moresBinStr != "" {
 		err := desc.UnmarshalMores(convert.StringToBytes(moresBinStr))
 		if err != nil {
@@ -52,11 +52,11 @@ func (c *Client) readMsg(ctx context.Context, msgId uint64, lc *lockConn) (*prot
 	// encoder类型为text时不需要额外的内存拷贝
 	// 默认的encoder即text
 	if msg.GetEncoderType() != protocol.DefaultEncodingType {
-		packet, err := c.encoderWp.Instance().UnPacket(msg.Payloads)
+		packet, err := c.encoderWp.Instance().UnPacket(msg.Payloads())
 		if err != nil {
 			return nil, c.eHandle.LNewErrorDesc(perror.ClientError, "UnPacket failed", err)
 		}
-		msg.Payloads = append(msg.Payloads[:0], packet...)
+		msg.ReWritePayload(packet)
 	}
 	// OnReceiveMessage 接收完消息之后调用的插件过程
 	stdErr := c.pluginManager.OnReceiveMessage(msg, nil)
@@ -74,30 +74,32 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lo
 	defer lc.parser.FreeMessage(msg)
 	// 没有参数布局则表示该过程之后一个error类型的返回值
 	// 但error是不在返回值列表中处理的
-	if msg.PayloadLayout.Len() > 0 {
+	iter := msg.PayloadsIterator()
+	if iter.Tail() > 0 {
 		// 处理结果再处理错误, 因为游戏过程可能因为某种原因失败返回错误, 但也会返回处理到一定
 		// 进度的结果, 这个时候检查到错误就激进地抛弃结果是不可取的
-		if method.Type().NumOut()-1 != msg.PayloadLayout.Len() {
+		if method.Type().NumOut()-1 != iter.Tail() {
 			panic("server return args number no equal client")
 		}
 		iter := msg.PayloadsIterator()
 		outputList := lreflect.FuncOutputTypeList(method, func(i int) bool {
 			// 最后的是error, false/true都可以
-			if i >= msg.PayloadLayout.Len() {
+			if i >= iter.Tail() {
 				return false
 			}
-			if msg.PayloadLayout[i] == 0 {
+			if len(iter.Take()) == 0 {
 				return true
 			}
 			return false
 		})
+		iter.Reset()
 		for k, v := range outputList[:len(outputList)-1] {
-			if msg.PayloadLayout[k] == 0 {
-				iter.Take()
+			bytes := iter.Take()
+			if bytes == nil || len(bytes) == 0 {
 				rep[k] = v
 				continue
 			}
-			returnV, err2 := common.CheckCoderType(c.codecWp.Instance(), iter.Take(), v)
+			returnV, err2 := common.CheckCoderType(c.codecWp.Instance(), bytes, v)
 			if err2 != nil {
 				return c.eHandle.LWarpErrorDesc(common.ErrClient, "CheckCoderType failed", err2.Error())
 			}
@@ -106,7 +108,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lo
 		// 返回的参数个数和用户注册的过程不对应
 		if iter.Next() {
 			return c.eHandle.LWarpErrorDesc(common.ErrServer, "return results number is no equal client",
-				fmt.Sprintf("Server=%d", msg.PayloadLayout.Len()),
+				fmt.Sprintf("Server=%d", iter.Tail()),
 				fmt.Sprintf("Client=%d", len(outputList)))
 		}
 	}
@@ -142,15 +144,6 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 		args = args[1:]
 	}
 	for _, v := range args {
-		argType := common.CheckIType(v)
-		// 参数为指针类型则找出Elem的类型
-		if argType == protocol.Pointer {
-			argType = common.CheckIType(reflect.ValueOf(v).Elem().Interface())
-			// 不支持多重指针的数据结构
-			if argType == protocol.Pointer {
-				panic(interface{}("multiple pointer no support"))
-			}
-		}
 		bytes, err := c.codecWp.Instance().Marshal(v)
 		if err != nil {
 			return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(common.ErrCodecMarshalError,
@@ -175,20 +168,19 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 	// write header
 	// encoder类型为text不需要额外拷贝内存
 	if c.encoderWp.Index() != int(protocol.DefaultEncodingType) {
-		bodyBytes, err := c.encoderWp.Instance().EnPacket(msg.Payloads)
+		bodyBytes, err := c.encoderWp.Instance().EnPacket(msg.Payloads())
 		if err != nil {
 			return c.eHandle.LWarpErrorDesc(common.ErrClient, "Encoder.EnPacket", err.Error())
 		}
-		msg.Payloads = append(msg.Payloads[:0], bodyBytes...)
+		msg.ReWritePayload(bodyBytes)
 	}
-	msg.PayloadLength = uint32(msg.GetLength())
 	protocol.MarshalMessage(msg, memBuffer)
 	// 插件的
 	if err := c.pluginManager.OnSendMessage(msg, (*[]byte)(memBuffer)); err != nil {
 		c.logger.ErrorFromErr(err)
 	}
 	// 注册用于通知的Channel
-	lc.notify.Store(msg.MsgId, make(chan Complete, 1))
+	lc.notify.Store(msg.GetMsgId(), make(chan Complete, 1))
 	if !c.useMux {
 		err := common.WriteControl(lc.conn, *memBuffer)
 		if err != nil {
@@ -199,7 +191,7 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 	muxMsg := &protocol.MuxBlock{
 		Flags:    protocol.MuxEnabled,
 		StreamId: random.FastRand(),
-		MsgId:    msg.MsgId,
+		MsgId:    msg.GetMsgId(),
 	}
 	// 要发送的数据小于一个MuxBlock的长度则直接发送
 	// 大于一个MuxBlock时则分片发送

@@ -214,7 +214,7 @@ func (c *Client) RawCall(processName string, args ...interface{}) ([]interface{}
 	if err := c.sendCallMsg(context.Background(), msg, conn); err != nil {
 		return nil, err
 	}
-	rMsg, err := c.readMsg(context.Background(), msg.MsgId, conn)
+	rMsg, err := c.readMsg(context.Background(), msg.GetMsgId(), conn)
 	if err != nil {
 		return nil, err
 	}
@@ -255,17 +255,17 @@ func (c *Client) SingleCall(processName string, ctx context.Context, req interfa
 	if err := c.sendCallMsg(ctx, msg, conn); err != nil {
 		return err
 	}
-	rMsg, err := c.readMsg(ctx, msg.MsgId, conn)
+	rMsg, err := c.readMsg(ctx, msg.GetMsgId(), conn)
 	if err != nil {
 		return err
 	}
 	defer conn.parser.FreeMessage(rMsg)
+	iter := rMsg.PayloadsIterator()
 	switch {
-	case rMsg.PayloadLayout == nil || len(rMsg.PayloadLayout) == 0,
-		rMsg.Payloads == nil || rMsg.Payloads.Len() == 0:
+	case iter.Tail() == 0:
 		return c.handleProcessRetErr(msg)
 	default:
-		err := c.codecWp.Instance().Unmarshal(rMsg.Payloads, rep)
+		err := c.codecWp.Instance().Unmarshal(iter.Take(), rep)
 		if err != nil {
 			return c.eHandle.LWarpErrorDesc(common.ErrClient, err)
 		}
@@ -296,7 +296,7 @@ func (c *Client) Call(processName string, args ...interface{}) ([]interface{}, e
 		return nil, err
 	}
 	rep := make([]interface{}, method.Type().NumOut()-1)
-	err = c.readMsgAndDecodeReply(ctx, msg.MsgId, conn, method, rep)
+	err = c.readMsgAndDecodeReply(ctx, msg.GetMsgId(), conn, method, rep)
 	c.pluginManager.OnResult(msg, &rep, err)
 	if err != nil {
 		return rep, err
@@ -327,7 +327,7 @@ func (c *Client) AsyncCall(processName string, args ...interface{}) error {
 			return
 		}
 		rep := make([]interface{}, method.Type().NumOut()-1)
-		err = c.readMsgAndDecodeReply(ctx, msg.MsgId, conn, method, rep)
+		err = c.readMsgAndDecodeReply(ctx, msg.GetMsgId(), conn, method, rep)
 		if err != nil && callBackIsOk {
 			cbFn(nil, err)
 			return

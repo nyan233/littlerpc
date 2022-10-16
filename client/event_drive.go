@@ -40,7 +40,7 @@ func (c *Client) onMessage(conn transport.ConnAdapter, bytes []byte) {
 		return
 	}
 	for _, pMsg := range allMsg {
-		done, ok := desc.notify.LoadOk(pMsg.Message.MsgId)
+		done, ok := desc.notify.LoadOk(pMsg.Message.GetMsgId())
 		if !ok {
 			c.logger.ErrorFromString("Message read complete but done channel not found")
 			continue

@@ -31,7 +31,7 @@ func (m *muxHandler) Unmarshal(data []byte, msg *protocol.Message) (Action, erro
 	if err != nil {
 		return -1, err
 	}
-	if uint32(muxBlock.PayloadLength) >= msg.PayloadLength {
+	if uint32(muxBlock.PayloadLength) >= msg.Length() {
 		// 读出完整的消息
 		err := protocol.UnmarshalMessage(muxBlock.Payloads, msg)
 		if err != nil {
