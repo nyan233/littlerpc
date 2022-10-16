@@ -18,8 +18,9 @@ func TestH(t *testing.T) {
 	if err != nil {
 		panic(interface{}(err))
 	}
+	defer os.Remove("./test/Test_proxy.go")
+	defer file.Close()
 	_, _ = file.Write([]byte("hello world!"))
-	_ = os.Remove("./test/Test_proxy.go")
 }
 
 func TestGenApi(t *testing.T) {
