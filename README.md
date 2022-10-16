@@ -13,9 +13,9 @@
 	- [x] other
 - [x] 可替换的压缩算法
 	- [x] gzip
-- [ ] 调用描述接口
+- [x] 调用描述接口
 	- [x] Sync
-	- [ ] Async
+	- [x] Async
 - [x] 负载均衡
 	- [x] 地址列表解析器
 	- [x] 轮询
@@ -29,8 +29,8 @@
 	- [ ] 限流
 	- [ ] 网关
 	- [ ] 注册中心
-- [ ] 完善可用的代码生成器
-	- [ ] 生成async api
+- [x] 完善可用的代码生成器
+	- [x] 生成async api
 	- [x] 生成sync api
 - [ ] 完善的示例
 
@@ -62,50 +62,13 @@
 |   Arpc    |   null    |     null     |     null     |  null  |
 |  Grpc-go  | 173594 ns | 463660659 ns | 317374210 ns | 73959  |
 
-
-
-## Quick-Start
-
-假设有以下服务需要被使用
+## Install
 
 ```go
-type Hello int
-
-func (receiver Hello) Hello(s string) int {
-	fmt.Println(s)
-	return 1 << 20
-}
+go get github.com/nyan233/littlerpc
 ```
 
-以下代码启动一个服务器并声明可以被客户端调用的过程，需要注意的是`go`的过程命名规则是大小写敏感的`hello`之类在`go`中被识别为不可导出的过程，这些过程并不会被`littlerpc`注册。
-
-```go
-server := server.NewServer(server.WithAddressServer(":1234"))
-err := server.Elem(new(Hello))
-if err != nil {
-    panic(err)
-}
-err = server.Start()
-if err != nil {
-    panic(err)
-}
-clientInfo := new(Hello)
-client := client.NewClient(client.WithAddressClient(":1234"))
-_ = client.BindFunc(clientInfo)
-rep, _ := client.Call("Hello", "hello world!")
-fmt.Println(rep[0])
-```
-
-`OutPut`
-
-```
-hello world!
-1048576
-```
-
-## Start
-
-### 过程的定义
+## Process-Defined
 
 在`littlerpc`中一个合法的过程是如下那样，必须有一个接收器，参数可以是指针类型或者非指针类型，返回结果集允许指针/非指针类型，返回值列表中最后的值类型必须是error
 
@@ -151,9 +114,9 @@ func(receiver) FuncName() error
 	func(receiver Type) FuncName(...Type) (...Type,error)
 	```
 
+## LittleRpc-Utils
 
-
-### 代码生成器
+### Code-Generator
 
 在编写每个客户端的代理对象时有很多繁琐的动作需要人工去完成，所以为了减轻这些不必要的工作，我提供了一个简易实现的代码生成器，自动生成代理对象和对应的过程。
 
@@ -162,187 +125,41 @@ func(receiver) FuncName() error
 #### Install(安装)
 
 ```shell
-go install github.com/nyan233/littlerpc/pxtor
+go install github.com/nyan233/littlerpc/cmd/pxtor
 ```
 
-#### 使用
+`LittleRpc-Example`中也使用了`pxtor`，这是其中的一个例子: [proxy](./example/proxy)
 
-比如有以下对象需要生成
+### LittleRpc-Curl
 
-`example/littlerpc/proxy/main.go`
+这是一个通过使用`LittleRpc`默认注册的`reflection service`来提供调试和调用测试的工具
 
-```go
-type FileServer struct {
-	fileMap map[string][]byte
-}
+#### Install(安装)
 
-func NewFileServer() *FileServer {
-	return &FileServer{fileMap: make(map[string][]byte)}
-}
-
-func (fs *FileServer) SendFile(path string, data []byte) {
-	fs.fileMap[path] = data
-}
-
-func (fs *FileServer) GetFile(path string) ([]byte, bool) {
-	bytes, ok := fs.fileMap[path]
-	return bytes, ok
-}
-
-func (fs *FileServer) OpenSysFile(path string) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	return ioutil.ReadAll(file)
-}
-```
-
-```shell
- pxtor -o test_proxy.go -r main.FileServer
-```
-
-生成完之后需要您手动调节一下`import`，因为生成器无法判断正确的`import`上下文
-
-`example/littlerpc/proxy/Test_proxy.go`
-
-```go
-/*
-	@Generator   : littlerpc-generator
-	@CreateTime  : 2022-06-21 02:33:45.094649 +0800 CST m=+0.000846871
-	@Author      : littlerpc-generator
-*/
-package main
-
-import (
-	"github.com/nyan233/littlerpc/impl/client"
-)
-
-type FileServerInterface interface {
-	SendFile(path string, data []byte) error
-	GetFile(path string) ([]byte, bool, error)
-	OpenSysFile(path string) ([]byte, error)
-}
-
-type FileServerProxy struct {
-	*client.Client
-}
-
-func NewFileServerProxy(client *client.Client) FileServerInterface {
-	proxy := &FileServerProxy{}
-	err := client.BindFunc(proxy)
-	if err != nil {
-		panic(err)
-	}
-	proxy.Client = client
-	return proxy
-}
-
-func (proxy FileServerProxy) SendFile(path string, data []byte) error {
-	inter, err := proxy.Call("FileServer.SendFile", path, data)
-	if err != nil {
-		return err
-	}
-	r0, _ := inter[0].(error)
-	return r0
-}
-
-func (proxy FileServerProxy) GetFile(path string) ([]byte, bool, error) {
-	inter, err := proxy.Call("FileServer.GetFile", path)
-	if err != nil {
-		return nil, false, err
-	}
-	r0 := inter[0].([]byte)
-	r1 := inter[1].(bool)
-	r2, _ := inter[2].(error)
-	return r0, r1, r2
-}
-
-func (proxy FileServerProxy) OpenSysFile(path string) ([]byte, error) {
-	inter, err := proxy.Call("FileServer.OpenSysFile", path)
-	if err != nil {
-		return nil, err
-	}
-	r0 := inter[0].([]byte)
-	r1, _ := inter[1].(error)
-	return r0, r1
-}
+```sh
+go install github.com/nyan233/littlerpc/cmd/lrpcurl
 ```
 
 ## Example
 
-- [负载均衡的使用]()
-- [在Codec中将json替换为protobuf]()
-- [客户端绑定多个实例]()
-- [将传输协议从tcp替换为websocket]()
-- [将kcp协议接入到littlerpc]()
-- [将etcd作为注册中心]()
+### Quick-Start
 
-## API
+- [quick-start](./example/quick_start)
+- [hello-world](./example/hello_world)
 
-### Common
+### Transport
 
-#### 自定义序列化/反序列化框架(Codec)
+- `TCP`
+- `WebSocket`
 
-> `littlerpc`默认使用json传递载荷数据，当然你也可以将其替换
+### Custom
 
-- [Use protobuf]()
+- `Codec`
+- `Encoder`
 
-#### 自定义压缩算法(Encoder)
+### Balancer & Resolver
 
-> `littlerpc`默认不进行压缩，框架的内部队默认不压缩的`Encoder`有特殊优化，不会产生额外的内存拷贝，当然你也可以将其替换
-
-- [Use gzip]()
-
-#### 自定义使用的底层传输协议
-
-> littlerpc默认使用`tcp`来传输数据，当然这也是可以替换的
-
-- [Use websocket]()
-
-#### 关闭LittleRpc使用到的所有组件的日志
-
-- [Close Logger]()
-
-### Server
-
-#### NewServer(op ...Options)
-
-> Sever的Codec和Encoder都是自适应的，根据Client需要自动切换，所以不需要单独设置
-
-##### WithAddressServer(adds ...string)
-
-`addrs`是变长参数，此函数可以指定监听的地址
-
-##### WithTlsServer(tlsC *tls.Config)
-
-`Tls`的配置相关
-
-##### WithTransProtocol(scheme string)
-
-根据规则来选择不同的底层传输协议的实现
-
-##### WithOpenLogger(ok bool)
-
-是否开启Server特定
-
-### Client
-
-> Client需要指定Codec和Encoder，否则则使用默认的Codec和Encoder，也就是json&text
-
-#### NewClient(op ...Options)
-
-##### WithCallOnErr(fn func(err error))
-
-设置处理Server错误返回的回调函数
-
-##### WithProtocol(scheme string)
-
-设置客户端的底层传输协议
-
-##### WithTlsClient(tlsC *tls.Config)
-
-Tls配置相关
+- Todo
 
 ## Thanks
 
