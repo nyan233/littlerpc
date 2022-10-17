@@ -27,9 +27,12 @@ type NBioWebSocketEngine struct {
 	onErr    func(err error)
 }
 
-func NewNBioWebsocketClientEngine() ClientEngineBuilder {
+func NewNBioWebsocketClient() ClientBuilder {
 	return &NBioWebSocketEngine{
-		wsEngine: nbhttp.NewEngine(nbhttp.Config{}),
+		wsEngine: nbhttp.NewEngine(nbhttp.Config{
+			NPoller: 1,
+			NParser: 1,
+		}),
 		onMsg: func(conn ConnAdapter, bytes []byte) {
 			return
 		},
@@ -45,7 +48,7 @@ func NewNBioWebsocketClientEngine() ClientEngineBuilder {
 	}
 }
 
-func NewNBioWebsocketServerEngine(config NetworkServerConfig) ServerEngineBuilder {
+func NewNBioWebsocketServer(config NetworkServerConfig) ServerBuilder {
 	nConfig := nbhttp.Config{}
 	nConfig.Name = "LittleRpc-Server-WebSocket"
 	nConfig.Network = "tcp"

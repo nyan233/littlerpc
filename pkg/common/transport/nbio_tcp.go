@@ -20,9 +20,12 @@ type NBioTcpEngine struct {
 	onErr   func(err error)
 }
 
-func NewNBioTcpClientEngine() ClientEngineBuilder {
+func NewNBioTcpClient() ClientBuilder {
 	return &NBioTcpEngine{
-		server: nbio.NewEngine(nbio.Config{}),
+		server: nbio.NewEngine(nbio.Config{
+			Name:    "LittleRpc-TCP-Client",
+			NPoller: 1,
+		}),
 		onOpen: func(conn ConnAdapter) {
 			return
 		},
@@ -38,7 +41,7 @@ func NewNBioTcpClientEngine() ClientEngineBuilder {
 	}
 }
 
-func NewNBioTcpServerEngine(config NetworkServerConfig) ServerEngineBuilder {
+func NewNBioTcpServer(config NetworkServerConfig) ServerBuilder {
 	nConfig := nbio.Config{}
 	nConfig.Name = "LittleRpc-Server-Tcp"
 	nConfig.Network = "tcp"

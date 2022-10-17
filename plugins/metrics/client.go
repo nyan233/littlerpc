@@ -1,7 +1,7 @@
 package metrics
 
 import (
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/message"
 )
 
 var (
@@ -13,22 +13,22 @@ var (
 type ClientMetricsPlugin struct {
 }
 
-func (c *ClientMetricsPlugin) OnCall(msg *protocol.Message, args *[]interface{}) error {
+func (c *ClientMetricsPlugin) OnCall(msg *message.Message, args *[]interface{}) error {
 	return nil
 }
 
-func (c *ClientMetricsPlugin) OnSendMessage(msg *protocol.Message, bytes *[]byte) error {
+func (c *ClientMetricsPlugin) OnSendMessage(msg *message.Message, bytes *[]byte) error {
 	ClientUploadTrafficMetrics.Add(int64(len(*bytes)))
 	ClientCallMetrics.IncCount()
 	return nil
 }
 
-func (c *ClientMetricsPlugin) OnReceiveMessage(msg *protocol.Message, bytes *[]byte) error {
+func (c *ClientMetricsPlugin) OnReceiveMessage(msg *message.Message, bytes *[]byte) error {
 	ClientDownloadTrafficMetrics.Add(0)
 	return nil
 }
 
-func (c *ClientMetricsPlugin) OnResult(msg *protocol.Message, results *[]interface{}, err error) {
+func (c *ClientMetricsPlugin) OnResult(msg *message.Message, results *[]interface{}, err error) {
 	if err != nil {
 		ClientCallMetrics.IncFailed()
 	} else {

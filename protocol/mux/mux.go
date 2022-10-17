@@ -1,4 +1,4 @@
-package protocol
+package mux
 
 import (
 	"github.com/nyan233/littlerpc/pkg/container"

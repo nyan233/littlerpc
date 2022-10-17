@@ -1,19 +1,20 @@
 package msgparser
 
 import (
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/message"
+	"github.com/nyan233/littlerpc/protocol/mux"
 )
 
 type muxHandler struct {
 }
 
 func (m *muxHandler) BaseLen() int {
-	return protocol.MuxBlockBaseLen
+	return mux.MuxBlockBaseLen
 }
 
 func (m *muxHandler) MessageLength(base []byte) int {
-	var muxBlock protocol.MuxBlock
-	err := protocol.UnmarshalMuxBlock(base, &muxBlock)
+	var muxBlock mux.MuxBlock
+	err := mux.UnmarshalMuxBlock(base, &muxBlock)
 	if err != nil {
 		return -1
 	}
@@ -22,18 +23,18 @@ func (m *muxHandler) MessageLength(base []byte) int {
 	return int(muxBlock.PayloadLength) + m.BaseLen()
 }
 
-func (m *muxHandler) Unmarshal(data []byte, msg *protocol.Message) (Action, error) {
-	var muxBlock protocol.MuxBlock
-	if err := protocol.UnmarshalMuxBlock(data, &muxBlock); err != nil {
+func (m *muxHandler) Unmarshal(data []byte, msg *message.Message) (Action, error) {
+	var muxBlock mux.MuxBlock
+	if err := mux.UnmarshalMuxBlock(data, &muxBlock); err != nil {
 		return -1, err
 	}
-	err := protocol.UnmarshalMessageOnMux(muxBlock.Payloads, msg)
+	err := message.UnmarshalMessageOnMux(muxBlock.Payloads, msg)
 	if err != nil {
 		return -1, err
 	}
 	if uint32(muxBlock.PayloadLength) >= msg.Length() {
 		// 读出完整的消息
-		err := protocol.UnmarshalMessage(muxBlock.Payloads, msg)
+		err := message.UnmarshalMessage(muxBlock.Payloads, msg)
 		if err != nil {
 			return -1, err
 		}

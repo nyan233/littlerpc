@@ -2,32 +2,35 @@ package common
 
 import (
 	"github.com/nyan233/littlerpc/pkg/container"
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/message"
+	"github.com/nyan233/littlerpc/protocol/mux"
 	"sync"
 	"sync/atomic"
 )
 
+const MaxSharedPool = 8
+
 type SharedPool struct {
 	bytesPoolRingIndex int64
-	sharedBytesPool    [256]sync.Pool
+	sharedBytesPool    [MaxSharedPool]sync.Pool
 	messagePoolIndex   int64
-	sharedMessagePool  [256]sync.Pool
+	sharedMessagePool  [MaxSharedPool]sync.Pool
 }
 
 func NewSharedPool() *SharedPool {
 	pool := &SharedPool{}
 	pool.bytesPoolRingIndex = -1
 	pool.messagePoolIndex = -1
-	for i := 0; i < 256; i++ {
+	for i := 0; i < MaxSharedPool; i++ {
 		pool.sharedBytesPool[i] = sync.Pool{
 			New: func() interface{} {
-				var b container.Slice[byte] = make([]byte, 0, protocol.MuxMessageBlockSize)
+				var b container.Slice[byte] = make([]byte, 0, mux.MuxMessageBlockSize)
 				return &b
 			},
 		}
 		pool.sharedMessagePool[i] = sync.Pool{
 			New: func() interface{} {
-				return protocol.NewMessage()
+				return message.NewMessage()
 			},
 		}
 	}
@@ -35,9 +38,9 @@ func NewSharedPool() *SharedPool {
 }
 
 func (p *SharedPool) TakeBytesPool() *sync.Pool {
-	return &p.sharedBytesPool[atomic.AddInt64(&p.bytesPoolRingIndex, 1)%256]
+	return &p.sharedBytesPool[atomic.AddInt64(&p.bytesPoolRingIndex, 1)%MaxSharedPool]
 }
 
 func (p *SharedPool) TakeMessagePool() *sync.Pool {
-	return &p.sharedMessagePool[atomic.AddInt64(&p.messagePoolIndex, 1)%256]
+	return &p.sharedMessagePool[atomic.AddInt64(&p.messagePoolIndex, 1)%MaxSharedPool]
 }

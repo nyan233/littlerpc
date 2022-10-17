@@ -1,35 +1,23 @@
 package msgparser
 
 import (
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/message"
 	"sync"
 )
 
 type AllocTor interface {
-	AllocMessage() *protocol.Message
-	FreeMessage(message *protocol.Message)
+	AllocMessage() *message.Message
+	FreeMessage(message *message.Message)
 }
 
 type SimpleAllocTor struct {
-	sharedPool *sync.Pool
+	SharedPool *sync.Pool
 }
 
-func NewSharedPool() *sync.Pool {
-	return &sync.Pool{
-		New: func() interface{} {
-			return protocol.NewMessage()
-		},
-	}
+func (s *SimpleAllocTor) AllocMessage() *message.Message {
+	return s.SharedPool.Get().(*message.Message)
 }
 
-func NewSimpleAllocTor(sharedPool *sync.Pool) *SimpleAllocTor {
-	return &SimpleAllocTor{sharedPool: sharedPool}
-}
-
-func (s *SimpleAllocTor) AllocMessage() *protocol.Message {
-	return s.sharedPool.Get().(*protocol.Message)
-}
-
-func (s *SimpleAllocTor) FreeMessage(message *protocol.Message) {
-	s.sharedPool.Put(message)
+func (s *SimpleAllocTor) FreeMessage(message *message.Message) {
+	s.SharedPool.Put(message)
 }

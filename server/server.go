@@ -11,10 +11,11 @@ import (
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
-	"github.com/nyan233/littlerpc/pkg/utils/message"
+	messageUtils "github.com/nyan233/littlerpc/pkg/utils/message"
 	"github.com/nyan233/littlerpc/plugins/metrics"
-	"github.com/nyan233/littlerpc/protocol"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
+	"github.com/nyan233/littlerpc/protocol/message"
+	"github.com/nyan233/littlerpc/protocol/mux"
 	"github.com/zbh255/bilog"
 	"math"
 	"reflect"
@@ -61,7 +62,7 @@ func NewServer(opts ...Option) *Server {
 	} else {
 		server.logger = common.Logger
 	}
-	builder := transport.EngineManager.GetServerEngine(sc.NetWork)(transport.NetworkServerConfig{
+	builder := transport.Manager.GetServerEngine(sc.NetWork)(transport.NetworkServerConfig{
 		Addrs:     sc.Address,
 		KeepAlive: sc.ServerKeepAlive,
 		TLSPubPem: nil,
@@ -150,7 +151,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		return
 	}
 	if s.debug {
-		s.logger.Debug(message.AnalysisMessage(data).String())
+		s.logger.Debug(messageUtils.AnalysisMessage(data).String())
 	}
 	msgs, err := pasrser.ParseMsg(data)
 	if err != nil {
@@ -164,13 +165,13 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		msgOpt := newConnDesc(s, pMsg.Message, c)
 		msgId := pMsg.Message.GetMsgId()
 		switch pMsg.Message.GetMsgType() {
-		case protocol.MessagePing:
-			pMsg.Message.SetMsgType(protocol.MessagePong)
+		case message.MessagePing:
+			pMsg.Message.SetMsgType(message.MessagePong)
 			s.processAndSendMsg(msgOpt, pMsg.Message, false)
-		case protocol.MessageContextCancel:
+		case message.MessageContextCancel:
 			// TODO 实现context的远程传递
 			break
-		case protocol.MessageCall:
+		case message.MessageCall:
 			break
 		default:
 			s.handleError(c, pMsg.Message.GetMsgId(), lerror.LWarpStdError(common.ErrServer,
@@ -192,9 +193,9 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		}
 		var useMux bool
 		switch pMsg.Header {
-		case protocol.MagicNumber:
+		case message.MagicNumber:
 			useMux = false
-		case protocol.MuxEnabled:
+		case mux.MuxEnabled:
 			useMux = true
 		}
 		codecI, encoderI := msgOpt.Message.GetCodecType(), msgOpt.Message.GetEncoderType()
@@ -213,10 +214,10 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 // 因为用户过程可能会有阻塞操作
 func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, codecI, encoderI uint8, useMux bool) {
 	messageBuffer := sharedPool.TakeMessagePool()
-	msg := messageBuffer.Get().(*protocol.Message)
+	msg := messageBuffer.Get().(*message.Message)
 	msg.Reset()
 	defer func() {
-		protocol.ResetMsg(msg, false, true, true, 1024)
+		message.ResetMsg(msg, false, true, true, 1024)
 		messageBuffer.Put(msg)
 	}()
 	callResult := msgOpt.Method.Call(msgOpt.CallArgs)
@@ -225,7 +226,7 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, codecI, encode
 		callResult = append(callResult, reflect.ValueOf(nil))
 	}
 	// TODO 正确设置消息
-	msg.SetMsgType(protocol.MessageReturn)
+	msg.SetMsgType(message.MessageReturn)
 	msg.SetCodecType(codecI)
 	msg.SetEncoderType(encoderI)
 	msg.SetMsgId(msgId)
@@ -258,7 +259,7 @@ func (s *Server) onClose(conn transport.ConnAdapter, err error) {
 
 func (s *Server) onOpen(conn transport.ConnAdapter) {
 	// 初始化连接的相关数据
-	parser := msgparser.NewLMessageParser(msgparser.NewSimpleAllocTor(sharedPool.TakeMessagePool()))
+	parser := msgparser.New(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()})
 	s.noReadyBufferDesc.Store(conn, parser)
 }
 

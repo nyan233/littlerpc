@@ -9,17 +9,18 @@ import (
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/stream"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
-	"github.com/nyan233/littlerpc/pkg/utils/message"
+	messageUtils "github.com/nyan233/littlerpc/pkg/utils/message"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
-	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
+	"github.com/nyan233/littlerpc/protocol/message"
+	"github.com/nyan233/littlerpc/protocol/mux"
 	"reflect"
 	"strconv"
 	"sync"
 )
 
 // 必须在其结果集中首先处理错误在处理其余结果
-func (s *Server) setErrResult(msg *protocol.Message, callResult reflect.Value) perror.LErrorDesc {
+func (s *Server) setErrResult(msg *message.Message, callResult reflect.Value) perror.LErrorDesc {
 	interErr := reflect2.ToValueTypeEface(callResult)
 	// 无错误
 	if interErr == error(nil) {
@@ -52,7 +53,7 @@ func (s *Server) setErrResult(msg *protocol.Message, callResult reflect.Value) p
 	return nil
 }
 
-func (s *Server) processAndSendMsg(msgOpt *messageOpt, msg *protocol.Message, useMux bool) {
+func (s *Server) processAndSendMsg(msgOpt *messageOpt, msg *message.Message, useMux bool) {
 	// TODO : implement text encoding and gzip encoding
 	// rep Header已经被调用者提前设置好内容，所以这里发送消息的逻辑不用设置
 	// write header
@@ -69,7 +70,7 @@ func (s *Server) processAndSendMsg(msgOpt *messageOpt, msg *protocol.Message, us
 		}
 		msg.ReWritePayload(bytes)
 	}
-	protocol.MarshalMessage(msg, bp)
+	message.MarshalMessage(msg, bp)
 	// 不使用Mux消息的情况
 	if !useMux {
 		s.sendOnNoMux(msgOpt, msg, *bp)
@@ -78,13 +79,13 @@ func (s *Server) processAndSendMsg(msgOpt *messageOpt, msg *protocol.Message, us
 	}
 }
 
-func (s *Server) sendOnNoMux(msgOpt *messageOpt, msg *protocol.Message, bytes []byte) {
+func (s *Server) sendOnNoMux(msgOpt *messageOpt, msg *message.Message, bytes []byte) {
 	err := common2.WriteControl(msgOpt.Conn, bytes)
 	if err != nil {
 		s.logger.ErrorFromString(fmt.Sprintf("Write NoMuxMessage failed: %v", msgOpt.Conn.Close()))
 	}
 	if s.debug {
-		s.logger.Debug(message.AnalysisMessage(bytes).String())
+		s.logger.Debug(messageUtils.AnalysisMessage(bytes).String())
 	}
 	if err := s.pManager.OnComplete(msg, err); err != nil {
 		s.logger.ErrorFromErr(err)
@@ -92,9 +93,9 @@ func (s *Server) sendOnNoMux(msgOpt *messageOpt, msg *protocol.Message, bytes []
 	return
 }
 
-func (s *Server) sendOnMux(msgOpt *messageOpt, bytesBuffer *sync.Pool, msg *protocol.Message, bytes []byte) {
-	muxMsg := &protocol.MuxBlock{
-		Flags:    protocol.MuxEnabled,
+func (s *Server) sendOnMux(msgOpt *messageOpt, bytesBuffer *sync.Pool, msg *message.Message, bytes []byte) {
+	muxMsg := &mux.MuxBlock{
+		Flags:    mux.MuxEnabled,
 		StreamId: random.FastRand(),
 		MsgId:    msg.GetMsgId(),
 	}
@@ -113,7 +114,7 @@ func (s *Server) sendOnMux(msgOpt *messageOpt, bytesBuffer *sync.Pool, msg *prot
 }
 
 // 将用户过程的返回结果集序列化为可传输的json数据
-func (s *Server) handleResult(msgOpt *messageOpt, msg *protocol.Message, callResult []reflect.Value) {
+func (s *Server) handleResult(msgOpt *messageOpt, msg *message.Message, callResult []reflect.Value) {
 	for _, v := range callResult[:len(callResult)-1] {
 		// NOTE : 对于指针类型或者隐含指针的类型, 他检查用户过程是否返回nil
 		// NOTE : 对于非指针的值传递类型, 它检查该类型是否是零值
@@ -138,7 +139,7 @@ func (s *Server) handleResult(msgOpt *messageOpt, msg *protocol.Message, callRes
 
 // 从客户端传来的数据中序列化对应过程需要的调用参数
 // ok指示数据是否合法
-func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *protocol.Message, receiver, method reflect.Value) ([]reflect.Value, perror.LErrorDesc) {
+func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *message.Message, receiver, method reflect.Value) ([]reflect.Value, perror.LErrorDesc) {
 	callArgs := []reflect.Value{
 		// receiver
 		receiver,
@@ -228,8 +229,8 @@ func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo per
 		}
 	default:
 		// 普通一些的错误可以不关闭连接
-		msg := protocol.NewMessage()
-		msg.SetMsgType(protocol.MessageReturn)
+		msg := message.NewMessage()
+		msg.SetMsgType(message.MessageReturn)
 		msg.SetMsgId(msgId)
 		msg.MetaData.Store("littlerpc-code", strconv.Itoa(errNo.Code()))
 		msg.MetaData.Store("littlerpc-message", errNo.Message())
@@ -248,7 +249,7 @@ func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo per
 		bp := bytesBuffer.Get().(*container.Slice[byte])
 		bp.Reset()
 		defer bytesBuffer.Put(bp)
-		protocol.MarshalMessage(msg, bp)
+		message.MarshalMessage(msg, bp)
 		err := common2.WriteControl(desc, *bp)
 		if err != nil {
 			s.logger.ErrorFromErr(err)

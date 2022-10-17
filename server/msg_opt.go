@@ -11,8 +11,9 @@ import (
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/stream"
-	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
+	"github.com/nyan233/littlerpc/protocol/message"
+	"github.com/nyan233/littlerpc/protocol/mux"
 	"reflect"
 	"sync"
 )
@@ -21,7 +22,7 @@ type messageOpt struct {
 	Server  *Server
 	Codec   codec.Codec
 	Encoder packet.Encoder
-	Message *protocol.Message
+	Message *message.Message
 	// 仅仅做兼容性使用
 	mu       sync.Mutex
 	Conn     transport.ConnAdapter
@@ -29,7 +30,7 @@ type messageOpt struct {
 	CallArgs []reflect.Value
 }
 
-func newConnDesc(s *Server, msg *protocol.Message, c transport.ConnAdapter) *messageOpt {
+func newConnDesc(s *Server, msg *message.Message, c transport.ConnAdapter) *messageOpt {
 	return &messageOpt{Server: s, Message: msg, Conn: c}
 }
 
@@ -38,8 +39,8 @@ func (c *messageOpt) SelectCodecAndEncoder() {
 	cwp := safeIndexCodecWps(c.Server.cacheCodec, int(c.Message.GetCodecType()))
 	ewp := safeIndexEncoderWps(c.Server.cacheEncoder, int(c.Message.GetEncoderType()))
 	if cwp == nil || ewp == nil {
-		c.Codec = safeIndexCodecWps(c.Server.cacheCodec, int(protocol.DefaultCodecType)).Instance()
-		c.Encoder = safeIndexEncoderWps(c.Server.cacheEncoder, int(protocol.DefaultEncodingType)).Instance()
+		c.Codec = safeIndexCodecWps(c.Server.cacheCodec, int(message.DefaultCodecType)).Instance()
+		c.Encoder = safeIndexEncoderWps(c.Server.cacheEncoder, int(message.DefaultEncodingType)).Instance()
 	} else {
 		c.Codec = cwp.Instance()
 		c.Encoder = ewp.Instance()
@@ -72,7 +73,7 @@ func (c *messageOpt) FreeMessage(parser *msgparser.LMessageParser) {
 }
 
 func (c *messageOpt) UseMux() bool {
-	return c.Message.First() == protocol.MuxEnabled
+	return c.Message.First() == mux.MuxEnabled
 }
 
 func (c *messageOpt) Check() perror.LErrorDesc {

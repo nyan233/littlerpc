@@ -4,7 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc/pkg/utils"
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/message"
+	"github.com/nyan233/littlerpc/protocol/mux"
 	"sync"
 )
 
@@ -15,7 +16,7 @@ const (
 )
 
 type ParserMessage struct {
-	Message *protocol.Message
+	Message *message.Message
 	Header  byte
 }
 
@@ -47,13 +48,13 @@ type LMessageParser struct {
 	halfBuffer []byte
 }
 
-func NewLMessageParser(allocTor AllocTor) *LMessageParser {
+func New(allocTor AllocTor) *LMessageParser {
 	return &LMessageParser{
 		allocTor:      allocTor,
 		clickInterval: 1,
 		state:         _ScanInit,
 		noReadyBuffer: make(map[uint64]readyBuffer, 16),
-		halfBuffer:    make([]byte, 0, protocol.MuxMessageBlockSize),
+		halfBuffer:    make([]byte, 0, mux.MuxMessageBlockSize),
 	}
 }
 
@@ -121,7 +122,7 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 				if uint32(len(buf.RawBytes)) == buf.PayloadLength {
 					defer h.deleteNoReadyBuffer(msg.GetMsgId())
 					msg.Reset()
-					err := protocol.UnmarshalMessage(buf.RawBytes, msg)
+					err := message.UnmarshalMessage(buf.RawBytes, msg)
 					if err != nil {
 						h.allocTor.FreeMessage(msg)
 						h.ResetScan()
@@ -143,7 +144,7 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 	}
 }
 
-func (h *LMessageParser) FreeMessage(msg *protocol.Message) {
+func (h *LMessageParser) FreeMessage(msg *message.Message) {
 	h.allocTor.FreeMessage(msg)
 }
 

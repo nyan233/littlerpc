@@ -6,8 +6,8 @@ import (
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
-	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
+	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/zbh255/bilog"
 	"runtime"
 	"time"
@@ -38,7 +38,7 @@ func WithDefaultServer() Option {
 		config.ServerKeepAlive = true
 		config.ServerPPTimeout = 5 * time.Second
 		config.ServerTimeout = 90 * time.Second
-		config.Encoder = packet.GetEncoderFromIndex(int(protocol.DefaultEncodingType))
+		config.Encoder = packet.GetEncoderFromIndex(int(message.DefaultEncodingType))
 		config.NetWork = "nbio_tcp"
 		config.ErrHandler = common2.DefaultErrHandler
 		config.PoolBufferSize = 8192

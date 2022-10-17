@@ -1,7 +1,8 @@
 package msgparser
 
 import (
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/message"
+	"github.com/nyan233/littlerpc/protocol/mux"
 	"math"
 )
 
@@ -17,7 +18,7 @@ const (
 type MessageHandler interface {
 	BaseLen() int
 	MessageLength(base []byte) int
-	Unmarshal(data []byte, msg *protocol.Message) (Action, error)
+	Unmarshal(data []byte, msg *message.Message) (Action, error)
 }
 
 func RegisterMessageHandler(magicNumber uint8, handler MessageHandler) {
@@ -29,6 +30,6 @@ func GetMessageHandler(magicNumber uint8) MessageHandler {
 }
 
 func init() {
-	RegisterMessageHandler(protocol.MagicNumber, &noMuxHandler{})
-	RegisterMessageHandler(protocol.MuxEnabled, &muxHandler{})
+	RegisterMessageHandler(message.MagicNumber, &noMuxHandler{})
+	RegisterMessageHandler(mux.MuxEnabled, &muxHandler{})
 }

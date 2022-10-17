@@ -2,14 +2,14 @@ package client
 
 import (
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/message"
 )
 
 type pluginManager struct {
 	plugins []plugin.ClientPlugin
 }
 
-func (p *pluginManager) OnCall(msg *protocol.Message, args *[]interface{}) error {
+func (p *pluginManager) OnCall(msg *message.Message, args *[]interface{}) error {
 	for _, plg := range p.plugins {
 		if err := plg.OnCall(msg, args); err != nil {
 			return err
@@ -18,7 +18,7 @@ func (p *pluginManager) OnCall(msg *protocol.Message, args *[]interface{}) error
 	return nil
 }
 
-func (p *pluginManager) OnSendMessage(msg *protocol.Message, bytes *[]byte) error {
+func (p *pluginManager) OnSendMessage(msg *message.Message, bytes *[]byte) error {
 	for _, plg := range p.plugins {
 		if err := plg.OnSendMessage(msg, bytes); err != nil {
 			return err
@@ -27,7 +27,7 @@ func (p *pluginManager) OnSendMessage(msg *protocol.Message, bytes *[]byte) erro
 	return nil
 }
 
-func (p *pluginManager) OnReceiveMessage(msg *protocol.Message, bytes *[]byte) error {
+func (p *pluginManager) OnReceiveMessage(msg *message.Message, bytes *[]byte) error {
 	for _, plg := range p.plugins {
 		if err := plg.OnReceiveMessage(msg, bytes); err != nil {
 			return err
@@ -36,7 +36,7 @@ func (p *pluginManager) OnReceiveMessage(msg *protocol.Message, bytes *[]byte) e
 	return nil
 }
 
-func (p *pluginManager) OnResult(msg *protocol.Message, results *[]interface{}, err error) {
+func (p *pluginManager) OnResult(msg *message.Message, results *[]interface{}, err error) {
 	for _, plg := range p.plugins {
 		plg.OnResult(msg, results, err)
 	}

@@ -17,7 +17,7 @@ func tcpClientOnMessage(conn ConnAdapter, data []byte) {
 func TestTcpTransport(t *testing.T) {
 	// 关闭服务器烦人的日志
 	common.SetOpenLogger(false)
-	builder := NewNBioTcpServerEngine(NetworkServerConfig{
+	builder := NewNBioTcpServer(NetworkServerConfig{
 		Addrs: []string{"127.0.0.1:9090", "127.0.0.2:9090"},
 	})
 	eventD := builder.EventDriveInter()
@@ -28,7 +28,7 @@ func TestTcpTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	clientBuilder := NewNBioTcpClientEngine()
+	clientBuilder := NewNBioTcpClient()
 	clientBuilder.EventDriveInter().OnMessage(tcpClientOnMessage)
 	err = clientBuilder.Client().Start()
 	if err != nil {
@@ -55,7 +55,7 @@ func wsOnMessage(conn ConnAdapter, data []byte) {
 func TestWebSocketTransport(t *testing.T) {
 	// 关闭服务器烦人的日志
 	common.SetOpenLogger(false)
-	builder := NewNBioWebsocketServerEngine(NetworkServerConfig{
+	builder := NewNBioWebsocketServer(NetworkServerConfig{
 		Addrs:     []string{"127.0.0.1:8083", "127.0.0.2:8054"},
 		KeepAlive: false,
 	})
@@ -66,7 +66,7 @@ func TestWebSocketTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	clientBuilder := NewNBioWebsocketClientEngine()
+	clientBuilder := NewNBioWebsocketClient()
 	clientBuilder.EventDriveInter().OnMessage(tcpClientOnMessage)
 	clientBuilder.Client().Start()
 	defer clientBuilder.Client().Stop()
@@ -86,7 +86,7 @@ func TestWebSocketTransport(t *testing.T) {
 func TestStdTcpTransport(t *testing.T) {
 	// 关闭服务器烦人的日志
 	common.SetOpenLogger(false)
-	builder := NewStdTcpServerEngine(NetworkServerConfig{
+	builder := NewStdTcpServer(NetworkServerConfig{
 		Addrs: []string{"127.0.0.1:9090", "127.0.0.2:9090"},
 	})
 	eventD := builder.EventDriveInter()
@@ -97,7 +97,7 @@ func TestStdTcpTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	clientBuilder := NewStdTcpClientEngine()
+	clientBuilder := NewStdTcpClient()
 	clientBuilder.EventDriveInter().OnMessage(tcpClientOnMessage)
 	err = clientBuilder.Client().Start()
 	if err != nil {

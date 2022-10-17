@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc/pkg/container"
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/mux"
 	"io"
 	"syscall"
 )
@@ -76,14 +76,14 @@ func WriteControl(c io.Writer, data []byte) error {
 // mmBytes 是供拷贝数据的缓冲区
 // mBytes是要写入的数据
 // startFn是每次循环开始时都会调用的回调函数,它允许你在开始前做一些检查
-func MuxWriteAll(c io.Writer, muxMsg *protocol.MuxBlock, mmBytes *container.Slice[byte],
+func MuxWriteAll(c io.Writer, muxMsg *mux.MuxBlock, mmBytes *container.Slice[byte],
 	mBytes []byte, startFn func()) error {
 	if mmBytes == nil {
 		var tmp container.Slice[byte]
-		if len(mBytes) <= protocol.MuxMessageBlockSize {
+		if len(mBytes) <= mux.MuxMessageBlockSize {
 			tmp = make([]byte, 0, len(mBytes))
 		} else {
-			tmp = make([]byte, protocol.MuxMessageBlockSize)
+			tmp = make([]byte, mux.MuxMessageBlockSize)
 		}
 		mmBytes = &tmp
 	}
@@ -92,15 +92,15 @@ func MuxWriteAll(c io.Writer, muxMsg *protocol.MuxBlock, mmBytes *container.Slic
 			startFn()
 		}
 		var sendN int
-		if len(mBytes) < protocol.MaxPayloadSizeOnMux {
+		if len(mBytes) < mux.MaxPayloadSizeOnMux {
 			sendN = len(mBytes)
 		} else {
-			sendN = protocol.MaxPayloadSizeOnMux
+			sendN = mux.MaxPayloadSizeOnMux
 		}
 		mmBytes.Reset()
 		muxMsg.Payloads = mBytes[:sendN]
 		muxMsg.PayloadLength = uint16(sendN)
-		err := protocol.MarshalMuxBlock(muxMsg, mmBytes)
+		err := mux.MarshalMuxBlock(muxMsg, mmBytes)
 		if err != nil {
 			return err
 		}

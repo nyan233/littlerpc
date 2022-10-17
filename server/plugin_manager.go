@@ -2,7 +2,7 @@ package server
 
 import (
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/message"
 	"reflect"
 )
 
@@ -14,7 +14,7 @@ func (m *pluginManager) AddPlugin(p plugin.ServerPlugin) {
 	m.plugins = append(m.plugins, p)
 }
 
-func (m *pluginManager) OnMessage(msg *protocol.Message, bytes *[]byte) error {
+func (m *pluginManager) OnMessage(msg *message.Message, bytes *[]byte) error {
 	for _, k := range m.plugins {
 		err := k.OnMessage(msg, bytes)
 		if err != nil {
@@ -24,7 +24,7 @@ func (m *pluginManager) OnMessage(msg *protocol.Message, bytes *[]byte) error {
 	return nil
 }
 
-func (m *pluginManager) OnCallBefore(msg *protocol.Message, args *[]reflect.Value, err error) error {
+func (m *pluginManager) OnCallBefore(msg *message.Message, args *[]reflect.Value, err error) error {
 	for _, k := range m.plugins {
 		err := k.OnCallBefore(msg, args, err)
 		if err != nil {
@@ -34,7 +34,7 @@ func (m *pluginManager) OnCallBefore(msg *protocol.Message, args *[]reflect.Valu
 	return nil
 }
 
-func (m *pluginManager) OnCallResult(msg *protocol.Message, results *[]reflect.Value) error {
+func (m *pluginManager) OnCallResult(msg *message.Message, results *[]reflect.Value) error {
 	for _, k := range m.plugins {
 		err := k.OnCallResult(msg, results)
 		if err != nil {
@@ -44,7 +44,7 @@ func (m *pluginManager) OnCallResult(msg *protocol.Message, results *[]reflect.V
 	return nil
 }
 
-func (m *pluginManager) OnReplyMessage(msg *protocol.Message, bytes *[]byte, err error) error {
+func (m *pluginManager) OnReplyMessage(msg *message.Message, bytes *[]byte, err error) error {
 	for _, k := range m.plugins {
 		err := k.OnReplyMessage(msg, bytes, err)
 		if err != nil {
@@ -54,7 +54,7 @@ func (m *pluginManager) OnReplyMessage(msg *protocol.Message, bytes *[]byte, err
 	return nil
 }
 
-func (m *pluginManager) OnComplete(msg *protocol.Message, err error) error {
+func (m *pluginManager) OnComplete(msg *message.Message, err error) error {
 	for _, k := range m.plugins {
 		err := k.OnComplete(msg, err)
 		if err != nil {

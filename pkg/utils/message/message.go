@@ -6,7 +6,8 @@ import (
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/message"
+	"github.com/nyan233/littlerpc/protocol/mux"
 	"unsafe"
 )
 
@@ -63,27 +64,27 @@ func AnalysisMessage(data []byte) *Graph {
 	g := &Graph{
 		MetaData: make(map[string]string),
 	}
-	rawMsg := protocol.NewMessage()
+	rawMsg := message.NewMessage()
 	msg := (*messageCopyDefined)(unsafe.Pointer(rawMsg))
-	_ = protocol.UnmarshalMessage(data, rawMsg)
+	_ = message.UnmarshalMessage(data, rawMsg)
 	switch msg.Scope[0] {
-	case protocol.MagicNumber:
+	case message.MagicNumber:
 		g.First = "no_mux"
-	case protocol.MuxEnabled:
+	case mux.MuxEnabled:
 		g.First = "mux"
 	default:
 		g.First = "unknown"
 	}
 	switch rawMsg.GetMsgType() {
-	case protocol.MessageCall:
+	case message.MessageCall:
 		g.MsgType = "call"
-	case protocol.MessageReturn:
+	case message.MessageReturn:
 		g.MsgType = "return"
-	case protocol.MessagePing:
+	case message.MessagePing:
 		g.MsgType = "ping"
-	case protocol.MessagePong:
+	case message.MessagePong:
 		g.MsgType = "pong"
-	case protocol.MessageContextCancel:
+	case message.MessageContextCancel:
 		g.MsgType = "context_cancel"
 	default:
 		g.MsgType = "unknown"
@@ -122,11 +123,11 @@ func AnalysisMessage(data []byte) *Graph {
 }
 
 func AnalysisMuxMessage(data []byte) *MuxGraph {
-	var muxBlock protocol.MuxBlock
-	_ = protocol.UnmarshalMuxBlock(data, &muxBlock)
+	var muxBlock mux.MuxBlock
+	_ = mux.UnmarshalMuxBlock(data, &muxBlock)
 	g := &MuxGraph{}
 	switch muxBlock.Flags {
-	case protocol.MuxEnabled:
+	case mux.MuxEnabled:
 		g.MuxType = "mux_enabled"
 	default:
 		g.MuxType = "unknown"

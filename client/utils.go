@@ -1,7 +1,7 @@
 package client
 
 import (
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/mux"
 	"sync/atomic"
 )
 
@@ -12,8 +12,8 @@ func getConnFromMux(c *Client) *lockConn {
 }
 
 func getSendBlockBytes(sendBlockCount int, p []byte) []byte {
-	start := (sendBlockCount - 1) * protocol.MuxMessageBlockSize
-	end := sendBlockCount * protocol.MuxMessageBlockSize
+	start := (sendBlockCount - 1) * mux.MuxMessageBlockSize
+	end := sendBlockCount * mux.MuxMessageBlockSize
 	if end > len(p) {
 		end = len(p)
 	}

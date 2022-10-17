@@ -1,4 +1,4 @@
-package protocol
+package message
 
 import (
 	container2 "github.com/nyan233/littlerpc/pkg/container"

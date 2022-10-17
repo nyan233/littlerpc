@@ -25,7 +25,7 @@ type StdNetTcpEngine struct {
 	closed    int32
 }
 
-func NewStdTcpServerEngine(config NetworkServerConfig) ServerEngineBuilder {
+func NewStdTcpServer(config NetworkServerConfig) ServerBuilder {
 	return &StdNetTcpEngine{
 		listeners: make([]net.Listener, len(config.Addrs)),
 		addrs:     config.Addrs,
@@ -42,7 +42,7 @@ func NewStdTcpServerEngine(config NetworkServerConfig) ServerEngineBuilder {
 	}
 }
 
-func NewStdTcpClientEngine() ClientEngineBuilder {
+func NewStdTcpClient() ClientBuilder {
 	return &StdNetTcpEngine{
 		mode: StdTCPClient,
 		readBuf: sync.Pool{

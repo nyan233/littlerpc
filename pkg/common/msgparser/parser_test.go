@@ -3,17 +3,25 @@ package msgparser
 import (
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/message"
+	"github.com/nyan233/littlerpc/protocol/mux"
 	"github.com/stretchr/testify/assert"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
 func TestParser(t *testing.T) {
-	allocTor := NewSimpleAllocTor(NewSharedPool())
-	parser := NewLMessageParser(allocTor)
-	msg := protocol.NewMessage()
+	allocTor := &SimpleAllocTor{
+		SharedPool: &sync.Pool{
+			New: func() interface{} {
+				return message.NewMessage()
+			},
+		},
+	}
+	parser := New(allocTor)
+	msg := message.NewMessage()
 	msg.SetMsgId(uint64(random.FastRand()))
 	msg.SetMethodName("TestParser")
 	msg.SetInstanceName("LocalTest")
@@ -24,15 +32,15 @@ func TestParser(t *testing.T) {
 	msg.AppendPayloads([]byte("65536"))
 	msg.Length()
 	var marshalBytes []byte
-	protocol.MarshalMessage(msg, (*container.Slice[byte])(&marshalBytes))
-	muxBlock := protocol.MuxBlock{
-		Flags:    protocol.MuxEnabled,
+	message.MarshalMessage(msg, (*container.Slice[byte])(&marshalBytes))
+	muxBlock := mux.MuxBlock{
+		Flags:    mux.MuxEnabled,
 		StreamId: random.FastRand(),
 		MsgId:    uint64(random.FastRand()),
 	}
 	muxBlock.SetPayloads(marshalBytes)
 	var muxMarshalBytes []byte
-	err := protocol.MarshalMuxBlock(&muxBlock, (*container.Slice[byte])(&muxMarshalBytes))
+	err := mux.MarshalMuxBlock(&muxBlock, (*container.Slice[byte])(&muxMarshalBytes))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,8 +8,8 @@ import (
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	"github.com/nyan233/littlerpc/pkg/middle/resolver"
-	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
+	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/zbh255/bilog"
 	"time"
 )
@@ -33,8 +33,8 @@ func WithDefaultClient() Option {
 		config.ClientConnTimeout = 90 * time.Second
 		config.ClientPPTimeout = 5 * time.Second
 		config.Logger = common2.Logger
-		config.Encoder = packet.GetEncoderFromIndex(int(protocol.DefaultEncodingType))
-		config.Codec = codec.GetCodecFromIndex(int(protocol.DefaultCodecType))
+		config.Encoder = packet.GetEncoderFromIndex(int(message.DefaultEncodingType))
+		config.Codec = codec.GetCodecFromIndex(int(message.DefaultCodecType))
 		config.NetWork = "nbio_tcp"
 		config.MuxConnection = 8
 		config.ErrHandler = common2.DefaultErrHandler

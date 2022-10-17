@@ -1,12 +1,12 @@
 package transport
 
 import (
-	"github.com/nyan233/littlerpc/protocol"
+	"github.com/nyan233/littlerpc/protocol/mux"
 	"net"
 )
 
 const (
-	ReadBufferSize     = protocol.MuxMessageBlockSize
+	ReadBufferSize     = mux.MuxMessageBlockSize
 	MaxWriteBufferSize = 1024 * 1024
 )
 
@@ -36,12 +36,12 @@ type ConnAdapter interface {
 	net.Conn
 }
 
-type ServerEngineBuilder interface {
+type ServerBuilder interface {
 	Server() ServerEngine
 	EventDriveInter() EventDriveInter
 }
 
-type ClientEngineBuilder interface {
+type ClientBuilder interface {
 	Client() ClientEngine
 	EventDriveInter() EventDriveInter
 }
@@ -53,6 +53,6 @@ type EventDriveInter interface {
 	OnClose(func(conn ConnAdapter, err error))
 }
 
-type NewServerEngineBuilder func(NetworkServerConfig) ServerEngineBuilder
+type NewServerBuilder func(NetworkServerConfig) ServerBuilder
 
-type NewClientEngineBuilder func() ClientEngineBuilder
+type NewClientBuilder func() ClientBuilder

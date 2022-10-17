@@ -8,14 +8,15 @@ import (
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
-	"github.com/nyan233/littlerpc/protocol"
 	perror "github.com/nyan233/littlerpc/protocol/error"
+	"github.com/nyan233/littlerpc/protocol/message"
+	"github.com/nyan233/littlerpc/protocol/mux"
 	"reflect"
 	"strconv"
 	"strings"
 )
 
-func (c *Client) handleProcessRetErr(msg *protocol.Message) perror.LErrorDesc {
+func (c *Client) handleProcessRetErr(msg *message.Message) perror.LErrorDesc {
 	code, err := strconv.Atoi(msg.MetaData.Load("littlerpc-code"))
 	if err != nil {
 		return perror.LWarpStdError(common.ErrClient, err.Error())
@@ -36,7 +37,7 @@ func (c *Client) handleProcessRetErr(msg *protocol.Message) perror.LErrorDesc {
 	return desc
 }
 
-func (c *Client) readMsg(ctx context.Context, msgId uint64, lc *lockConn) (*protocol.Message, perror.LErrorDesc) {
+func (c *Client) readMsg(ctx context.Context, msgId uint64, lc *lockConn) (*message.Message, perror.LErrorDesc) {
 	// 接收服务器返回的调用结果并将header反序列化
 	done, ok := lc.notify.LoadOk(msgId)
 	if !ok {
@@ -51,7 +52,7 @@ func (c *Client) readMsg(ctx context.Context, msgId uint64, lc *lockConn) (*prot
 	// TODO : Client Handle Ping&Pong
 	// encoder类型为text时不需要额外的内存拷贝
 	// 默认的encoder即text
-	if msg.GetEncoderType() != protocol.DefaultEncodingType {
+	if msg.GetEncoderType() != message.DefaultEncodingType {
 		packet, err := c.encoderWp.Instance().UnPacket(msg.Payloads())
 		if err != nil {
 			return nil, c.eHandle.LNewErrorDesc(perror.ClientError, "UnPacket failed", err)
@@ -116,7 +117,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lo
 }
 
 // return method
-func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, args []interface{}) (reflect.Value, context.Context, perror.LErrorDesc) {
+func (c *Client) identArgAndEncode(processName string, msg *message.Message, args []interface{}) (reflect.Value, context.Context, perror.LErrorDesc) {
 	methodData := strings.SplitN(processName, ".", 2)
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
 		panic(interface{}("the illegal type name and method name"))
@@ -154,10 +155,10 @@ func (c *Client) identArgAndEncode(processName string, msg *protocol.Message, ar
 	return method, rCtx, nil
 }
 
-func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *lockConn) perror.LErrorDesc {
+func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *lockConn) perror.LErrorDesc {
 	// init header
 	msg.SetMsgId(lc.GetMsgId())
-	msg.SetMsgType(protocol.MessageCall)
+	msg.SetMsgType(message.MessageCall)
 	msg.SetCodecType(uint8(c.codecWp.Index()))
 	msg.SetEncoderType(uint8(c.encoderWp.Index()))
 	// request body
@@ -167,14 +168,14 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 	defer bp.Put(memBuffer)
 	// write header
 	// encoder类型为text不需要额外拷贝内存
-	if c.encoderWp.Index() != int(protocol.DefaultEncodingType) {
+	if c.encoderWp.Index() != int(message.DefaultEncodingType) {
 		bodyBytes, err := c.encoderWp.Instance().EnPacket(msg.Payloads())
 		if err != nil {
 			return c.eHandle.LWarpErrorDesc(common.ErrClient, "Encoder.EnPacket", err.Error())
 		}
 		msg.ReWritePayload(bodyBytes)
 	}
-	protocol.MarshalMessage(msg, memBuffer)
+	message.MarshalMessage(msg, memBuffer)
 	// 插件的
 	if err := c.pluginManager.OnSendMessage(msg, (*[]byte)(memBuffer)); err != nil {
 		c.logger.ErrorFromErr(err)
@@ -188,8 +189,8 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *protocol.Message, lc *loc
 		}
 		return nil
 	}
-	muxMsg := &protocol.MuxBlock{
-		Flags:    protocol.MuxEnabled,
+	muxMsg := &mux.MuxBlock{
+		Flags:    mux.MuxEnabled,
 		StreamId: random.FastRand(),
 		MsgId:    msg.GetMsgId(),
 	}

@@ -12,8 +12,8 @@ import (
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
-	"github.com/nyan233/littlerpc/protocol"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
+	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/zbh255/bilog"
 	"reflect"
 	"strings"
@@ -22,7 +22,7 @@ import (
 )
 
 type Complete struct {
-	Message *protocol.Message
+	Message *message.Message
 	Error   error
 }
 
@@ -44,7 +44,7 @@ func (lc *lockConn) GetMsgId() uint64 {
 // 请求的发送
 type Client struct {
 	// 客户端的事件驱动引擎
-	engine transport.ClientEngineBuilder
+	engine transport.ClientBuilder
 	// 连接通道轮询的计数器
 	concurrentConnCount int64
 	// 连接通道的数量
@@ -103,7 +103,7 @@ func NewClient(opts ...Option) (*Client, error) {
 	}
 	client.addrManager = manager
 	// init engine
-	client.engine = transport.EngineManager.GetClientEngine(config.NetWork)()
+	client.engine = transport.Manager.GetClientEngine(config.NetWork)()
 	eventD := client.engine.EventDriveInter()
 	eventD.OnOpen(client.onOpen)
 	eventD.OnMessage(client.onMessage)
@@ -128,7 +128,7 @@ func NewClient(opts ...Option) (*Client, error) {
 		}
 		desc := &lockConn{
 			conn:    conn,
-			parser:  msgparser.NewLMessageParser(msgparser.NewSimpleAllocTor(sharedPool.TakeMessagePool())),
+			parser:  msgparser.New(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()}),
 			initSeq: uint64(random.FastRand()),
 		}
 		client.concurrentConnect[k] = desc
@@ -198,7 +198,7 @@ func (c *Client) BindFunc(instanceName string, i interface{}) error {
 func (c *Client) RawCall(processName string, args ...interface{}) ([]interface{}, error) {
 	conn := getConnFromMux(c)
 	mp := sharedPool.TakeMessagePool()
-	msg := mp.Get().(*protocol.Message)
+	msg := mp.Get().(*message.Message)
 	msg.Reset()
 	defer mp.Put(msg)
 	proceSplit := strings.Split(processName, ".")
@@ -241,7 +241,7 @@ func (c *Client) RawCall(processName string, args ...interface{}) ([]interface{}
 func (c *Client) SingleCall(processName string, ctx context.Context, req interface{}, rep interface{}) error {
 	conn := getConnFromMux(c)
 	mp := sharedPool.TakeMessagePool()
-	msg := mp.Get().(*protocol.Message)
+	msg := mp.Get().(*message.Message)
 	msg.Reset()
 	defer mp.Put(msg)
 	proceSplit := strings.Split(processName, ".")
@@ -280,7 +280,7 @@ func (c *Client) SingleCall(processName string, ctx context.Context, req interfa
 func (c *Client) Call(processName string, args ...interface{}) ([]interface{}, error) {
 	conn := getConnFromMux(c)
 	mp := sharedPool.TakeMessagePool()
-	msg := mp.Get().(*protocol.Message)
+	msg := mp.Get().(*message.Message)
 	defer mp.Put(msg)
 	msg.Reset()
 	method, ctx, err := c.identArgAndEncode(processName, msg, args)
@@ -307,7 +307,7 @@ func (c *Client) Call(processName string, args ...interface{}) ([]interface{}, e
 // AsyncCall 该函数返回时至少数据已经经过Codec的序列化，调用者有责任检查error
 // 该函数可能会传递来自Codec和内部组件的错误，因为它在发送消息之前完成
 func (c *Client) AsyncCall(processName string, args ...interface{}) error {
-	msg := protocol.NewMessage()
+	msg := message.NewMessage()
 	method, ctx, err := c.identArgAndEncode(processName, msg, args)
 	if err != nil {
 		return err
