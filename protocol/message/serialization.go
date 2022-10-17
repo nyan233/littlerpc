@@ -9,8 +9,8 @@ import (
 	"unsafe"
 )
 
-// MarshaMessageOnMux 此API只会序列化Mux功能需要的数据
-func MarshaMessageOnMux(msg *Message, payloads *container.Slice[byte]) error {
+// MarshaToMux 此API只会序列化Mux功能需要的数据
+func MarshaToMux(msg *Message, payloads *container.Slice[byte]) error {
 	*payloads = (*payloads)[:msg.MinMux()]
 	*payloads = append(*payloads, msg.scope[:]...)
 	binary.BigEndian.PutUint64((*payloads)[4:12], msg.msgId)
@@ -18,8 +18,8 @@ func MarshaMessageOnMux(msg *Message, payloads *container.Slice[byte]) error {
 	return nil
 }
 
-// UnmarshalMessageOnMux 此API之后反序列化Mux功能所需要的数据
-func UnmarshalMessageOnMux(data container.Slice[byte], msg *Message) error {
+// UnmarshalFromMux 此API之后反序列化Mux功能所需要的数据
+func UnmarshalFromMux(data container.Slice[byte], msg *Message) error {
 	if data.Len() < msg.MinMux() {
 		return errors.New("mux message is bad")
 	}
@@ -29,8 +29,8 @@ func UnmarshalMessageOnMux(data container.Slice[byte], msg *Message) error {
 	return nil
 }
 
-// UnmarshalMessage 从字节Slice中解码出Message，并返回载荷数据的起始地址
-func UnmarshalMessage(p container.Slice[byte], msg *Message) error {
+// Unmarshal 从字节Slice中解码出Message，并返回载荷数据的起始地址
+func Unmarshal(p container.Slice[byte], msg *Message) error {
 	if p.Len() == 0 || msg == nil {
 		return errors.New("data or message is nil")
 	}
@@ -107,26 +107,9 @@ func UnmarshalMessage(p container.Slice[byte], msg *Message) error {
 	return nil
 }
 
-// RangePayloads 根据头提供的信息逐个遍历所有载荷数据
-// endAf指示是否是payloads中最后一个参数
-func RangePayloads(msg *Message, p container.Slice[byte], fn func(p []byte, endBefore bool) bool) {
-	var i int
-	nPayload := len(msg.payloadLayout)
-	for k, v := range msg.payloadLayout {
-		endAf := false
-		if k == nPayload-1 {
-			endAf = true
-		}
-		if !fn(p[i:i+int(v)], endAf) {
-			return
-		}
-		i += int(v)
-	}
-}
-
-// MarshalMessage 根据Msg Header编码出对应的字节Slice
+// Marshal 根据Msg Header编码出对应的字节Slice
 // *[]byte是为了提供更好的内存复用语义
-func MarshalMessage(msg *Message, p *container.Slice[byte]) {
+func Marshal(msg *Message, p *container.Slice[byte]) {
 	p.Reset()
 	msg.payloadLength = uint32(msg.Length())
 	// 设置魔数值

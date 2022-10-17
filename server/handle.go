@@ -70,7 +70,7 @@ func (s *Server) processAndSendMsg(msgOpt *messageOpt, msg *message.Message, use
 		}
 		msg.ReWritePayload(bytes)
 	}
-	message.MarshalMessage(msg, bp)
+	message.Marshal(msg, bp)
 	// 不使用Mux消息的情况
 	if !useMux {
 		s.sendOnNoMux(msgOpt, msg, *bp)
@@ -94,8 +94,8 @@ func (s *Server) sendOnNoMux(msgOpt *messageOpt, msg *message.Message, bytes []b
 }
 
 func (s *Server) sendOnMux(msgOpt *messageOpt, bytesBuffer *sync.Pool, msg *message.Message, bytes []byte) {
-	muxMsg := &mux.MuxBlock{
-		Flags:    mux.MuxEnabled,
+	muxMsg := &mux.Block{
+		Flags:    mux.Enabled,
 		StreamId: random.FastRand(),
 		MsgId:    msg.GetMsgId(),
 	}
@@ -229,8 +229,8 @@ func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo per
 		}
 	default:
 		// 普通一些的错误可以不关闭连接
-		msg := message.NewMessage()
-		msg.SetMsgType(message.MessageReturn)
+		msg := message.New()
+		msg.SetMsgType(message.Return)
 		msg.SetMsgId(msgId)
 		msg.MetaData.Store("littlerpc-code", strconv.Itoa(errNo.Code()))
 		msg.MetaData.Store("littlerpc-message", errNo.Message())
@@ -249,7 +249,7 @@ func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo per
 		bp := bytesBuffer.Get().(*container.Slice[byte])
 		bp.Reset()
 		defer bytesBuffer.Put(bp)
-		message.MarshalMessage(msg, bp)
+		message.Marshal(msg, bp)
 		err := common2.WriteControl(desc, *bp)
 		if err != nil {
 			s.logger.ErrorFromErr(err)

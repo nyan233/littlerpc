@@ -6,9 +6,9 @@ import (
 	. "github.com/nyan233/littlerpc/protocol"
 )
 
-func MarshalMuxBlock(msg *MuxBlock, payloads *container.Slice[byte]) error {
+func Marshal(msg *Block, payloads *container.Slice[byte]) error {
 	payloads.Reset()
-	payloads.Append(make([]byte, MuxBlockBaseLen))
+	payloads.Append(make([]byte, BlockBaseLen))
 	(*payloads)[0] = msg.Flags
 	binary.BigEndian.PutUint32((*payloads)[1:5], msg.StreamId)
 	binary.BigEndian.PutUint64((*payloads)[5:13], msg.MsgId)
@@ -17,8 +17,8 @@ func MarshalMuxBlock(msg *MuxBlock, payloads *container.Slice[byte]) error {
 	return nil
 }
 
-func UnmarshalMuxBlock(data container.Slice[byte], msg *MuxBlock) error {
-	if data.Len() < MuxBlockBaseLen {
+func Unmarshal(data container.Slice[byte], msg *Block) error {
+	if data.Len() < BlockBaseLen {
 		return ErrBadMessage
 	}
 	msg.Flags = data[0]

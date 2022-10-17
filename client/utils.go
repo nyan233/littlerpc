@@ -12,8 +12,8 @@ func getConnFromMux(c *Client) *lockConn {
 }
 
 func getSendBlockBytes(sendBlockCount int, p []byte) []byte {
-	start := (sendBlockCount - 1) * mux.MuxMessageBlockSize
-	end := sendBlockCount * mux.MuxMessageBlockSize
+	start := (sendBlockCount - 1) * mux.MaxBlockSize
+	end := sendBlockCount * mux.MaxBlockSize
 	if end > len(p) {
 		end = len(p)
 	}

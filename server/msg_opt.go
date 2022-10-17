@@ -73,7 +73,7 @@ func (c *messageOpt) FreeMessage(parser *msgparser.LMessageParser) {
 }
 
 func (c *messageOpt) UseMux() bool {
-	return c.Message.First() == mux.MuxEnabled
+	return c.Message.First() == mux.Enabled
 }
 
 func (c *messageOpt) Check() perror.LErrorDesc {

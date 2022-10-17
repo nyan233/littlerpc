@@ -7,8 +7,8 @@ import (
 )
 
 func FuzzMuxMessage(f *testing.F) {
-	muxMsg := &MuxBlock{
-		Flags:    MuxEnabled,
+	muxMsg := &Block{
+		Flags:    Enabled,
 		StreamId: random2.FastRand(),
 		MsgId:    uint64(random2.FastRand()),
 	}
@@ -16,7 +16,7 @@ func FuzzMuxMessage(f *testing.F) {
 	f.Add(muxMsg.Flags, muxMsg.StreamId, muxMsg.MsgId, ([]byte)(muxMsg.Payloads))
 	f.Fuzz(func(t *testing.T, flags uint8, streamId uint32,
 		msgId uint64, payloads []byte) {
-		block := &MuxBlock{}
+		block := &Block{}
 		block.SetFlags(flags)
 		block.SetStreamId(streamId)
 		block.SetMsgId(msgId)

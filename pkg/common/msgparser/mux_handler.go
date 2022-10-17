@@ -9,12 +9,12 @@ type muxHandler struct {
 }
 
 func (m *muxHandler) BaseLen() int {
-	return mux.MuxBlockBaseLen
+	return mux.BlockBaseLen
 }
 
 func (m *muxHandler) MessageLength(base []byte) int {
-	var muxBlock mux.MuxBlock
-	err := mux.UnmarshalMuxBlock(base, &muxBlock)
+	var muxBlock mux.Block
+	err := mux.Unmarshal(base, &muxBlock)
 	if err != nil {
 		return -1
 	}
@@ -24,17 +24,17 @@ func (m *muxHandler) MessageLength(base []byte) int {
 }
 
 func (m *muxHandler) Unmarshal(data []byte, msg *message.Message) (Action, error) {
-	var muxBlock mux.MuxBlock
-	if err := mux.UnmarshalMuxBlock(data, &muxBlock); err != nil {
+	var muxBlock mux.Block
+	if err := mux.Unmarshal(data, &muxBlock); err != nil {
 		return -1, err
 	}
-	err := message.UnmarshalMessageOnMux(muxBlock.Payloads, msg)
+	err := message.UnmarshalFromMux(muxBlock.Payloads, msg)
 	if err != nil {
 		return -1, err
 	}
 	if uint32(muxBlock.PayloadLength) >= msg.Length() {
 		// 读出完整的消息
-		err := message.UnmarshalMessage(muxBlock.Payloads, msg)
+		err := message.Unmarshal(muxBlock.Payloads, msg)
 		if err != nil {
 			return -1, err
 		}

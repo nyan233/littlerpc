@@ -54,7 +54,7 @@ func New(allocTor AllocTor) *LMessageParser {
 		clickInterval: 1,
 		state:         _ScanInit,
 		noReadyBuffer: make(map[uint64]readyBuffer, 16),
-		halfBuffer:    make([]byte, 0, mux.MuxMessageBlockSize),
+		halfBuffer:    make([]byte, 0, mux.MaxBlockSize),
 	}
 }
 
@@ -122,7 +122,7 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 				if uint32(len(buf.RawBytes)) == buf.PayloadLength {
 					defer h.deleteNoReadyBuffer(msg.GetMsgId())
 					msg.Reset()
-					err := message.UnmarshalMessage(buf.RawBytes, msg)
+					err := message.Unmarshal(buf.RawBytes, msg)
 					if err != nil {
 						h.allocTor.FreeMessage(msg)
 						h.ResetScan()

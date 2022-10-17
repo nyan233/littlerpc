@@ -6,19 +6,19 @@ import (
 
 const (
 	MagicNumber uint8 = 0x45
-	// MessageCall 表示这是一条调用的消息
-	MessageCall uint8 = 0x10
-	// MessageReturn 表示这是一条调用返回消息
-	MessageReturn uint8 = 0x18
-	// MessageContextCancel 用户服务端接收的context.Context的取消API
-	MessageContextCancel uint8 = 0x24
-	// MessagePing Ping消息
-	MessagePing uint8 = 0x33
-	// MessagePong Pong消息
-	MessagePong uint8 = 0x35
+	// Call 表示这是一条调用的消息
+	Call uint8 = 0x10
+	// Return 表示这是一条调用返回消息
+	Return uint8 = 0x18
+	// ContextCancel 用户服务端接收的context.Context的取消API
+	ContextCancel uint8 = 0x24
+	// Ping Ping消息
+	Ping uint8 = 0x33
+	// Pong Pong消息
+	Pong uint8 = 0x35
 
-	// MessageBaseLen Message的基本长度
-	MessageBaseLen            = 4 + 4 + 8
+	// BaseLen 的基本长度
+	BaseLen                   = 4 + 4 + 8
 	DefaultEncodingType uint8 = 0 // text == json
 	DefaultCodecType    uint8 = 0 // encoding == text
 
@@ -36,7 +36,7 @@ type Reset interface {
 	Reset()
 }
 
-func NewMessage() *Message {
+func New() *Message {
 	return &Message{
 		MetaData:      container2.NewSliceMap[string, string](4),
 		scope:         [4]uint8{MagicNumber},
@@ -104,7 +104,7 @@ func (m *Message) Length() uint32 {
 		return m.payloadLength
 	}
 	// Scope & MsgId & PayloadLength
-	baseLen := MessageBaseLen
+	baseLen := BaseLen
 	// NameLayout
 	baseLen += 8
 	// InstanceName & MethodName

@@ -31,5 +31,5 @@ func GetMessageHandler(magicNumber uint8) MessageHandler {
 
 func init() {
 	RegisterMessageHandler(message.MagicNumber, &noMuxHandler{})
-	RegisterMessageHandler(mux.MuxEnabled, &muxHandler{})
+	RegisterMessageHandler(mux.Enabled, &muxHandler{})
 }

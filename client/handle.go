@@ -158,7 +158,7 @@ func (c *Client) identArgAndEncode(processName string, msg *message.Message, arg
 func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *lockConn) perror.LErrorDesc {
 	// init header
 	msg.SetMsgId(lc.GetMsgId())
-	msg.SetMsgType(message.MessageCall)
+	msg.SetMsgType(message.Call)
 	msg.SetCodecType(uint8(c.codecWp.Index()))
 	msg.SetEncoderType(uint8(c.encoderWp.Index()))
 	// request body
@@ -175,7 +175,7 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *lock
 		}
 		msg.ReWritePayload(bodyBytes)
 	}
-	message.MarshalMessage(msg, memBuffer)
+	message.Marshal(msg, memBuffer)
 	// 插件的
 	if err := c.pluginManager.OnSendMessage(msg, (*[]byte)(memBuffer)); err != nil {
 		c.logger.ErrorFromErr(err)
@@ -189,8 +189,8 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *lock
 		}
 		return nil
 	}
-	muxMsg := &mux.MuxBlock{
-		Flags:    mux.MuxEnabled,
+	muxMsg := &mux.Block{
+		Flags:    mux.Enabled,
 		StreamId: random.FastRand(),
 		MsgId:    msg.GetMsgId(),
 	}

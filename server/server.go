@@ -165,13 +165,13 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		msgOpt := newConnDesc(s, pMsg.Message, c)
 		msgId := pMsg.Message.GetMsgId()
 		switch pMsg.Message.GetMsgType() {
-		case message.MessagePing:
-			pMsg.Message.SetMsgType(message.MessagePong)
+		case message.Ping:
+			pMsg.Message.SetMsgType(message.Pong)
 			s.processAndSendMsg(msgOpt, pMsg.Message, false)
-		case message.MessageContextCancel:
+		case message.ContextCancel:
 			// TODO 实现context的远程传递
 			break
-		case message.MessageCall:
+		case message.Call:
 			break
 		default:
 			s.handleError(c, pMsg.Message.GetMsgId(), lerror.LWarpStdError(common.ErrServer,
@@ -195,7 +195,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		switch pMsg.Header {
 		case message.MagicNumber:
 			useMux = false
-		case mux.MuxEnabled:
+		case mux.Enabled:
 			useMux = true
 		}
 		codecI, encoderI := msgOpt.Message.GetCodecType(), msgOpt.Message.GetEncoderType()
@@ -226,7 +226,7 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, codecI, encode
 		callResult = append(callResult, reflect.ValueOf(nil))
 	}
 	// TODO 正确设置消息
-	msg.SetMsgType(message.MessageReturn)
+	msg.SetMsgType(message.Return)
 	msg.SetCodecType(codecI)
 	msg.SetEncoderType(encoderI)
 	msg.SetMsgId(msgId)

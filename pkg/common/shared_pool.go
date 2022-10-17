@@ -24,13 +24,13 @@ func NewSharedPool() *SharedPool {
 	for i := 0; i < MaxSharedPool; i++ {
 		pool.sharedBytesPool[i] = sync.Pool{
 			New: func() interface{} {
-				var b container.Slice[byte] = make([]byte, 0, mux.MuxMessageBlockSize)
+				var b container.Slice[byte] = make([]byte, 0, mux.MaxBlockSize)
 				return &b
 			},
 		}
 		pool.sharedMessagePool[i] = sync.Pool{
 			New: func() interface{} {
-				return message.NewMessage()
+				return message.New()
 			},
 		}
 	}

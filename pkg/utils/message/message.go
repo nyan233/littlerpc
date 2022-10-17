@@ -64,27 +64,27 @@ func AnalysisMessage(data []byte) *Graph {
 	g := &Graph{
 		MetaData: make(map[string]string),
 	}
-	rawMsg := message.NewMessage()
+	rawMsg := message.New()
 	msg := (*messageCopyDefined)(unsafe.Pointer(rawMsg))
-	_ = message.UnmarshalMessage(data, rawMsg)
+	_ = message.Unmarshal(data, rawMsg)
 	switch msg.Scope[0] {
 	case message.MagicNumber:
 		g.First = "no_mux"
-	case mux.MuxEnabled:
+	case mux.Enabled:
 		g.First = "mux"
 	default:
 		g.First = "unknown"
 	}
 	switch rawMsg.GetMsgType() {
-	case message.MessageCall:
+	case message.Call:
 		g.MsgType = "call"
-	case message.MessageReturn:
+	case message.Return:
 		g.MsgType = "return"
-	case message.MessagePing:
+	case message.Ping:
 		g.MsgType = "ping"
-	case message.MessagePong:
+	case message.Pong:
 		g.MsgType = "pong"
-	case message.MessageContextCancel:
+	case message.ContextCancel:
 		g.MsgType = "context_cancel"
 	default:
 		g.MsgType = "unknown"
@@ -123,11 +123,11 @@ func AnalysisMessage(data []byte) *Graph {
 }
 
 func AnalysisMuxMessage(data []byte) *MuxGraph {
-	var muxBlock mux.MuxBlock
-	_ = mux.UnmarshalMuxBlock(data, &muxBlock)
+	var muxBlock mux.Block
+	_ = mux.Unmarshal(data, &muxBlock)
 	g := &MuxGraph{}
 	switch muxBlock.Flags {
-	case mux.MuxEnabled:
+	case mux.Enabled:
 		g.MuxType = "mux_enabled"
 	default:
 		g.MuxType = "unknown"

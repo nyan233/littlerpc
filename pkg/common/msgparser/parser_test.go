@@ -16,12 +16,12 @@ func TestParser(t *testing.T) {
 	allocTor := &SimpleAllocTor{
 		SharedPool: &sync.Pool{
 			New: func() interface{} {
-				return message.NewMessage()
+				return message.New()
 			},
 		},
 	}
 	parser := New(allocTor)
-	msg := message.NewMessage()
+	msg := message.New()
 	msg.SetMsgId(uint64(random.FastRand()))
 	msg.SetMethodName("TestParser")
 	msg.SetInstanceName("LocalTest")
@@ -32,15 +32,15 @@ func TestParser(t *testing.T) {
 	msg.AppendPayloads([]byte("65536"))
 	msg.Length()
 	var marshalBytes []byte
-	message.MarshalMessage(msg, (*container.Slice[byte])(&marshalBytes))
-	muxBlock := mux.MuxBlock{
-		Flags:    mux.MuxEnabled,
+	message.Marshal(msg, (*container.Slice[byte])(&marshalBytes))
+	muxBlock := mux.Block{
+		Flags:    mux.Enabled,
 		StreamId: random.FastRand(),
 		MsgId:    uint64(random.FastRand()),
 	}
 	muxBlock.SetPayloads(marshalBytes)
 	var muxMarshalBytes []byte
-	err := mux.MarshalMuxBlock(&muxBlock, (*container.Slice[byte])(&muxMarshalBytes))
+	err := mux.Marshal(&muxBlock, (*container.Slice[byte])(&muxMarshalBytes))
 	if err != nil {
 		t.Fatal(err)
 	}

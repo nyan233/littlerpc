@@ -76,14 +76,14 @@ func WriteControl(c io.Writer, data []byte) error {
 // mmBytes 是供拷贝数据的缓冲区
 // mBytes是要写入的数据
 // startFn是每次循环开始时都会调用的回调函数,它允许你在开始前做一些检查
-func MuxWriteAll(c io.Writer, muxMsg *mux.MuxBlock, mmBytes *container.Slice[byte],
+func MuxWriteAll(c io.Writer, muxMsg *mux.Block, mmBytes *container.Slice[byte],
 	mBytes []byte, startFn func()) error {
 	if mmBytes == nil {
 		var tmp container.Slice[byte]
-		if len(mBytes) <= mux.MuxMessageBlockSize {
+		if len(mBytes) <= mux.MaxBlockSize {
 			tmp = make([]byte, 0, len(mBytes))
 		} else {
-			tmp = make([]byte, mux.MuxMessageBlockSize)
+			tmp = make([]byte, mux.MaxBlockSize)
 		}
 		mmBytes = &tmp
 	}
@@ -100,7 +100,7 @@ func MuxWriteAll(c io.Writer, muxMsg *mux.MuxBlock, mmBytes *container.Slice[byt
 		mmBytes.Reset()
 		muxMsg.Payloads = mBytes[:sendN]
 		muxMsg.PayloadLength = uint16(sendN)
-		err := mux.MarshalMuxBlock(muxMsg, mmBytes)
+		err := mux.Marshal(muxMsg, mmBytes)
 		if err != nil {
 			return err
 		}

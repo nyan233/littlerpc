@@ -307,7 +307,7 @@ func (c *Client) Call(processName string, args ...interface{}) ([]interface{}, e
 // AsyncCall 该函数返回时至少数据已经经过Codec的序列化，调用者有责任检查error
 // 该函数可能会传递来自Codec和内部组件的错误，因为它在发送消息之前完成
 func (c *Client) AsyncCall(processName string, args ...interface{}) error {
-	msg := message.NewMessage()
+	msg := message.New()
 	method, ctx, err := c.identArgAndEncode(processName, msg, args)
 	if err != nil {
 		return err

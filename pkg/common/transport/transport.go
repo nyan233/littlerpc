@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	ReadBufferSize     = mux.MuxMessageBlockSize
+	ReadBufferSize     = mux.MaxBlockSize
 	MaxWriteBufferSize = 1024 * 1024
 )
 
