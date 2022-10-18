@@ -11,11 +11,11 @@ import (
 //	server := server.NewServer(server.WithAddressServer(":1234"))
 //	i1 := new(HelloServer1)
 //	i2 := new(HelloServer2)
-//	err := server.Elem(i1)
+//	err := server.RegisterClass(i1)
 //	if err != nil {
 //		panic(err)
 //	}
-//	err = server.Elem(i2)
+//	err = server.RegisterClass(i2)
 //	if err != nil {
 //		panic(err)
 //	}

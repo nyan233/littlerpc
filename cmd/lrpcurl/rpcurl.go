@@ -39,7 +39,7 @@ func main() {
 }
 
 func dial() *client.Client {
-	c, err := client.NewClient(
+	c, err := client.New(
 		client.WithCustomLoggerClient(common.NilLogger),
 		client.WithUseMux(false),
 		client.WithMuxConnection(false),

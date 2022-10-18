@@ -22,8 +22,8 @@ func (h *Hello) Hello(name string, id int64) (*UserJson, error) {
 }
 
 func Server() {
-	server := server.NewServer(server.WithAddressServer("127.0.0.1:8080", "127.0.0.1:9090"))
-	err := server.Elem(&Hello{})
+	server := server.New(server.WithAddressServer("127.0.0.1:8080", "127.0.0.1:9090"))
+	err := server.RegisterClass(&Hello{}, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -35,7 +35,7 @@ func Server() {
 
 func Client() {
 	// 根据规则开启负载均衡
-	c, err := client.NewClient(client.WithResolver("live", "live://127.0.0.1:8080;127.0.0.1:9090"),
+	c, err := client.New(client.WithResolver("live", "live://127.0.0.1:8080;127.0.0.1:9090"),
 		client.WithBalance("roundRobin"))
 	if err != nil {
 		panic(err)
