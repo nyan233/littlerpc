@@ -11,3 +11,7 @@ type TaskPool interface {
 type TaskPoolBuilder interface {
 	pool.TaskPoolBuilder
 }
+
+type Reset interface {
+	Reset()
+}

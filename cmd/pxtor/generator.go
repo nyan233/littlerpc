@@ -222,7 +222,7 @@ func genAsyncApi(recvName, funName string, inNameList, inTypeList, outList []str
 	for i := 0; i < len(inNameList); i++ {
 		fmt.Fprintf(&sb, "%s %s,", inNameList[i], inTypeList[i])
 	}
-	fmt.Fprintf(&sb, ") error {return p.AsyncCall(\"%s.%s\",", recvName, funName)
+	fmt.Fprintf(&sb, ") error {return p.SyncCall(\"%s.%s\",", recvName, funName)
 	for _, v := range inNameList {
 		sb.WriteString(v)
 		sb.WriteByte(',')

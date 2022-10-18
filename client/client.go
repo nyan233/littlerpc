@@ -81,7 +81,7 @@ type Client struct {
 	eHandle lerror.LErrors
 }
 
-func NewClient(opts ...Option) (*Client, error) {
+func New(opts ...Option) (*Client, error) {
 	config := &Config{}
 	WithDefaultClient()(config)
 	for _, v := range opts {
@@ -176,7 +176,7 @@ func (c *Client) BindFunc(instanceName string, i interface{}) error {
 	elemD.Typ = reflect.TypeOf(i)
 	elemD.Data = reflect.ValueOf(i)
 	// init map
-	elemD.Methods = make(map[string]reflect.Value, elemD.Typ.NumMethod())
+	elemD.Methods = make(map[string]*common.Method, elemD.Typ.NumMethod())
 	// NOTE: 这里的判断不能依靠map的len/cap来确定实例用于多少的绑定方法
 	// 因为len/cap都不能提供准确的信息,调用make()时指定的cap只是给真正创建map的函数一个提示
 	// 并不代表真实大小，对没有插入过数据的map调用len()永远为0
@@ -186,7 +186,9 @@ func (c *Client) BindFunc(instanceName string, i interface{}) error {
 	for i := 0; i < elemD.Typ.NumMethod(); i++ {
 		method := elemD.Typ.Method(i)
 		if method.IsExported() {
-			elemD.Methods[method.Name] = method.Func
+			elemD.Methods[method.Name] = &common.Method{
+				Value: method.Func,
+			}
 		}
 	}
 	c.elems.Store(instanceName, elemD)

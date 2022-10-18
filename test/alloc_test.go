@@ -40,8 +40,8 @@ func (b *BenchAlloc) AllocLittleNBytesNoInit(n, size int) ([][]byte, error) {
 func BenchmarkClientAlloc(b *testing.B) {
 	// 关闭服务器烦人的日志
 	common.SetOpenLogger(false)
-	s1 := server.NewServer(server.WithAddressServer(":1234"), server.WithOpenLogger(false))
-	err := s1.Elem(new(BenchAlloc))
+	s1 := server.New(server.WithAddressServer(":1234"), server.WithOpenLogger(false))
+	err := s1.RegisterClass(new(BenchAlloc), nil)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func BenchmarkClientAlloc(b *testing.B) {
 		b.Fatal(err)
 	}
 	defer s1.Stop()
-	c1, err := client.NewClient(client.WithAddressClient(":1234"))
+	c1, err := client.New(client.WithAddressClient(":1234"))
 	if err != nil {
 		b.Fatal(err)
 	}

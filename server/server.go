@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc/internal/pool"
+	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/container"
+	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
@@ -19,6 +21,7 @@ import (
 	"github.com/zbh255/bilog"
 	"math"
 	"reflect"
+	"sync"
 )
 
 type serverCallContext struct {
@@ -50,7 +53,7 @@ type Server struct {
 	debug bool
 }
 
-func NewServer(opts ...Option) *Server {
+func New(opts ...Option) *Server {
 	server := &Server{}
 	sc := &Config{}
 	WithDefaultServer()(sc)
@@ -108,14 +111,14 @@ func NewServer(opts ...Option) *Server {
 			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, serverRecover(server.logger))
 	}
 	// init reflection service
-	err := server.Elem(&LittleRpcReflection{&server.elems})
+	err := server.RegisterClass(&LittleRpcReflection{&server.elems}, nil)
 	if err != nil {
 		panic(err)
 	}
 	return server
 }
 
-func (s *Server) Elem(i interface{}) error {
+func (s *Server) RegisterClass(i interface{}, custom map[string]common.MethodOption) error {
 	if i == nil {
 		return errors.New("register elem is nil")
 	}
@@ -132,14 +135,55 @@ func (s *Server) Elem(i interface{}) error {
 		return errors.New("no bind receiver method")
 	}
 	// init map
-	elemD.Methods = make(map[string]reflect.Value, elemD.Typ.NumMethod())
+	elemD.Methods = make(map[string]*common.Method, elemD.Typ.NumMethod())
 	for i := 0; i < elemD.Typ.NumMethod(); i++ {
 		method := elemD.Typ.Method(i)
-		if method.IsExported() {
-			elemD.Methods[method.Name] = method.Func
+		if !method.IsExported() {
+			continue
 		}
+		methodDesc := &common.Method{
+			Value:  method.Func,
+			Option: new(common.MethodOption),
+		}
+		elemD.Methods[method.Name] = methodDesc
+		opt, ok := custom[method.Name]
+		if !ok {
+			continue
+		}
+		methodDesc.Option = &opt
+		if !opt.CompleteReUsage {
+			goto asyncCheck
+		}
+		for j := 1; j < method.Type.NumIn(); j++ {
+			if !method.Type.In(j).Implements(reflect.TypeOf((*export.Reset)(nil)).Elem()) {
+				opt.CompleteReUsage = false
+				goto asyncCheck
+			}
+		}
+		methodDesc.Pool = sync.Pool{
+			New: func() interface{} {
+				tmp := make([]reflect.Value, 0, 4)
+				tmp = append(tmp, elemD.Data)
+				inputs := reflect2.FuncInputTypeList(methodDesc.Value, 0, true, func(i int) bool {
+					return false
+				})
+				for _, v := range inputs {
+					tmp = append(tmp, reflect.ValueOf(v))
+				}
+				return &tmp
+			},
+		}
+	asyncCheck:
+		if opt.SyncCall {
+			// TODO
+		}
+
 	}
 	s.elems.Store(name, elemD)
+	return nil
+}
+
+func (s *Server) RegisterAnonymousFunc(funcName string, fn interface{}, option *common.MethodOption) error {
 	return nil
 }
 
@@ -167,7 +211,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		switch pMsg.Message.GetMsgType() {
 		case message.Ping:
 			pMsg.Message.SetMsgType(message.Pong)
-			s.processAndSendMsg(msgOpt, pMsg.Message, false)
+			s.encodeAndSendMsg(msgOpt, pMsg.Message, false)
 		case message.ContextCancel:
 			// TODO 实现context的远程传递
 			break
@@ -201,6 +245,10 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		codecI, encoderI := msgOpt.Message.GetCodecType(), msgOpt.Message.GetEncoderType()
 		// 将使用完的Message归还给Parser
 		msgOpt.FreeMessage(pasrser)
+		if msgOpt.Method.Option.SyncCall {
+			s.callHandleUnit(msgOpt, msgId, codecI, encoderI, useMux)
+			continue
+		}
 		err = s.taskPool.Push(func() {
 			s.callHandleUnit(msgOpt, msgId, codecI, encoderI, useMux)
 		})
@@ -220,7 +268,7 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, codecI, encode
 		message.ResetMsg(msg, false, true, true, 1024)
 		messageBuffer.Put(msg)
 	}()
-	callResult := msgOpt.Method.Call(msgOpt.CallArgs)
+	callResult := msgOpt.Method.Value.Call(msgOpt.CallArgs)
 	// 函数在没有返回error则填充nil
 	if len(callResult) == 0 {
 		callResult = append(callResult, reflect.ValueOf(nil))
@@ -241,8 +289,15 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, codecI, encode
 		return
 	}
 	s.handleResult(msgOpt, msg, callResult)
+	if msgOpt.Method.Option.CompleteReUsage {
+		tmp := msgOpt.CallArgs
+		for i := 1; i < len(tmp); i++ {
+			tmp[i].Interface().(export.Reset).Reset()
+		}
+		msgOpt.Method.Pool.Put(&tmp)
+	}
 	// 处理结果发送
-	s.processAndSendMsg(msgOpt, msg, useMux)
+	s.encodeAndSendMsg(msgOpt, msg, useMux)
 }
 
 func (s *Server) onClose(conn transport.ConnAdapter, err error) {

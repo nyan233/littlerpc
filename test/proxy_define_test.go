@@ -1,6 +1,6 @@
 /*
 @Generator   : littlerpc-generator
-@CreateTime  : 2022-08-22 21:21:52.27902 +0800 CST m=+0.003063034
+@CreateTime  : 2022-10-18 22:40:41.589095 +0800 CST m=+0.005141401
 @Author      : littlerpc-generator
 @Comment     : code is auto generate do not edit
 */
@@ -13,7 +13,7 @@ import (
 type HelloTestInterface interface {
 	GetCount() (int64, *User, error)
 	Add(i int64) error
-	CreateUser(user User) error
+	CreateUser(user *User) error
 	DeleteUser(uid int) error
 	SelectUser(uid int) (User, bool, error)
 	ModifyUser(uid int, user User) (bool, error)
@@ -42,7 +42,7 @@ func (p HelloTestProxy) GetCount() (int64, *User, error) {
 
 func (p HelloTestProxy) Add(i int64) error { _, err := p.Call("HelloTest.Add", i); return err }
 
-func (p HelloTestProxy) CreateUser(user User) error {
+func (p HelloTestProxy) CreateUser(user *User) error {
 	_, err := p.Call("HelloTest.CreateUser", user)
 	return err
 }

@@ -19,6 +19,11 @@ type User struct {
 	Name string
 }
 
+func (u *User) Reset() {
+	u.Id = 0
+	u.Name = ""
+}
+
 type HelloTest struct {
 	count int64
 	// 社区旗下的一些用户
@@ -34,8 +39,8 @@ func (t *HelloTest) Add(i int64) error {
 	return nil
 }
 
-func (t *HelloTest) CreateUser(user User) error {
-	t.userMap.Store(user.Id, user)
+func (t *HelloTest) CreateUser(user *User) error {
+	t.userMap.Store(user.Id, *user)
 	return nil
 }
 
@@ -63,14 +68,27 @@ func TestNoTlsServerAndClient(t *testing.T) {
 	}()
 	// 关闭服务器烦人的日志
 	common.SetOpenLogger(false)
-	server := lserver.NewServer(
+	server := lserver.New(
 		lserver.WithAddressServer(":1234"),
 		lserver.WithTransProtocol("nbio_tcp"),
 		lserver.WithServerEncoder("gzip"),
 		lserver.WithOpenLogger(false),
 	)
 	h := &HelloTest{}
-	err := server.Elem(h)
+	err := server.RegisterClass(h, map[string]common.MethodOption{
+		"SelectUser": {
+			SyncCall:        true,
+			CompleteReUsage: true,
+		},
+		"CreateUser": {
+			SyncCall:        true,
+			CompleteReUsage: true,
+		},
+		"Add": {
+			SyncCall:        true,
+			CompleteReUsage: true,
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +108,7 @@ func TestNoTlsServerAndClient(t *testing.T) {
 	var errCount int64
 	addV := 65536
 	wg.Add(nGoroutine)
-	client, err := lclient.NewClient(
+	client, err := lclient.New(
 		lclient.WithCallOnErr(func(err error) { atomic.AddInt64(&errCount, 1) }),
 		lclient.WithAddressClient(":1234"),
 		lclient.WithClientCodec("json"),
@@ -109,7 +127,7 @@ func TestNoTlsServerAndClient(t *testing.T) {
 		go func() {
 			for i := 0; i < sendN; i++ {
 				_ = proxy.Add(int64(addV))
-				_ = proxy.CreateUser(User{
+				_ = proxy.CreateUser(&User{
 					Id:   j + 100,
 					Name: "Jeni",
 				})
@@ -164,9 +182,9 @@ func TestNoTlsServerAndClient(t *testing.T) {
 func TestBalance(t *testing.T) {
 	// 关闭服务器烦人的日志
 	common.SetOpenLogger(false)
-	server := lserver.NewServer(lserver.WithAddressServer("127.0.0.1:9090", "127.0.0.1:8080"),
+	server := lserver.New(lserver.WithAddressServer("127.0.0.1:9090", "127.0.0.1:8080"),
 		lserver.WithOpenLogger(false))
-	err := server.Elem(new(HelloTest))
+	err := server.RegisterClass(new(HelloTest), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +193,7 @@ func TestBalance(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	c1, err := lclient.NewClient(
+	c1, err := lclient.New(
 		lclient.WithBalance("roundRobin"),
 		lclient.WithResolver("live", "live://127.0.0.1:8080;127.0.0.1:9090"),
 	)
@@ -183,7 +201,7 @@ func TestBalance(t *testing.T) {
 		t.Fatal(err)
 	}
 	p1 := NewHelloTestProxy(c1)
-	c2, err := lclient.NewClient(
+	c2, err := lclient.New(
 		lclient.WithBalance("roundRobin"),
 		lclient.WithResolver("live", "live://127.0.0.1:8080;127.0.0.1:9090"),
 	)

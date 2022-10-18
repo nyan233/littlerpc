@@ -32,10 +32,6 @@ var (
 	EightBytesPadding = []byte{0, 0, 0, 0, 0, 0, 0, 0}
 )
 
-type Reset interface {
-	Reset()
-}
-
 func New() *Message {
 	return &Message{
 		MetaData:      container2.NewSliceMap[string, string](4),

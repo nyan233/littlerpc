@@ -46,14 +46,14 @@ func (s *Server) setErrResult(msg *message.Message, callResult reflect.Value) pe
 	// NOTE 按理来说, 在正常情况下!ok这个分支不应该被激活, 检查每个过程返回error是Elem的责任
 	// NOTE 建立这个分支是防止用户自作聪明使用一些Hack的手段绕过了Elem的检查
 	if !ok {
-		return s.eHandle.LNewErrorDesc(perror.UnsafeOption, "Server.Elem no checker on error")
+		return s.eHandle.LNewErrorDesc(perror.UnsafeOption, "Server.RegisterClass no checker on error")
 	}
 	msg.MetaData.Store("littlerpc-code", strconv.Itoa(perror.Unknown))
 	msg.MetaData.Store("littlerpc-message", err.Error())
 	return nil
 }
 
-func (s *Server) processAndSendMsg(msgOpt *messageOpt, msg *message.Message, useMux bool) {
+func (s *Server) encodeAndSendMsg(msgOpt *messageOpt, msg *message.Message, useMux bool) {
 	// TODO : implement text encoding and gzip encoding
 	// rep Header已经被调用者提前设置好内容，所以这里发送消息的逻辑不用设置
 	// write header

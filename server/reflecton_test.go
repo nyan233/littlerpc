@@ -14,7 +14,7 @@ func TestReflection(t *testing.T) {
 	reflection := &LittleRpcReflection{
 		elems: &noneServer.elems,
 	}
-	err := noneServer.Elem(reflection)
+	err := noneServer.RegisterClass(reflection, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -137,7 +137,7 @@ func (c *Client) identArgAndEncode(processName string, msg *message.Message, arg
 	rCtx := context.Background()
 	// 哨兵条件
 	if args == nil || len(args) == 0 {
-		return method, rCtx, nil
+		return method.Value, rCtx, nil
 	}
 	// 检查是否携带context.Context
 	if ctx, ok := args[0].(context.Context); ok {
@@ -152,7 +152,7 @@ func (c *Client) identArgAndEncode(processName string, msg *message.Message, arg
 		}
 		msg.AppendPayloads(bytes)
 	}
-	return method, rCtx, nil
+	return method.Value, rCtx, nil
 }
 
 func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *lockConn) perror.LErrorDesc {

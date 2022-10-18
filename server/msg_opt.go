@@ -15,18 +15,15 @@ import (
 	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/nyan233/littlerpc/protocol/mux"
 	"reflect"
-	"sync"
 )
 
 type messageOpt struct {
-	Server  *Server
-	Codec   codec.Codec
-	Encoder packet.Encoder
-	Message *message.Message
-	// 仅仅做兼容性使用
-	mu       sync.Mutex
+	Server   *Server
+	Codec    codec.Codec
+	Encoder  packet.Encoder
+	Message  *message.Message
 	Conn     transport.ConnAdapter
-	Method   reflect.Value
+	Method   *common.Method
 	CallArgs []reflect.Value
 }
 
@@ -91,7 +88,7 @@ func (c *messageOpt) Check() perror.LErrorDesc {
 	}
 	c.Method = method
 	// 从客户端校验并获得合法的调用参数
-	callArgs, lErr := c.checkCallArgs(elemData.Data, method)
+	callArgs, lErr := c.checkCallArgs(elemData.Data, method.Value)
 	// 参数校验为不合法
 	if lErr != nil {
 		if err := c.Server.pManager.OnCallBefore(c.Message, &callArgs, errors.New("arguments check failed")); err != nil {
@@ -107,20 +104,16 @@ func (c *messageOpt) Check() perror.LErrorDesc {
 	return nil
 }
 
-func (c *messageOpt) checkCallArgs(receiver, method reflect.Value) ([]reflect.Value, perror.LErrorDesc) {
-	callArgs := []reflect.Value{
-		// receiver
-		receiver,
-	}
-	// 排除receiver
-	iter := c.Message.PayloadsIterator()
+func (c *messageOpt) checkCallArgs(receiver, method reflect.Value) (values []reflect.Value, err perror.LErrorDesc) {
 	// 去除接收者之后的输入参数长度
 	// 校验客户端传递的参数和服务端是否一致
+	iter := c.Message.PayloadsIterator()
 	if nInput := method.Type().NumIn() - 1; nInput != iter.Tail() {
 		return nil, c.Server.eHandle.LWarpErrorDesc(common.ErrServer,
 			"client input args number no equal server",
 			fmt.Sprintf("Client : %d", iter.Tail()), fmt.Sprintf("Server : %d", nInput))
 	}
+	var callArgs []reflect.Value
 	var inputStart int
 	if c.Message.MetaData.Load("context-timeout") != "" {
 		inputStart++
@@ -128,12 +121,29 @@ func (c *messageOpt) checkCallArgs(receiver, method reflect.Value) ([]reflect.Va
 	if c.Message.MetaData.Load("stream-id") != "" {
 		inputStart++
 	}
-	inputTypeList := reflect2.FuncInputTypeList(method, inputStart, true, func(i int) bool {
-		if len(iter.Take()) == 0 {
-			return true
+	if c.Method.Option.CompleteReUsage {
+		callArgs = *c.Method.Pool.Get().(*[]reflect.Value)
+		defer func() {
+			if err != nil {
+				c.Method.Pool.Put(&callArgs)
+			}
+		}()
+	} else {
+		callArgs = []reflect.Value{
+			// receiver
+			receiver,
 		}
-		return false
-	})
+		inputTypeList := reflect2.FuncInputTypeList(method, 0, true, func(i int) bool {
+			if len(iter.Take()) == 0 {
+				return true
+			}
+			return false
+		})
+		for _, v := range inputTypeList {
+			callArgs = append(callArgs, reflect.ValueOf(v))
+		}
+
+	}
 	if inputStart == 2 {
 		val1 := reflect.New(method.Type().In(1)).Interface()
 		val2 := reflect.New(method.Type().In(2)).Interface()
@@ -164,20 +174,19 @@ func (c *messageOpt) checkCallArgs(receiver, method reflect.Value) ([]reflect.Va
 		}
 	}
 	iter.Reset()
-	for i := 0; i < len(inputTypeList) && iter.Next(); i++ {
-		eface := inputTypeList[i]
+	for i := 1; i < len(callArgs) && iter.Next(); i++ {
+		eface := callArgs[i]
 		argBytes := iter.Take()
 		if len(argBytes) == 0 {
-			callArgs = append(callArgs, reflect.ValueOf(eface))
 			continue
 		}
-		callArg, err := common.CheckCoderType(c.Codec, argBytes, eface)
+		callArg, err := common.CheckCoderType(c.Codec, argBytes, eface.Interface())
 		if err != nil {
 			return nil, c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
 		}
 		// 可以根据获取的参数类别的每一个参数的类型信息得到
 		// 所需的精确类型，所以不用再对变长的类型做处理
-		callArgs = append(callArgs, reflect.ValueOf(callArg))
+		callArgs[i] = reflect.ValueOf(callArg)
 	}
 	return callArgs, nil
 }

@@ -55,7 +55,7 @@ func (l *LittleRpcReflection) MethodArgumentType(instanceName, methodName string
 		return nil, common.ErrMethodNoRegister
 	}
 	argDesc := make([]*ArgumentType, 0, 4)
-	typ := method.Type()
+	typ := method.Value.Type()
 	for i := 1; i < typ.NumIn(); i++ {
 		in := typ.In(i)
 		typDesc := &ArgumentType{}

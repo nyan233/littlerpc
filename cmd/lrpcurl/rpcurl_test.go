@@ -29,12 +29,12 @@ func (t *TestInstance) Get() (*TestInstance, error) {
 
 func TestRpcurl(t *testing.T) {
 	common.SetOpenLogger(false)
-	server := server2.NewServer(
+	server := server2.New(
 		server2.WithAddressServer("127.0.0.1:9093"),
 		server2.WithOpenLogger(false),
 		server2.WithTransProtocol("nbio_tcp"),
 	)
-	err := server.Elem(new(TestInstance))
+	err := server.RegisterClass(new(TestInstance), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
