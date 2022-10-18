@@ -59,13 +59,18 @@ func New(allocTor AllocTor) *LMessageParser {
 }
 
 // ParseMsg io.Reader主要用来标识一个读取到半包的连接, 并不会真正去调用他的方法
-func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
+func (h *LMessageParser) ParseMsg(data []byte) (msgs []ParserMessage, err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.clickInterval == 1 && len(data) == 0 {
 		return nil, errors.New("data length == 0")
 	}
 	allMsg := make([]ParserMessage, 0, 4)
+	defer func() {
+		if err != nil {
+			h.ResetScan()
+		}
+	}()
 	for {
 		if len(data) == 0 {
 			return allMsg, nil
@@ -77,7 +82,6 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 			if handler := GetMessageHandler(h.halfBuffer[0]); handler != nil {
 				h.handler = handler
 			} else {
-				h.ResetScan()
 				return nil, errors.New(fmt.Sprintf("MagicNumber no MessageHandler -> %d", data[0]))
 			}
 			h.state = _ScanMsgParse1
@@ -104,7 +108,6 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 			msg.Reset()
 			action, err := h.handler.Unmarshal(h.halfBuffer, msg)
 			if err != nil {
-				h.ResetScan()
 				h.allocTor.FreeMessage(msg)
 				return nil, err
 			}
@@ -114,7 +117,7 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 				if !ok {
 					h.noReadyBuffer[msg.GetMsgId()] = readyBuffer{
 						MsgId:         msg.GetMsgId(),
-						PayloadLength: uint32(msg.Length()),
+						PayloadLength: msg.Length(),
 						RawBytes:      h.halfBuffer,
 					}
 				}
@@ -125,7 +128,6 @@ func (h *LMessageParser) ParseMsg(data []byte) ([]ParserMessage, error) {
 					err := message.Unmarshal(buf.RawBytes, msg)
 					if err != nil {
 						h.allocTor.FreeMessage(msg)
-						h.ResetScan()
 						return nil, err
 					}
 					allMsg = append(allMsg, ParserMessage{
