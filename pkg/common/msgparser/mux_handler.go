@@ -8,8 +8,8 @@ import (
 type muxHandler struct {
 }
 
-func (m *muxHandler) BaseLen() int {
-	return mux.BlockBaseLen
+func (m *muxHandler) BaseLen() (BaseLenType, int) {
+	return SingleRequest, mux.BlockBaseLen
 }
 
 func (m *muxHandler) MessageLength(base []byte) int {
@@ -20,7 +20,8 @@ func (m *muxHandler) MessageLength(base []byte) int {
 	}
 	// +BaseLen的原因是MuxBlock.PayloadLength并非是全量的长度
 	// PayloadLength仅仅是载荷的大小, 为了Parser能够正确识别游标
-	return int(muxBlock.PayloadLength) + m.BaseLen()
+	_, baseLen := m.BaseLen()
+	return int(muxBlock.PayloadLength) + baseLen
 }
 
 func (m *muxHandler) Unmarshal(data []byte, msg *message.Message) (Action, error) {

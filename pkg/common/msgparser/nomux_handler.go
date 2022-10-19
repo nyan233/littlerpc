@@ -7,8 +7,8 @@ import (
 type noMuxHandler struct {
 }
 
-func (n *noMuxHandler) BaseLen() int {
-	return message.BaseLen
+func (n *noMuxHandler) BaseLen() (BaseLenType, int) {
+	return MultiRequest, message.BaseLen
 }
 
 func (n *noMuxHandler) MessageLength(base []byte) int {

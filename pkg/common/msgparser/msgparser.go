@@ -3,6 +3,7 @@ package msgparser
 import (
 	"errors"
 	"fmt"
+	"github.com/nyan233/littlerpc/internal/reflect"
 	"github.com/nyan233/littlerpc/pkg/utils"
 	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/nyan233/littlerpc/protocol/mux"
@@ -85,7 +86,26 @@ func (h *LMessageParser) ParseMsg(data []byte) (msgs []ParserMessage, err error)
 				return nil, errors.New(fmt.Sprintf("MagicNumber no MessageHandler -> %d", data[0]))
 			}
 			h.state = _ScanMsgParse1
-			h.clickInterval = h.handler.BaseLen() - 1
+			opt, baseLen := h.handler.BaseLen()
+			if opt == SingleRequest {
+				msg := h.allocTor.AllocMessage()
+				msg.Reset()
+				defer func() {
+					if err != nil {
+						h.allocTor.FreeMessage(msg)
+					}
+				}()
+				action, err := h.handler.Unmarshal(reflect.SliceBackSpace(data, 1).([]byte), msg)
+				if err != nil {
+					return nil, err
+				}
+				err = h.handleAction(action, msg, &allMsg, nil)
+				if err != nil {
+					return nil, err
+				}
+				return allMsg, nil
+			}
+			h.clickInterval = baseLen - 1
 		case _ScanMsgParse1:
 			readN, readData := utils.ReadFromData(h.clickInterval, data)
 			h.halfBuffer = append(h.halfBuffer, readData...)
@@ -94,7 +114,8 @@ func (h *LMessageParser) ParseMsg(data []byte) (msgs []ParserMessage, err error)
 				h.clickInterval -= readN
 				continue
 			}
-			h.clickInterval = h.handler.MessageLength(h.halfBuffer) - h.handler.BaseLen()
+			_, baseLen := h.handler.BaseLen()
+			h.clickInterval = h.handler.MessageLength(h.halfBuffer) - baseLen
 			h.state = _ScanMsgParse2
 		case _ScanMsgParse2:
 			readN, readData := utils.ReadFromData(h.clickInterval, data)
@@ -111,35 +132,10 @@ func (h *LMessageParser) ParseMsg(data []byte) (msgs []ParserMessage, err error)
 				h.allocTor.FreeMessage(msg)
 				return nil, err
 			}
-			switch action {
-			case UnmarshalBase:
-				buf, ok := h.noReadyBuffer[msg.GetMsgId()]
-				if !ok {
-					h.noReadyBuffer[msg.GetMsgId()] = readyBuffer{
-						MsgId:         msg.GetMsgId(),
-						PayloadLength: msg.Length(),
-						RawBytes:      h.halfBuffer,
-					}
-				}
-				buf.RawBytes = append(buf.RawBytes, readData...)
-				if uint32(len(buf.RawBytes)) == buf.PayloadLength {
-					defer h.deleteNoReadyBuffer(msg.GetMsgId())
-					msg.Reset()
-					err := message.Unmarshal(buf.RawBytes, msg)
-					if err != nil {
-						h.allocTor.FreeMessage(msg)
-						return nil, err
-					}
-					allMsg = append(allMsg, ParserMessage{
-						Message: msg,
-						Header:  buf.RawBytes[0],
-					})
-				}
-			case UnmarshalComplete:
-				allMsg = append(allMsg, ParserMessage{
-					Message: msg,
-					Header:  h.halfBuffer[0],
-				})
+			err = h.handleAction(action, msg, &allMsg, readData)
+			if err != nil {
+				h.allocTor.FreeMessage(msg)
+				return nil, err
 			}
 			h.ResetScan()
 		}
@@ -168,4 +164,37 @@ func (h *LMessageParser) State() (int, int, int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.clickInterval, h.state, len(h.halfBuffer)
+}
+
+func (h *LMessageParser) handleAction(action Action, msg *message.Message, allMsg *[]ParserMessage, readData []byte) error {
+	switch action {
+	case UnmarshalBase:
+		buf, ok := h.noReadyBuffer[msg.GetMsgId()]
+		if !ok {
+			h.noReadyBuffer[msg.GetMsgId()] = readyBuffer{
+				MsgId:         msg.GetMsgId(),
+				PayloadLength: msg.Length(),
+				RawBytes:      h.halfBuffer,
+			}
+		}
+		buf.RawBytes = append(buf.RawBytes, readData...)
+		if uint32(len(buf.RawBytes)) == buf.PayloadLength {
+			defer h.deleteNoReadyBuffer(msg.GetMsgId())
+			msg.Reset()
+			err := message.Unmarshal(buf.RawBytes, msg)
+			if err != nil {
+				return err
+			}
+			*allMsg = append(*allMsg, ParserMessage{
+				Message: msg,
+				Header:  buf.RawBytes[0],
+			})
+		}
+	case UnmarshalComplete:
+		*allMsg = append(*allMsg, ParserMessage{
+			Message: msg,
+			Header:  h.halfBuffer[0],
+		})
+	}
+	return nil
 }
