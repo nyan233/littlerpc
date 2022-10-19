@@ -34,11 +34,12 @@ const (
 	ClientError           = 580  // 客户端产生的错误
 	CallArgsTypeErr       = 1030 // 过程的调用参数类型错误
 	CodecMarshalErr       = 1050 // Codec在序列化数据时出错
+	ConnectionErr         = 1070 // 连接错误
 	UnsafeOption          = 2060 // 不安全的选项, 通常在服务器需要的东西没有准备好时触发
 )
 
-//	NOTE: 不要尝试修改这个表，这个表不应该在运行时被改变或者被使用到
-//	NOTE: Little-Rpc的用户代码改变
+// NOTE: 不要尝试修改这个表，这个表不应该在运行时被改变或者被使用到
+// NOTE: Little-Rpc的用户代码改变
 var mappingStr = map[Code]string{
 	Success:               "\"Success\"",
 	Unknown:               "\"Unknown\"",

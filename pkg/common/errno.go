@@ -15,4 +15,5 @@ var (
 	ErrCodecMarshalError   = error.LNewStdError(error.CodecMarshalErr, "codec.Marshal return one error")
 	ErrCodecUnMarshalError = error.LNewStdError(error.CodecMarshalErr, "codec.UnMarshal return one error")
 	ErrClient              = error.LNewStdError(error.ClientError, "client error")
+	ErrConnection          = error.LNewStdError(error.ConnectionErr, "connection error")
 )

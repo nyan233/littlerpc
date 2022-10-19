@@ -2,7 +2,9 @@ package server
 
 import (
 	"github.com/lesismal/llib/std/crypto/tls"
+	"github.com/nyan233/littlerpc/internal/pool"
 	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
@@ -43,7 +45,8 @@ func WithDefaultServer() Option {
 		config.ErrHandler = common2.DefaultErrHandler
 		config.PoolBufferSize = 8192
 		config.PoolMinSize = int32(runtime.NumCPU() * 4)
-		config.PoolMaxSize = config.PoolMinSize * 2
+		config.PoolMaxSize = pool.MaxTaskPoolSize
+		config.Writer = msgwriter.LRPCWriter
 	}
 }
 

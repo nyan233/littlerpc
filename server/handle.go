@@ -5,6 +5,7 @@ import (
 	"fmt"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/stream"
@@ -54,28 +55,21 @@ func (s *Server) setErrResult(msg *message.Message, callResult reflect.Value) pe
 }
 
 func (s *Server) encodeAndSendMsg(msgOpt *messageOpt, msg *message.Message, useMux bool) {
-	// TODO : implement text encoding and gzip encoding
-	// rep Header已经被调用者提前设置好内容，所以这里发送消息的逻辑不用设置
-	// write header
-	bytesBuffer := sharedPool.TakeBytesPool()
-	bp := bytesBuffer.Get().(*container.Slice[byte])
-	bp.Reset()
-	defer bytesBuffer.Put(bp)
-	// write body
-	if msgOpt.Encoder.Scheme() != "text" {
-		bytes, err := msgOpt.Encoder.EnPacket(msg.Payloads())
+	err := s.writer(&msgwriter.WriterArgument{
+		Message: msg,
+		Conn:    msgOpt.Conn,
+		Option:  &common2.MethodOption{UseMux: useMux},
+		Encoder: msgOpt.Encoder,
+		Pool:    sharedPool.TakeBytesPool(),
+		OnDebug: onDebug(s.logger, s.debug, useMux),
+		EHandle: s.eHandle,
+	})
+	if err != nil {
+		pErr := s.pManager.OnComplete(msg, err)
 		if err != nil {
-			s.handleError(msgOpt.Conn, msg.GetMsgId(), s.eHandle.LWarpErrorDesc(common2.ErrServer, err.Error()))
-			return
+			s.logger.ErrorFromErr(pErr)
 		}
-		msg.ReWritePayload(bytes)
-	}
-	message.Marshal(msg, bp)
-	// 不使用Mux消息的情况
-	if !useMux {
-		s.sendOnNoMux(msgOpt, msg, *bp)
-	} else {
-		s.sendOnMux(msgOpt, bytesBuffer, msg, *bp)
+		s.handleError(msgOpt.Conn, msg.GetMsgId(), err)
 	}
 }
 
@@ -220,6 +214,9 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *message.Mess
 func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo perror.LErrorDesc) {
 	bytesBuffer := sharedPool.TakeBytesPool()
 	switch errNo.Code() {
+	case perror.ConnectionErr:
+		// 连接错误默认已经被关闭连接, 所以打印日志即可
+		s.logger.ErrorFromErr(errNo)
 	case perror.UnsafeOption, perror.MessageDecodingFailed, perror.MessageEncodingFailed:
 		// 严重影响到后续运行的错误需要关闭连接
 		s.logger.ErrorFromErr(errNo)

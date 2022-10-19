@@ -7,6 +7,7 @@ import (
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/msgparser"
+	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/export"
@@ -49,6 +50,7 @@ type Server struct {
 	pManager *pluginManager
 	// Error Handler
 	eHandle lerror.LErrors
+	writer  msgwriter.Writer
 	// 是否开启调试模式
 	debug bool
 }
@@ -60,6 +62,7 @@ func New(opts ...Option) *Server {
 	for _, v := range opts {
 		v(sc)
 	}
+	server.writer = sc.Writer
 	if sc.Logger != nil {
 		server.logger = sc.Logger
 	} else {
@@ -211,6 +214,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		switch pMsg.Message.GetMsgType() {
 		case message.Ping:
 			pMsg.Message.SetMsgType(message.Pong)
+			msgOpt.SelectCodecAndEncoder()
 			s.encodeAndSendMsg(msgOpt, pMsg.Message, false)
 		case message.ContextCancel:
 			// TODO 实现context的远程传递

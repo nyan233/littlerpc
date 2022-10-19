@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/lesismal/llib/std/crypto/tls"
+	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
@@ -29,4 +30,5 @@ type Config struct {
 	PoolMaxSize     int32
 	PoolBufferSize  int32
 	ExecPoolBuilder export.TaskPoolBuilder
+	Writer          msgwriter.Writer
 }
