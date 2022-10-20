@@ -94,6 +94,7 @@ func (h *LMessageParser) ParseMsg(data []byte) (msgs []ParserMessage, err error)
 					if err != nil {
 						h.allocTor.FreeMessage(msg)
 					}
+					h.ResetScan()
 				}()
 				action, err := h.handler.Unmarshal(reflect.SliceBackSpace(data, 1).([]byte), msg)
 				if err != nil {

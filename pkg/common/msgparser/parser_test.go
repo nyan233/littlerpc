@@ -1,6 +1,7 @@
 package msgparser
 
 import (
+	"encoding/json"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol/message"
@@ -54,6 +55,53 @@ func TestParser(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, len(allMasg), 2)
+}
+
+func TestJsonRPC2Parser(t *testing.T) {
+	desc1 := &JsonRPC2CallDesc{
+		Version: JsonRPC2Version,
+		Method:  "Test.JsonRPC2Case1",
+		Codec:   "json",
+		MetaData: map[string]string{
+			"context-id": strconv.FormatInt(int64(random.FastRand()), 10),
+			"streamId":   strconv.FormatInt(int64(random.FastRand()), 10),
+		},
+		Id:     int64(random.FastRand()),
+		Params: []byte("[1203,\"hello world\",3563]"),
+	}
+	bytes, err := json.Marshal(desc1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allocTor := &SimpleAllocTor{
+		SharedPool: &sync.Pool{
+			New: func() interface{} {
+				return message.New()
+			},
+		},
+	}
+	parser := New(allocTor)
+	msg, err := parser.ParseMsg(bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, len(msg), 1)
+	iter := msg[0].Message.PayloadsIterator()
+	assert.Equal(t, iter.Tail(), 3)
+	var i int
+	for iter.Next() {
+		i++
+		switch i {
+		case 1:
+			assert.Equal(t, string(iter.Take()), "1203")
+		case 2:
+			assert.Equal(t, string(iter.Take()), "\"hello world\"")
+		case 3:
+			assert.Equal(t, string(iter.Take()), "3563")
+		}
+	}
+	assert.Equal(t, msg[0].Message.GetInstanceName(), "Test")
+	assert.Equal(t, msg[0].Message.GetMethodName(), "JsonRPC2Case1")
 }
 
 func parserOnBytes(s string) []byte {

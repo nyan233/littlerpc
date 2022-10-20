@@ -19,8 +19,8 @@ const (
 
 	// BaseLen 的基本长度
 	BaseLen                   = 4 + 4 + 8
-	DefaultEncodingType uint8 = 0 // text == json
-	DefaultCodecType    uint8 = 0 // encoding == text
+	DefaultEncodingType uint8 = 0 // encoding == text
+	DefaultCodecType    uint8 = 0 // codec == text
 
 	ErrorCode    string = "code"
 	ErrorMessage string = "message"
@@ -122,6 +122,11 @@ func (m *Message) Length() uint32 {
 	baseLen += m.payloads.Len()
 	m.payloadLength = uint32(baseLen)
 	return uint32(baseLen)
+}
+
+func (m *Message) GetAndSetLength() uint32 {
+	m.payloadLength = m.Length()
+	return m.Length()
 }
 
 func (m *Message) First() uint8 {
