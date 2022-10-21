@@ -43,10 +43,10 @@ func WithDefaultServer() Option {
 		config.Encoder = packet.GetEncoderFromIndex(int(message.DefaultEncodingType))
 		config.NetWork = "nbio_tcp"
 		config.ErrHandler = common2.DefaultErrHandler
-		config.PoolBufferSize = 8192
-		config.PoolMinSize = int32(runtime.NumCPU() * 4)
+		config.PoolBufferSize = 32768
+		config.PoolMinSize = int32(runtime.NumCPU() * 8)
 		config.PoolMaxSize = pool.MaxTaskPoolSize
-		config.Writer = msgwriter.LRPCWriter
+		config.Writer = new(msgwriter.LRPC)
 	}
 }
 

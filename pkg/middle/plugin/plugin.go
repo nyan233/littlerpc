@@ -13,7 +13,7 @@ const (
 // ClientPlugin 指针类型的数据均不能被多个Goroutine安全的使用
 // 如果你要这么做的话，那么请将其拷贝一份
 type ClientPlugin interface {
-	//	OnCall Client.Call() | Client.AsyncCall() 找到绑定的方法并完成Codec后开始
+	//	OnCall Client.Call() | Client.SyncCall() 找到绑定的方法并完成Codec后开始
 	OnCall(msg *message.Message, args *[]interface{}) error
 	//	OnSendMessage Bytes并不能被多个Goroutine安全的使用,如果需要跨context传递
 	//	请将Bytes指向的数据拷贝一份,littlerpc内部对bytes会有内存复用的行为，所以在将其跨Goroutine传递时可能会看到

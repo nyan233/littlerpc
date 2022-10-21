@@ -13,7 +13,11 @@ import (
 	"sync"
 )
 
-type WriterArgument struct {
+type Writer interface {
+	Writer(arg Argument) perror.LErrorDesc
+}
+
+type Argument struct {
 	Message *message.Message
 	Conn    transport.ConnAdapter
 	Option  *common.MethodOption
@@ -25,10 +29,10 @@ type WriterArgument struct {
 	EHandle perror.LErrors
 }
 
-type Writer func(arg *WriterArgument) perror.LErrorDesc
+type LRPC struct{}
 
-// LRPCWriter LittleRpc默认的写入器
-func LRPCWriter(arg *WriterArgument) perror.LErrorDesc {
+// Writer LittleRpc默认的写入器
+func (l *LRPC) Writer(arg Argument) perror.LErrorDesc {
 	// rep Header已经被调用者提前设置好内容，所以这里发送消息的逻辑不用设置
 	// write header
 	msg := arg.Message
@@ -51,7 +55,7 @@ func LRPCWriter(arg *WriterArgument) perror.LErrorDesc {
 	}
 }
 
-func lRPCNoMuxWriter(arg *WriterArgument, bytes []byte) perror.LErrorDesc {
+func lRPCNoMuxWriter(arg Argument, bytes []byte) perror.LErrorDesc {
 	err := common.WriteControl(arg.Conn, bytes)
 	if err != nil {
 		return arg.EHandle.LWarpErrorDesc(common.ErrConnection, fmt.Sprintf("Write NoMuxMessage failed, bytes len : %v", len(bytes)))
@@ -63,7 +67,7 @@ func lRPCNoMuxWriter(arg *WriterArgument, bytes []byte) perror.LErrorDesc {
 }
 
 // TODO: Mux消息支持Debug选项
-func lRPCMuxWriter(arg *WriterArgument, bytes []byte) perror.LErrorDesc {
+func lRPCMuxWriter(arg Argument, bytes []byte) perror.LErrorDesc {
 	msg := arg.Message
 	muxMsg := &mux.Block{
 		Flags:    mux.Enabled,

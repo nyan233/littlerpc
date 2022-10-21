@@ -55,7 +55,7 @@ func (s *Server) setErrResult(msg *message.Message, callResult reflect.Value) pe
 }
 
 func (s *Server) encodeAndSendMsg(msgOpt *messageOpt, msg *message.Message, useMux bool) {
-	err := s.writer(&msgwriter.WriterArgument{
+	err := s.writer.Writer(msgwriter.Argument{
 		Message: msg,
 		Conn:    msgOpt.Conn,
 		Option:  &common2.MethodOption{UseMux: useMux},
