@@ -5,7 +5,7 @@ import (
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
-	"github.com/nyan233/littlerpc/pkg/utils/random"
+	messageUtils "github.com/nyan233/littlerpc/pkg/utils/message"
 	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/nyan233/littlerpc/protocol/mux"
 	"net"
@@ -71,7 +71,7 @@ func TestLRPCWriter(t *testing.T) {
 }
 
 func testWriter(t *testing.T, writer Writer) {
-	msg := random.GenProtocolMessage()
+	msg := messageUtils.GenProtocolMessage()
 	msg.MetaData.Store(message.ErrorCode, "200")
 	msg.MetaData.Store(message.ErrorMessage, "Hello world!")
 	msg.MetaData.Store(message.ErrorMore, "[\"hello world\",123]")

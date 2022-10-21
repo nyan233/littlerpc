@@ -26,7 +26,9 @@ type Argument struct {
 	Pool *sync.Pool
 	// 不为nil时则说明Server开启了Debug模式
 	OnDebug func([]byte)
-	EHandle perror.LErrors
+	// 在消息发送完成时会调用
+	OnComplete func([]byte, perror.LErrorDesc)
+	EHandle    perror.LErrors
 }
 
 type LRPC struct{}
@@ -55,9 +57,14 @@ func (l *LRPC) Writer(arg Argument) perror.LErrorDesc {
 	}
 }
 
-func lRPCNoMuxWriter(arg Argument, bytes []byte) perror.LErrorDesc {
-	err := common.WriteControl(arg.Conn, bytes)
-	if err != nil {
+func lRPCNoMuxWriter(arg Argument, bytes []byte) (err perror.LErrorDesc) {
+	wErr := common.WriteControl(arg.Conn, bytes)
+	defer func() {
+		if arg.OnComplete != nil {
+			arg.OnComplete(bytes, err)
+		}
+	}()
+	if wErr != nil {
 		return arg.EHandle.LWarpErrorDesc(common.ErrConnection, fmt.Sprintf("Write NoMuxMessage failed, bytes len : %v", len(bytes)))
 	}
 	if arg.OnDebug != nil {
@@ -67,7 +74,7 @@ func lRPCNoMuxWriter(arg Argument, bytes []byte) perror.LErrorDesc {
 }
 
 // TODO: Mux消息支持Debug选项
-func lRPCMuxWriter(arg Argument, bytes []byte) perror.LErrorDesc {
+func lRPCMuxWriter(arg Argument, bytes []byte) (err perror.LErrorDesc) {
 	msg := arg.Message
 	muxMsg := &mux.Block{
 		Flags:    mux.Enabled,
@@ -78,8 +85,13 @@ func lRPCMuxWriter(arg Argument, bytes []byte) perror.LErrorDesc {
 	// 大于一个MuxBlock时则分片发送
 	sendBuf := arg.Pool.Get().(*container.Slice[byte])
 	defer arg.Pool.Put(sendBuf)
-	err := common.MuxWriteAll(arg.Conn, muxMsg, sendBuf, bytes, nil)
-	if err != nil {
+	defer func() {
+		if arg.OnComplete != nil {
+			arg.OnComplete(bytes, err)
+		}
+	}()
+	wErr := common.MuxWriteAll(arg.Conn, muxMsg, sendBuf, bytes, nil)
+	if wErr != nil {
 		return arg.EHandle.LWarpErrorDesc(common.ErrConnection, fmt.Sprintf("Write NoMuxMessage failed, bytes len : %v", len(bytes)))
 	}
 	return nil
