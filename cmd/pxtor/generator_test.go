@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"testing"
 )
 
@@ -11,16 +10,6 @@ func TestFutures(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		genCode()
 	}
-}
-
-func TestH(t *testing.T) {
-	file, err := os.OpenFile("./test/Test_proxy.go", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
-	if err != nil {
-		panic(interface{}(err))
-	}
-	defer os.Remove("./test/Test_proxy.go")
-	defer file.Close()
-	_, _ = file.Write([]byte("hello world!"))
 }
 
 func TestGenApi(t *testing.T) {
