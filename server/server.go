@@ -7,8 +7,8 @@ import (
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/msgparser"
-	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
+	"github.com/nyan233/littlerpc/pkg/common/utils/debug"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
@@ -50,7 +50,6 @@ type Server struct {
 	pManager *pluginManager
 	// Error Handler
 	eHandle lerror.LErrors
-	writer  msgwriter.Writer
 	// 是否开启调试模式
 	debug bool
 }
@@ -62,7 +61,6 @@ func New(opts ...Option) *Server {
 	for _, v := range opts {
 		v(sc)
 	}
-	server.writer = sc.Writer
 	if sc.Logger != nil {
 		server.logger = sc.Logger
 	} else {
@@ -108,10 +106,10 @@ func New(opts ...Option) *Server {
 	// New TaskPool
 	if sc.ExecPoolBuilder != nil {
 		server.taskPool = sc.ExecPoolBuilder.Builder(
-			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, serverRecover(server.logger))
+			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, debug.ServerRecover(server.logger))
 	} else {
 		server.taskPool = pool.NewTaskPool(
-			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, serverRecover(server.logger))
+			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, debug.ServerRecover(server.logger))
 	}
 	// init reflection service
 	err := server.RegisterClass(&LittleRpcReflection{&server.elems}, nil)
@@ -204,7 +202,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 	if err != nil {
 		// 错误处理过程会在严重错误时关闭连接, 所以msgId == 0也没有关系
 		// 在解码消息失败时也不可能拿到正确的msgId
-		s.handleError(nil, 0, s.eHandle.LWarpErrorDesc(common.ErrMessageDecoding, err.Error()))
+		s.handleError(c, 0, s.eHandle.LWarpErrorDesc(common.ErrMessageDecoding, err.Error()))
 		return
 	}
 	for _, pMsg := range msgs {
@@ -239,6 +237,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 			s.handleError(c, msgId, lErr)
 			continue
 		}
+		msgOpt.SelectWriter(pMsg.Header)
 		var useMux bool
 		switch pMsg.Header {
 		case message.MagicNumber:

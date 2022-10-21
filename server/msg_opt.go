@@ -7,6 +7,7 @@ import (
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/msgparser"
+	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
@@ -24,6 +25,7 @@ type messageOpt struct {
 	Message  *message.Message
 	Conn     transport.ConnAdapter
 	Method   *common.Method
+	Writer   msgwriter.Writer
 	CallArgs []reflect.Value
 }
 
@@ -42,6 +44,10 @@ func (c *messageOpt) SelectCodecAndEncoder() {
 		c.Codec = cwp.Instance()
 		c.Encoder = ewp.Instance()
 	}
+}
+
+func (c *messageOpt) SelectWriter(header uint8) {
+	c.Writer = msgwriter.Manager.GetWriter(header)
 }
 
 // RealPayload 获取真正的Payload, 如果有压缩则解压

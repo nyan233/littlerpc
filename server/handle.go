@@ -7,6 +7,7 @@ import (
 	common2 "github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
+	"github.com/nyan233/littlerpc/pkg/common/utils/debug"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/stream"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
@@ -25,22 +26,22 @@ func (s *Server) setErrResult(msg *message.Message, callResult reflect.Value) pe
 	interErr := reflect2.ToValueTypeEface(callResult)
 	// 无错误
 	if interErr == error(nil) {
-		msg.MetaData.Store("littlerpc-code", strconv.Itoa(common2.Success.Code()))
-		msg.MetaData.Store("littlerpc-message", common2.Success.Message())
+		msg.MetaData.Store(message.ErrorCode, strconv.Itoa(common2.Success.Code()))
+		msg.MetaData.Store(message.ErrorMessage, common2.Success.Message())
 		return nil
 	}
 	// 检查是否实现了自定义错误的接口
 	desc, ok := interErr.(perror.LErrorDesc)
 	if ok {
-		msg.MetaData.Store("littlerpc-code", strconv.Itoa(desc.Code()))
-		msg.MetaData.Store("littlerpc-message", desc.Message())
+		msg.MetaData.Store(message.ErrorCode, strconv.Itoa(desc.Code()))
+		msg.MetaData.Store(message.ErrorMessage, desc.Message())
 		bytes, err := desc.MarshalMores()
 		if err != nil {
 			return s.eHandle.LWarpErrorDesc(
 				common2.ErrCodecMarshalError,
-				fmt.Sprintf("%s : %s", "littlerpc-mores-bin", err.Error()))
+				fmt.Sprintf("%s : %s", message.ErrorMore, err.Error()))
 		}
-		msg.MetaData.Store("littlerpc-mores-bin", convert.BytesToString(bytes))
+		msg.MetaData.Store(message.ErrorMore, convert.BytesToString(bytes))
 		return nil
 	}
 	err, ok := interErr.(error)
@@ -49,19 +50,19 @@ func (s *Server) setErrResult(msg *message.Message, callResult reflect.Value) pe
 	if !ok {
 		return s.eHandle.LNewErrorDesc(perror.UnsafeOption, "Server.RegisterClass no checker on error")
 	}
-	msg.MetaData.Store("littlerpc-code", strconv.Itoa(perror.Unknown))
-	msg.MetaData.Store("littlerpc-message", err.Error())
+	msg.MetaData.Store(message.ErrorCode, strconv.Itoa(perror.Unknown))
+	msg.MetaData.Store(message.ErrorMessage, err.Error())
 	return nil
 }
 
 func (s *Server) encodeAndSendMsg(msgOpt *messageOpt, msg *message.Message, useMux bool) {
-	err := s.writer.Writer(msgwriter.Argument{
+	err := msgOpt.Writer.Writer(msgwriter.Argument{
 		Message: msg,
 		Conn:    msgOpt.Conn,
 		Option:  &common2.MethodOption{UseMux: useMux},
 		Encoder: msgOpt.Encoder,
 		Pool:    sharedPool.TakeBytesPool(),
-		OnDebug: onDebug(s.logger, s.debug, useMux),
+		OnDebug: debug.MessageDebug(s.logger, s.debug, useMux),
 		EHandle: s.eHandle,
 	})
 	if err != nil {
@@ -229,8 +230,8 @@ func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo per
 		msg := message.New()
 		msg.SetMsgType(message.Return)
 		msg.SetMsgId(msgId)
-		msg.MetaData.Store("littlerpc-code", strconv.Itoa(errNo.Code()))
-		msg.MetaData.Store("littlerpc-message", errNo.Message())
+		msg.MetaData.Store(message.ErrorCode, strconv.Itoa(errNo.Code()))
+		msg.MetaData.Store(message.ErrorMessage, errNo.Message())
 		// 为空则不序列化Mores, 否则会造成空间浪费
 		mores := errNo.Mores()
 		if mores != nil && len(mores) > 0 {
@@ -240,7 +241,7 @@ func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo per
 				_ = desc.Close()
 				return
 			} else {
-				msg.MetaData.Store("littlerpc-mores-bin", convert.BytesToString(bytes))
+				msg.MetaData.Store(message.ErrorMore, convert.BytesToString(bytes))
 			}
 		}
 		bp := bytesBuffer.Get().(*container.Slice[byte])
