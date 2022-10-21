@@ -6,6 +6,7 @@ import (
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
+	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/nyan233/littlerpc/protocol/mux"
 	"unsafe"
@@ -140,4 +141,21 @@ func AnalysisMuxMessage(data []byte) *MuxGraph {
 	}
 	g.Graph = AnalysisMessage(muxBlock.Payloads)
 	return g
+}
+
+func GenProtocolMessage() *message.Message {
+	msg := message.New()
+	msg.SetMsgId(uint64(random.FastRand()))
+	msg.SetCodecType(uint8(random.FastRand()))
+	msg.SetEncoderType(uint8(random.FastRand()))
+	msg.SetMsgType(uint8(random.FastRand()))
+	msg.SetInstanceName(random.GenStringOnAscii(100))
+	msg.SetMethodName(random.GenStringOnAscii(100))
+	for i := 0; i < int(random.FastRandN(10)+1); i++ {
+		msg.AppendPayloads(random.GenBytesOnAscii(random.FastRandN(50)))
+	}
+	for i := 0; i < int(random.FastRandN(10)+1); i++ {
+		msg.MetaData.Store(random.GenStringOnAscii(10), random.GenStringOnAscii(10))
+	}
+	return msg
 }

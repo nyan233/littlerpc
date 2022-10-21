@@ -1,7 +1,6 @@
 package random
 
 import (
-	"github.com/nyan233/littlerpc/protocol/message"
 	"math/rand"
 	"strings"
 	"time"
@@ -47,21 +46,4 @@ func GenSequenceNumberOnFastRand(nSeq int) []uint32 {
 		seq[i] = FastRand()
 	}
 	return seq
-}
-
-func GenProtocolMessage() *message.Message {
-	msg := message.New()
-	msg.SetMsgId(uint64(FastRand()))
-	msg.SetCodecType(uint8(FastRand()))
-	msg.SetEncoderType(uint8(FastRand()))
-	msg.SetMsgType(uint8(FastRand()))
-	msg.SetInstanceName(GenStringOnAscii(100))
-	msg.SetMethodName(GenStringOnAscii(100))
-	for i := 0; i < int(FastRandN(10)+1); i++ {
-		msg.AppendPayloads(GenBytesOnAscii(FastRandN(50)))
-	}
-	for i := 0; i < int(FastRandN(10)+1); i++ {
-		msg.MetaData.Store(GenStringOnAscii(10), GenStringOnAscii(10))
-	}
-	return msg
 }
