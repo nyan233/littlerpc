@@ -7,6 +7,7 @@ import (
 	"github.com/nyan233/littlerpc/internal/pool"
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/msgparser"
+	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	container2 "github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
@@ -55,6 +56,7 @@ type Client struct {
 	// 所有的操作都是线程安全的
 	elems  container2.SyncMap118[string, common.ElemMeta]
 	logger bilog.Logger
+	writer msgwriter.Writer
 	// 是否开启调试模式
 	debug bool
 	// 在发送消息时是否默认使用Mux
@@ -89,6 +91,7 @@ func New(opts ...Option) (*Client, error) {
 	}
 	client := &Client{}
 	client.logger = config.Logger
+	client.writer = config.Writer
 	client.eHandle = config.ErrHandler
 	// 配置解析器和负载均衡器
 	var manager AddrManager

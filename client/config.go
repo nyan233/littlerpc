@@ -2,6 +2,7 @@ package client
 
 import (
 	"crypto/tls"
+	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/balance"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
@@ -52,4 +53,6 @@ type Config struct {
 	ExecPoolBuilder export.TaskPoolBuilder
 	// 是否使用Mux模式的消息
 	UseMux bool
+	// 写入器
+	Writer msgwriter.Writer
 }

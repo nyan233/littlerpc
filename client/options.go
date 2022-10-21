@@ -3,6 +3,7 @@ package client
 import (
 	"crypto/tls"
 	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/middle/balance"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
@@ -40,6 +41,7 @@ func WithDefaultClient() Option {
 		config.ErrHandler = common2.DefaultErrHandler
 		// 小于等于0表示不能使用Async模式
 		config.PoolSize = -1
+		config.Writer = msgwriter.Manager.GetWriter(message.MagicNumber)
 	}
 }
 
@@ -135,5 +137,11 @@ func WithErrHandler(eh perror.LErrors) Option {
 func WithUseMux(use bool) Option {
 	return func(config *Config) {
 		config.UseMux = use
+	}
+}
+
+func WithWriter(writer msgwriter.Writer) Option {
+	return func(config *Config) {
+		config.Writer = writer
 	}
 }

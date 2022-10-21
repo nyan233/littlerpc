@@ -5,29 +5,28 @@ import (
 	"fmt"
 	lreflect "github.com/nyan233/littlerpc/internal/reflect"
 	"github.com/nyan233/littlerpc/pkg/common"
-	"github.com/nyan233/littlerpc/pkg/container"
+	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
+	"github.com/nyan233/littlerpc/pkg/common/utils/debug"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
-	"github.com/nyan233/littlerpc/pkg/utils/random"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/mux"
 	"reflect"
 	"strconv"
 	"strings"
 )
 
 func (c *Client) handleProcessRetErr(msg *message.Message) perror.LErrorDesc {
-	code, err := strconv.Atoi(msg.MetaData.Load("littlerpc-code"))
+	errCode, err := strconv.Atoi(msg.MetaData.Load(message.ErrorCode))
 	if err != nil {
 		return perror.LWarpStdError(common.ErrClient, err.Error())
 	}
-	message := msg.MetaData.Load("littlerpc-message")
+	errMessage := msg.MetaData.Load(message.ErrorMessage)
 	// Success表示无错误
-	if code == common.Success.Code() && message == common.Success.Message() {
+	if errCode == common.Success.Code() && errMessage == common.Success.Message() {
 		return nil
 	}
-	desc := c.eHandle.LNewErrorDesc(code, message)
-	moresBinStr := msg.MetaData.Load("littlerpc-mores-bin")
+	desc := c.eHandle.LNewErrorDesc(errCode, errMessage)
+	moresBinStr := msg.MetaData.Load(message.ErrorMore)
 	if moresBinStr != "" {
 		err := desc.UnmarshalMores(convert.StringToBytes(moresBinStr))
 		if err != nil {
@@ -161,52 +160,26 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *lock
 	msg.SetMsgType(message.Call)
 	msg.SetCodecType(uint8(c.codecWp.Index()))
 	msg.SetEncoderType(uint8(c.encoderWp.Index()))
-	// request body
-	bp := sharedPool.TakeBytesPool()
-	memBuffer := bp.Get().(*container.Slice[byte])
-	memBuffer.Reset()
-	defer bp.Put(memBuffer)
-	// write header
-	// encoder类型为text不需要额外拷贝内存
-	if c.encoderWp.Index() != int(message.DefaultEncodingType) {
-		bodyBytes, err := c.encoderWp.Instance().EnPacket(msg.Payloads())
-		if err != nil {
-			return c.eHandle.LWarpErrorDesc(common.ErrClient, "Encoder.EnPacket", err.Error())
-		}
-		msg.ReWritePayload(bodyBytes)
-	}
-	message.Marshal(msg, memBuffer)
-	// 插件的
-	if err := c.pluginManager.OnSendMessage(msg, (*[]byte)(memBuffer)); err != nil {
-		c.logger.ErrorFromErr(err)
-	}
 	// 注册用于通知的Channel
 	lc.notify.Store(msg.GetMsgId(), make(chan Complete, 1))
-	if !c.useMux {
-		err := common.WriteControl(lc.conn, *memBuffer)
-		if err != nil {
-			return c.eHandle.LWarpErrorDesc(common.ErrClient, err, lc.conn.Close())
-		}
-		return nil
-	}
-	muxMsg := &mux.Block{
-		Flags:    mux.Enabled,
-		StreamId: random.FastRand(),
-		MsgId:    msg.GetMsgId(),
-	}
-	// 要发送的数据小于一个MuxBlock的长度则直接发送
-	// 大于一个MuxBlock时则分片发送
-	sendBuf := bp.Get().(*container.Slice[byte])
-	*sendBuf = (*sendBuf)[:sendBuf.Cap()]
-	defer bp.Put(sendBuf)
-	stdErr := common.MuxWriteAll(lc.conn, muxMsg, sendBuf, *memBuffer, func() {
-		select {
-		case <-ctx.Done():
-			// 发送取消消息之后退出
-			break
-		default:
-			// 非阻塞
-		}
+	stdErr := c.writer.Writer(msgwriter.Argument{
+		Message: msg,
+		Conn:    lc.conn,
+		Option: &common.MethodOption{
+			SyncCall:        false,
+			CompleteReUsage: false,
+			UseMux:          c.useMux,
+		},
+		Encoder: c.encoderWp.Instance(),
+		Pool:    sharedPool.TakeBytesPool(),
+		OnDebug: debug.MessageDebug(c.logger, c.debug, c.useMux),
+		OnComplete: func(bytes []byte, err perror.LErrorDesc) {
+			// 发送完成时调用插件
+			if err := c.pluginManager.OnSendMessage(msg, &bytes); err != nil {
+				c.logger.ErrorFromErr(err)
+			}
+		},
+		EHandle: c.eHandle,
 	})
 	if stdErr != nil {
 		return c.eHandle.LWarpErrorDesc(common.ErrClient, stdErr.Error(), lc.conn.Close())
