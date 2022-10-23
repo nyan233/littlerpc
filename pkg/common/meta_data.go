@@ -15,9 +15,14 @@ type ElemMeta struct {
 }
 
 type Method struct {
-	Value  reflect.Value
-	Pool   sync.Pool
-	Option *MethodOption
+	Value reflect.Value
+	Pool  sync.Pool
+	// 和Stream一起在注册时被识别
+	// 是否支持context的传入
+	SupportContext bool
+	// 是否支持stream的传入
+	SupportStream bool
+	Option        *MethodOption
 }
 
 type MethodOption struct {
