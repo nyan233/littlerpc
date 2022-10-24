@@ -31,13 +31,14 @@ type DynamicTaskPool struct {
 	// 池的大小，也即活跃的goroutine数量
 	minSize int32
 	// 最大的池大小
-	maxSize int32
-	// 空闲的任务超时的时间 默认90s
-	idleTimeout time.Duration
+	maxSize    int32
+	idleTicker *time.Ticker
 	// 关闭的标志
 	closed int32
 	// 执行成功的统计
+	_           [128 - 88]byte
 	execSuccess uint64
+	_           [128 - 8]byte
 	// 执行失败的统计
 	execFailed uint64
 }
@@ -51,7 +52,7 @@ func NewTaskPool(bufSize, minSize, maxSize int32, rf RecoverFunc) *DynamicTaskPo
 	pool.recoverFn = rf
 	pool.minSize = minSize
 	pool.maxSize = maxSize
-	pool.idleTimeout = time.Second * 90
+	pool.idleTicker = time.NewTicker(time.Second * 90)
 	pool.wg = &sync.WaitGroup{}
 	pool.wg.Add(int(minSize))
 	pool.ctx, pool.cancelFn = context.WithCancel(context.Background())
@@ -61,14 +62,14 @@ func NewTaskPool(bufSize, minSize, maxSize int32, rf RecoverFunc) *DynamicTaskPo
 
 func (p *DynamicTaskPool) start() {
 	for i := 0; i < int(p.minSize); i++ {
+		gIndex := atomic.AddInt32(&p.liveSize, 1)
 		go func() {
-			exec[struct{}, any](p, p.ctx.Done(), nil)
+			exec[struct{}, any](p, gIndex, p.ctx.Done(), nil)
 		}()
 	}
 }
 
-func exec[T any, T2 any](p *DynamicTaskPool, done <-chan T, done2 <-chan T2) {
-	gIndex := atomic.AddInt32(&p.liveSize, 1)
+func exec[T any, T2 any](p *DynamicTaskPool, gIndex int32, done <-chan T, done2 <-chan T2) {
 	defer p.wg.Done()
 	defer atomic.AddInt32(&p.liveSize, -1)
 	iFunc := func(fn func()) {
@@ -104,17 +105,25 @@ func (p *DynamicTaskPool) Push(fn func()) error {
 		break
 	default:
 		// 阻塞表示buf已满, 需要扩容Goroutine
-		if atomic.AddInt32(&p.liveSize, 1) <= p.maxSize {
-			p.wg.Add(1)
-			go func() {
-				timer := time.NewTimer(p.idleTimeout)
-				exec[time.Time, struct{}](p, timer.C, p.ctx.Done())
-			}()
-			atomic.AddInt32(&p.liveSize, -1)
-			p.tasks <- fn
-		} else {
-			// 已到达Goroutine上限则不扩容, 等待可用
-			p.tasks <- fn
+		for {
+			oldLiveSize := atomic.LoadInt32(&p.liveSize)
+			if oldLiveSize >= p.maxSize {
+				// 已到达Goroutine上限则不扩容, 等待可用
+				p.tasks <- fn
+				return nil
+			}
+			if atomic.CompareAndSwapInt32(&p.liveSize, oldLiveSize, oldLiveSize+1) {
+				p.wg.Add(1)
+				go func() {
+					p.idleTicker.Reset(time.Second * 90)
+					exec[time.Time, struct{}](p, oldLiveSize+1, p.idleTicker.C, p.ctx.Done())
+				}()
+				p.tasks <- fn
+				return nil
+			} else {
+				// retry
+				continue
+			}
 		}
 	}
 	return nil
