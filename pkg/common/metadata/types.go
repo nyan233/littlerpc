@@ -1,4 +1,4 @@
-package common
+package metadata
 
 import (
 	"reflect"
@@ -11,21 +11,26 @@ type ElemMeta struct {
 	// instance pointer
 	Data reflect.Value
 	// instance method collection
-	Methods map[string]*Method
+	Methods map[string]*Process
 }
 
-type Method struct {
+// Process v0.40从Method更名到Process
+// 过程的名字更适合同时描述方法和函数
+type Process struct {
 	Value reflect.Value
-	Pool  sync.Pool
+	// 用于复用输入参数的内存池
+	Pool sync.Pool
+	// 是否为匿名函数, 匿名函数不带接收器
+	AnonymousFunc bool
 	// 和Stream一起在注册时被识别
 	// 是否支持context的传入
 	SupportContext bool
 	// 是否支持stream的传入
 	SupportStream bool
-	Option        *MethodOption
+	Option        *ProcessOption
 }
 
-type MethodOption struct {
+type ProcessOption struct {
 	// 是否将在事件循环中调用
 	SyncCall bool
 	//	是否在调用过程完成退出之后, 并且序列化完Result之后重用Argument memory

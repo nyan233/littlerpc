@@ -1,4 +1,4 @@
-package common
+package sharedpool
 
 import (
 	"github.com/nyan233/littlerpc/pkg/container"

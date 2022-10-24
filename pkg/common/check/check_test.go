@@ -1,4 +1,4 @@
-package common
+package check
 
 import (
 	"github.com/nyan233/littlerpc/pkg/middle/codec"

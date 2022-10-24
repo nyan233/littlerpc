@@ -1,8 +1,10 @@
 package metadata
 
-import "github.com/nyan233/littlerpc/pkg/common"
+import (
+	"github.com/nyan233/littlerpc/pkg/common/metadata"
+)
 
-func InputOffset(m *common.Method) int {
+func InputOffset(m *metadata.Process) int {
 	switch {
 	case m.SupportStream && m.SupportContext:
 		return 2
