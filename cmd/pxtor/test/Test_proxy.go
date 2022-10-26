@@ -1,6 +1,6 @@
 /*
 @Generator   : littlerpc-generator
-@CreateTime  : 2022-10-26 09:05:23.5880033 +0800 CST m=+0.709480401
+@CreateTime  : 2022-10-26 18:37:23.1221197 +0800 CST m=+0.580585201
 @Author      : littlerpc-generator
 @Comment     : code is auto generate do not edit
 */

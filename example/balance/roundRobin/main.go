@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/nyan233/littlerpc/client"
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/logger"
 	"github.com/nyan233/littlerpc/server"
 )
 
@@ -53,7 +53,7 @@ func Client() {
 }
 
 func main() {
-	common.SetOpenLogger(false)
+	logger.SetOpenLogger(false)
 	Server()
 	Client()
 	Client()

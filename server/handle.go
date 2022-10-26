@@ -1,27 +1,20 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	common2 "github.com/nyan233/littlerpc/pkg/common"
-	"github.com/nyan233/littlerpc/pkg/common/check"
 	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/common/utils/debug"
 	"github.com/nyan233/littlerpc/pkg/container"
-	"github.com/nyan233/littlerpc/pkg/stream"
 	"github.com/nyan233/littlerpc/pkg/utils/control"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
-	messageUtils "github.com/nyan233/littlerpc/pkg/utils/message"
-	"github.com/nyan233/littlerpc/pkg/utils/random"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/mux"
 	"reflect"
 	"strconv"
-	"sync"
 )
 
 // 必须在其结果集中首先处理错误在处理其余结果
@@ -77,40 +70,6 @@ func (s *Server) encodeAndSendMsg(msgOpt messageOpt, msg *message.Message, useMu
 	}
 }
 
-func (s *Server) sendOnNoMux(msgOpt *messageOpt, msg *message.Message, bytes []byte) {
-	err := control.WriteControl(msgOpt.Conn, bytes)
-	if err != nil {
-		s.logger.ErrorFromString(fmt.Sprintf("Write NoMuxMessage failed: %v", msgOpt.Conn.Close()))
-	}
-	if s.debug {
-		s.logger.Debug(messageUtils.AnalysisMessage(bytes).String())
-	}
-	if err := s.pManager.OnComplete(msg, err); err != nil {
-		s.logger.ErrorFromErr(err)
-	}
-	return
-}
-
-func (s *Server) sendOnMux(msgOpt *messageOpt, bytesBuffer *sync.Pool, msg *message.Message, bytes []byte) {
-	muxMsg := &mux.Block{
-		Flags:    mux.Enabled,
-		StreamId: random.FastRand(),
-		MsgId:    msg.GetMsgId(),
-	}
-	// write data
-	// 大于一个MuxBlock时则分片发送
-	sendBuf := bytesBuffer.Get().(*container.Slice[byte])
-	defer bytesBuffer.Put(sendBuf)
-	err := control.MuxWriteAll(msgOpt.Conn, muxMsg, sendBuf, bytes, nil)
-	if err != nil {
-		s.logger.ErrorFromString(fmt.Sprintf("Write MuxMessage failed: %v", msgOpt.Conn.Close()))
-		return
-	}
-	if err := s.pManager.OnComplete(msg, err); err != nil {
-		s.logger.ErrorFromErr(err)
-	}
-}
-
 // 将用户过程的返回结果集序列化为可传输的json数据
 func (s *Server) handleResult(msgOpt messageOpt, msg *message.Message, callResult []reflect.Value) {
 	for _, v := range callResult[:len(callResult)-1] {
@@ -133,82 +92,6 @@ func (s *Server) handleResult(msgOpt messageOpt, msg *message.Message, callResul
 		}
 		msg.AppendPayloads(bytes)
 	}
-}
-
-// 从客户端传来的数据中序列化对应过程需要的调用参数
-// ok指示数据是否合法
-func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *message.Message, receiver, method reflect.Value) ([]reflect.Value, perror.LErrorDesc) {
-	callArgs := []reflect.Value{
-		// receiver
-		receiver,
-	}
-	// 排除receiver
-	iter := msg.PayloadsIterator()
-	// 去除接收者之后的输入参数长度
-	// 校验客户端传递的参数和服务端是否一致
-	if nInput := method.Type().NumIn() - 1; nInput != iter.Tail() {
-		return nil, s.eHandle.LWarpErrorDesc(common2.ErrServer,
-			"client input args number no equal server",
-			fmt.Sprintf("Client : %d", iter.Tail()), fmt.Sprintf("Server : %d", nInput))
-	}
-	var inputStart int
-	if msg.MetaData.Load("context-timeout") != "" {
-		inputStart++
-	}
-	if msg.MetaData.Load("stream-id") != "" {
-		inputStart++
-	}
-	inputTypeList := reflect2.FuncInputTypeList(method, inputStart, true, func(i int) bool {
-		if len(iter.Take()) == 0 {
-			return true
-		}
-		return false
-	})
-	if inputStart == 2 {
-		val1 := reflect.New(method.Type().In(1)).Interface()
-		val2 := reflect.New(method.Type().In(2)).Interface()
-		switch val1.(type) {
-		case *context.Context:
-			break
-		default:
-			// TODO Handle Error
-		}
-		switch val2.(type) {
-		case *stream.LStream:
-			break
-		default:
-			// TODO Handle Error
-		}
-	} else if inputStart == 1 {
-		typ1 := method.Type().In(1)
-		if typ1.Kind() != reflect.Interface {
-			// TODO Handle Error
-		}
-		switch reflect.New(typ1).Interface().(type) {
-		case *context.Context:
-			break
-		case *stream.LStream:
-			break
-		default:
-			// TODO Handle Error
-		}
-	}
-	for i := 0; i < len(inputTypeList) && iter.Next(); i++ {
-		eface := inputTypeList[i]
-		argBytes := iter.Take()
-		if len(argBytes) == 0 {
-			callArgs = append(callArgs, reflect.ValueOf(eface))
-			continue
-		}
-		callArg, err := check.CoderType(sArg.Codec, argBytes, eface)
-		if err != nil {
-			return nil, s.eHandle.LWarpErrorDesc(common2.ErrServer, err.Error())
-		}
-		// 可以根据获取的参数类别的每一个参数的类型信息得到
-		// 所需的精确类型，所以不用再对变长的类型做处理
-		callArgs = append(callArgs, reflect.ValueOf(callArg))
-	}
-	return callArgs, nil
 }
 
 // NOTE: 这里负责处理Server遇到的所有错误, 它会在遇到严重的错误时关闭连接, 不那么重要的错误则尝试返回给客户端

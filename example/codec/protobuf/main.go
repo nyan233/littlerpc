@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/nyan233/littlerpc/client"
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/logger"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/server"
 )
@@ -29,7 +29,7 @@ func (h *Hello) SayHelloToJson(jn *Student) (*Student, error) {
 }
 
 func main() {
-	common.SetOpenLogger(false)
+	logger.SetOpenLogger(false)
 	codec.RegisterCodec(new(ProtoBufCodec))
 	server := server.New(server.WithAddressServer(":1234"))
 	err := server.RegisterClass(new(Hello), nil)
