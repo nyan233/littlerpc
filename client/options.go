@@ -3,6 +3,7 @@ package client
 import (
 	"crypto/tls"
 	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/logger"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/middle/balance"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
@@ -33,7 +34,7 @@ func WithDefaultClient() Option {
 		config.KeepAlive = false
 		config.ClientConnTimeout = 90 * time.Second
 		config.ClientPPTimeout = 5 * time.Second
-		config.Logger = common2.Logger
+		config.Logger = logger.Logger
 		config.Encoder = packet.GetEncoderFromIndex(int(message.DefaultEncodingType))
 		config.Codec = codec.GetCodecFromIndex(int(message.DefaultCodecType))
 		config.NetWork = "nbio_tcp"
@@ -73,12 +74,6 @@ func WithAddressClient(addr string) Option {
 func WithCustomLoggerClient(logger bilog.Logger) Option {
 	return func(config *Config) {
 		config.Logger = logger
-	}
-}
-
-func WithCallOnErr(fn func(err error)) Option {
-	return func(config *Config) {
-		config.CallOnErr = fn
 	}
 }
 

@@ -3,9 +3,11 @@ package msgwriter
 import (
 	"fmt"
 	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/utils/control"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
@@ -20,7 +22,7 @@ type Writer interface {
 type Argument struct {
 	Message *message.Message
 	Conn    transport.ConnAdapter
-	Option  *common.MethodOption
+	Option  *metadata.ProcessOption
 	Encoder packet.Encoder
 	// 用于统一内存复用的池, 类型是: *container.Slice[byte]
 	Pool *sync.Pool
@@ -58,7 +60,7 @@ func (l *LRPC) Writer(arg Argument) perror.LErrorDesc {
 }
 
 func lRPCNoMuxWriter(arg Argument, bytes []byte) (err perror.LErrorDesc) {
-	wErr := common.WriteControl(arg.Conn, bytes)
+	wErr := control.WriteControl(arg.Conn, bytes)
 	defer func() {
 		if arg.OnComplete != nil {
 			arg.OnComplete(bytes, err)
@@ -90,7 +92,7 @@ func lRPCMuxWriter(arg Argument, bytes []byte) (err perror.LErrorDesc) {
 			arg.OnComplete(bytes, err)
 		}
 	}()
-	wErr := common.MuxWriteAll(arg.Conn, muxMsg, sendBuf, bytes, nil)
+	wErr := control.MuxWriteAll(arg.Conn, muxMsg, sendBuf, bytes, nil)
 	if wErr != nil {
 		return arg.EHandle.LWarpErrorDesc(common.ErrConnection, fmt.Sprintf("Write NoMuxMessage failed, bytes len : %v", len(bytes)))
 	}

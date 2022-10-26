@@ -7,7 +7,7 @@ import (
 )
 
 func TestCheckCoderType(t *testing.T) {
-	_, err := CheckCoderType(&codec.JsonCodec{}, nil, nil)
+	_, err := CoderType(&codec.JsonCodec{}, nil, nil)
 	if err == nil {
 		t.Fatal("error equal nil")
 	}
@@ -17,12 +17,12 @@ func TestCheckCoderType(t *testing.T) {
 		"hello": "123",
 		"dd":    "456",
 	}
-	uTestData, err := CheckCoderType(&codec.JsonCodec{}, bytes, testData)
+	uTestData, err := CoderType(&codec.JsonCodec{}, bytes, testData)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assert.Equal(t, uTestData, comparaData)
-	uTestData, err = CheckCoderType(&codec.JsonCodec{}, bytes, &testData)
+	uTestData, err = CoderType(&codec.JsonCodec{}, bytes, &testData)
 	if err != nil {
 		t.Fatal(err)
 	}

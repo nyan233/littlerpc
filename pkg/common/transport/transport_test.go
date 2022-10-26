@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/logger"
 	"log"
 	"testing"
 )
@@ -16,7 +16,7 @@ func tcpClientOnMessage(conn ConnAdapter, data []byte) {
 
 func TestTcpTransport(t *testing.T) {
 	// 关闭服务器烦人的日志
-	common.SetOpenLogger(false)
+	logger.SetOpenLogger(false)
 	builder := NewNBioTcpServer(NetworkServerConfig{
 		Addrs: []string{"127.0.0.1:9090", "127.0.0.2:9090"},
 	})
@@ -54,7 +54,7 @@ func wsOnMessage(conn ConnAdapter, data []byte) {
 
 func TestWebSocketTransport(t *testing.T) {
 	// 关闭服务器烦人的日志
-	common.SetOpenLogger(false)
+	logger.SetOpenLogger(false)
 	builder := NewNBioWebsocketServer(NetworkServerConfig{
 		Addrs:     []string{"127.0.0.1:8083", "127.0.0.2:8054"},
 		KeepAlive: false,
@@ -85,7 +85,7 @@ func TestWebSocketTransport(t *testing.T) {
 
 func TestStdTcpTransport(t *testing.T) {
 	// 关闭服务器烦人的日志
-	common.SetOpenLogger(false)
+	logger.SetOpenLogger(false)
 	builder := NewStdTcpServer(NetworkServerConfig{
 		Addrs: []string{"127.0.0.1:9090", "127.0.0.2:9090"},
 	})

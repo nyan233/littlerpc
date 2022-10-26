@@ -3,24 +3,11 @@ package msgparser
 import (
 	"encoding/json"
 	"errors"
+	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/protocol/message"
 	"strings"
 )
-
-const (
-	JsonRPC2KeepAlive = "rpc.keepalive"
-	JsonRPC2Version   = "2.0"
-)
-
-type JsonRPC2CallDesc struct {
-	Version  string            `json:"jsonrpc"`
-	Method   string            `json:"method"`
-	Codec    string            `json:"rpc_codec"`
-	MetaData map[string]string `json:"rpc_metadata"`
-	Id       int64             `json:"id"`
-	Params   []byte            `json:"params"`
-}
 
 type JsonRpc2Handler struct {
 	Codec codec.Codec
@@ -36,43 +23,43 @@ func (j *JsonRpc2Handler) MessageLength(base []byte) int {
 }
 
 func (j *JsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, error) {
-	var callDesc JsonRPC2CallDesc
-	err := j.Codec.Unmarshal(data, &callDesc)
+	var request jsonrpc2.Request
+	err := j.Codec.Unmarshal(data, &request)
 	if err != nil {
 		return -1, err
 	}
-	if callDesc.Version != JsonRPC2Version {
+	if request.Version != jsonrpc2.Version {
 		return -1, errors.New("hash")
 	}
-	if callDesc.Codec == "" {
+	if request.Codec == "" {
 		msg.SetCodecType(message.DefaultCodecType)
 	} else {
-		msg.SetCodecType(uint8(codec.GetCodecFromScheme(callDesc.Codec).Index()))
+		msg.SetCodecType(uint8(codec.GetCodecFromScheme(request.Codec).Index()))
 	}
 	// jsonrpc2不支持压缩编码
 	msg.SetEncoderType(message.DefaultEncodingType)
-	msg.SetMsgId(uint64(callDesc.Id))
-	if callDesc.MetaData != nil {
-		for k, v := range callDesc.MetaData {
+	msg.SetMsgId(uint64(request.Id))
+	if request.MetaData != nil {
+		for k, v := range request.MetaData {
 			msg.MetaData.Store(k, v)
 		}
 	}
-	if callDesc.Method == "" {
+	if request.Method == "" {
 		return -1, errors.New("hash")
 	}
-	methodSplit := strings.Split(callDesc.Method, ".")
+	methodSplit := strings.Split(request.Method, ".")
 	if len(methodSplit) != 2 {
 		return -1, errors.New("hash")
 	}
 	msg.SetInstanceName(methodSplit[0])
 	msg.SetMethodName(methodSplit[1])
-	if callDesc.Params == nil || len(callDesc.Params) == 0 {
+	if request.Params == nil || len(request.Params) == 0 {
 		return UnmarshalComplete, nil
 	}
-	switch callDesc.Params[0] {
+	switch request.Params[0] {
 	case '[':
 		var msgs []json.RawMessage
-		err := j.Codec.Unmarshal(callDesc.Params, &msgs)
+		err := j.Codec.Unmarshal(request.Params, &msgs)
 		if err != nil {
 			return -1, err
 		}
@@ -80,7 +67,7 @@ func (j *JsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, 
 			msg.AppendPayloads(v)
 		}
 	default:
-		msg.AppendPayloads(callDesc.Params)
+		msg.AppendPayloads(request.Params)
 	}
 	msg.GetAndSetLength()
 	return UnmarshalComplete, nil

@@ -2,6 +2,7 @@ package msgparser
 
 import (
 	"encoding/json"
+	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol/message"
@@ -58,8 +59,8 @@ func TestParser(t *testing.T) {
 }
 
 func TestJsonRPC2Parser(t *testing.T) {
-	desc1 := &JsonRPC2CallDesc{
-		Version: JsonRPC2Version,
+	desc1 := &jsonrpc2.Request{
+		Version: jsonrpc2.Version,
 		Method:  "Test.JsonRPC2Case1",
 		Codec:   "json",
 		MetaData: map[string]string{

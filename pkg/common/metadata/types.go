@@ -27,17 +27,22 @@ type Process struct {
 	SupportContext bool
 	// 是否支持stream的传入
 	SupportStream bool
-	Option        *ProcessOption
+	// Option中的参数都是用于定义的, 在Process中的其它控制参数用户
+	// 并不能手动控制
+	Option *ProcessOption
 }
 
 type ProcessOption struct {
 	// 是否将在事件循环中调用
 	SyncCall bool
 	//	是否在调用过程完成退出之后, 并且序列化完Result之后重用Argument memory
-	//	全部入参实现export.Reset接口时才会生效
+	//	全部入参实现export.Reset接口时才会生效, 不包括context.Context/stream.LStream
 	//	NOTE: 开启了此选项的过程请不要直接作为值使用输入参数中的指针类型
 	//	NOTE: LittleRpc会在调用结束, 序列化消息完成之后, 回送客户端消息之前将其放回到内存池中, 所以您应该拷贝它
 	CompleteReUsage bool
 	// 服务端是否使用Mux Message回复客户端, 有些Writer不一定理会这个配置
 	UseMux bool
+	// 在调用时是否使用原生goroutine来代替fiber pool, SyncCall == false 时才会生效
+	// 此选项为true则意味者不会将请求的调用交给fiber pool, 直接使用go func() {x}开启一个新的fiber
+	UseRawGoroutine bool
 }

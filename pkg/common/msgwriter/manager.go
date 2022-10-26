@@ -1,6 +1,8 @@
 package msgwriter
 
 import (
+	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
+	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/nyan233/littlerpc/protocol/mux"
 )
@@ -24,5 +26,5 @@ func (m *manager) GetWriter(header byte) Writer {
 func init() {
 	Manager.RegisterWriter(message.MagicNumber, &LRPC{})
 	Manager.RegisterWriter(mux.Enabled, &LRPC{})
-	Manager.RegisterWriter('{', &JsonRPC2{})
+	Manager.RegisterWriter(jsonrpc2.Header, &JsonRPC2{Codec: &codec.JsonCodec{}})
 }

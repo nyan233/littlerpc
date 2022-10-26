@@ -7,7 +7,7 @@ import (
 	"reflect"
 )
 
-func CheckCoderType(codec codec.Codec, data []byte, structPtr interface{}) (interface{}, error) {
+func CoderType(codec codec.Codec, data []byte, structPtr interface{}) (interface{}, error) {
 	if structPtr == nil || data == nil || len(data) == 0 {
 		return nil, errors.New("no satisfy unmarshal case")
 	}

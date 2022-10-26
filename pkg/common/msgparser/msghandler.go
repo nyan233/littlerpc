@@ -1,6 +1,7 @@
 package msgparser
 
 import (
+	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/nyan233/littlerpc/protocol/mux"
@@ -41,5 +42,5 @@ func GetMessageHandler(magicNumber uint8) MessageHandler {
 func init() {
 	RegisterMessageHandler(message.MagicNumber, &noMuxHandler{})
 	RegisterMessageHandler(mux.Enabled, &muxHandler{})
-	RegisterMessageHandler('{', &JsonRpc2Handler{Codec: codec.GetCodecFromScheme("json").Instance()})
+	RegisterMessageHandler(jsonrpc2.Header, &JsonRpc2Handler{Codec: codec.GetCodecFromScheme("json").Instance()})
 }

@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/nyan233/littlerpc/client"
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/logger"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
 	"github.com/nyan233/littlerpc/server"
 	"strings"
@@ -23,7 +23,7 @@ var (
 
 func main() {
 	flag.Parse()
-	common.SetOpenLogger(false)
+	logger.SetOpenLogger(false)
 	c := dial()
 	proxy := NewLittleRpcReflectionProxy(c)
 	switch *option {
@@ -40,7 +40,7 @@ func main() {
 
 func dial() *client.Client {
 	c, err := client.New(
-		client.WithCustomLoggerClient(common.NilLogger),
+		client.WithCustomLoggerClient(logger.NilLogger),
 		client.WithUseMux(false),
 		client.WithMuxConnection(false),
 		client.WithProtocol("std_tcp"),

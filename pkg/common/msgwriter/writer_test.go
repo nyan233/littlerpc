@@ -2,6 +2,7 @@ package msgwriter
 
 import (
 	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
@@ -75,10 +76,11 @@ func testWriter(t *testing.T, writer Writer) {
 	msg.MetaData.Store(message.ErrorCode, "200")
 	msg.MetaData.Store(message.ErrorMessage, "Hello world!")
 	msg.MetaData.Store(message.ErrorMore, "[\"hello world\",123]")
+	msg.SetMsgType(message.Return)
 	arg := Argument{
 		Message: msg,
 		Conn:    &NilConn{},
-		Option: &common.MethodOption{
+		Option: &metadata.ProcessOption{
 			SyncCall:        false,
 			CompleteReUsage: true,
 			UseMux:          false,
@@ -97,6 +99,7 @@ func testWriter(t *testing.T, writer Writer) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	arg.Message.SetMsgType(message.Return)
 	arg.Option.UseMux = true
 	err = writer.Writer(arg)
 	if err != nil {

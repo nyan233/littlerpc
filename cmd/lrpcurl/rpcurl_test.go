@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/logger"
 	server2 "github.com/nyan233/littlerpc/server"
 	"testing"
 )
@@ -28,7 +28,7 @@ func (t *TestInstance) Get() (*TestInstance, error) {
 }
 
 func TestRpcurl(t *testing.T) {
-	common.SetOpenLogger(false)
+	logger.SetOpenLogger(false)
 	server := server2.New(
 		server2.WithAddressServer("127.0.0.1:9093"),
 		server2.WithOpenLogger(false),

@@ -30,8 +30,6 @@ type Config struct {
 	PoolSize int32
 	// 客户端使用的传输协议
 	NetWork string
-	// 客户端Call错误处理的回调函数
-	CallOnErr func(err error)
 	// 字节流编码器
 	Encoder packet.Wrapper
 	// 结构化数据编码器
