@@ -29,4 +29,5 @@ type Config struct {
 	PoolMaxSize     int32
 	PoolBufferSize  int32
 	ExecPoolBuilder export.TaskPoolBuilder
+	Debug           bool
 }
