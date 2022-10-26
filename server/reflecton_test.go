@@ -2,14 +2,14 @@ package server
 
 import (
 	"encoding/json"
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"testing"
 )
 
 func TestReflection(t *testing.T) {
 	noneServer := &Server{
-		elems: container.SyncMap118[string, common.ElemMeta]{},
+		elems: container.SyncMap118[string, metadata.ElemMeta]{},
 	}
 	reflection := &LittleRpcReflection{
 		elems: &noneServer.elems,

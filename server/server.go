@@ -6,9 +6,12 @@ import (
 	"github.com/nyan233/littlerpc/internal/pool"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/logger"
+	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/common/utils/debug"
+	metaDataUtil "github.com/nyan233/littlerpc/pkg/common/utils/metadata"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
@@ -22,6 +25,7 @@ import (
 	"github.com/zbh255/bilog"
 	"math"
 	"reflect"
+	"strconv"
 	"sync"
 )
 
@@ -33,7 +37,8 @@ type serverCallContext struct {
 type Server struct {
 	// 存储绑定的实例的集合
 	// Map[TypeName]:[ElemMeta]
-	elems container.SyncMap118[string, common.ElemMeta]
+	elems      container.SyncMap118[string, metadata.ElemMeta]
+	ctxManager *contextManager
 	// Server Engine
 	server transport.ServerEngine
 	// 任务池
@@ -61,10 +66,11 @@ func New(opts ...Option) *Server {
 	for _, v := range opts {
 		v(sc)
 	}
+	server.debug = sc.Debug
 	if sc.Logger != nil {
 		server.logger = sc.Logger
 	} else {
-		server.logger = common.Logger
+		server.logger = logger.Logger
 	}
 	builder := transport.Manager.GetServerEngine(sc.NetWork)(transport.NetworkServerConfig{
 		Addrs:     sc.Address,
@@ -116,14 +122,15 @@ func New(opts ...Option) *Server {
 	if err != nil {
 		panic(err)
 	}
+	server.ctxManager = new(contextManager)
 	return server
 }
 
-func (s *Server) RegisterClass(i interface{}, custom map[string]common.MethodOption) error {
+func (s *Server) RegisterClass(i interface{}, custom map[string]metadata.ProcessOption) error {
 	if i == nil {
 		return errors.New("register elem is nil")
 	}
-	elemD := common.ElemMeta{}
+	elemD := metadata.ElemMeta{}
 	elemD.Typ = reflect.TypeOf(i)
 	elemD.Data = reflect.ValueOf(i)
 	// 检查类型的名字是否正确，因为类型名要作为key
@@ -136,28 +143,34 @@ func (s *Server) RegisterClass(i interface{}, custom map[string]common.MethodOpt
 		return errors.New("no bind receiver method")
 	}
 	// init map
-	elemD.Methods = make(map[string]*common.Method, elemD.Typ.NumMethod())
+	elemD.Methods = make(map[string]*metadata.Process, elemD.Typ.NumMethod())
 	for i := 0; i < elemD.Typ.NumMethod(); i++ {
 		method := elemD.Typ.Method(i)
 		if !method.IsExported() {
 			continue
 		}
-		methodDesc := &common.Method{
+		methodDesc := &metadata.Process{
 			Value:  method.Func,
-			Option: new(common.MethodOption),
+			Option: new(metadata.ProcessOption),
 		}
 		elemD.Methods[method.Name] = methodDesc
-		opt, ok := custom[method.Name]
-		if !ok {
+		optTmp, ok := custom[method.Name]
+		if ok {
+			methodDesc.Option = &optTmp
+		} else {
+			methodDesc.Option = new(metadata.ProcessOption)
+		}
+		// 一个参数都没有的话则不需要进行那些根据输入参数来调整的选项
+		if method.Type.NumIn() == 1 {
 			continue
 		}
-		methodDesc.Option = &opt
-		if !opt.CompleteReUsage {
+		jOffset := metaDataUtil.IFContextOrStream(methodDesc, method.Type)
+		if !methodDesc.Option.CompleteReUsage {
 			goto asyncCheck
 		}
-		for j := 1; j < method.Type.NumIn(); j++ {
+		for j := 1 + jOffset; j < method.Type.NumIn(); j++ {
 			if !method.Type.In(j).Implements(reflect.TypeOf((*export.Reset)(nil)).Elem()) {
-				opt.CompleteReUsage = false
+				methodDesc.Option.CompleteReUsage = false
 				goto asyncCheck
 			}
 		}
@@ -175,7 +188,7 @@ func (s *Server) RegisterClass(i interface{}, custom map[string]common.MethodOpt
 			},
 		}
 	asyncCheck:
-		if opt.SyncCall {
+		if methodDesc.Option.SyncCall {
 			// TODO
 		}
 
@@ -184,7 +197,7 @@ func (s *Server) RegisterClass(i interface{}, custom map[string]common.MethodOpt
 	return nil
 }
 
-func (s *Server) RegisterAnonymousFunc(funcName string, fn interface{}, option *common.MethodOption) error {
+func (s *Server) RegisterAnonymousFunc(funcName string, fn interface{}, option *metadata.ProcessOption) error {
 	return nil
 }
 
@@ -213,57 +226,79 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		case message.Ping:
 			pMsg.Message.SetMsgType(message.Pong)
 			msgOpt.SelectCodecAndEncoder()
-			s.encodeAndSendMsg(msgOpt, pMsg.Message, false)
+			s.encodeAndSendMsg(*msgOpt, pMsg.Message, false)
 		case message.ContextCancel:
 			// TODO 实现context的远程传递
-			break
+			msgOpt.SelectCodecAndEncoder()
+			ctxIdStr, ok := msgOpt.Message.MetaData.LoadOk(message.ContextId)
+			if !ok {
+				s.handleError(c, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
+					common.ContextNotFound, fmt.Sprintf("contextId : %s", ctxIdStr)))
+				continue
+			}
+			ctxId, err := strconv.ParseUint(ctxIdStr, 10, 64)
+			if err != nil {
+				s.handleError(c, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
+					common.ErrServer, err.Error()))
+				continue
+			}
+			err = s.ctxManager.CancelContext(c, ctxId)
+			if err != nil {
+				s.handleError(c, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
+					common.ErrServer, err.Error()))
+			}
 		case message.Call:
-			break
+			msgOpt.SelectCodecAndEncoder()
+			lErr := msgOpt.RealPayload()
+			if lErr != nil {
+				msgOpt.FreeMessage(pasrser)
+				s.handleError(c, msgId, lErr)
+				continue
+			}
+			lErr = msgOpt.Check()
+			if lErr != nil {
+				msgOpt.FreeMessage(pasrser)
+				s.handleError(c, msgId, lErr)
+				continue
+			}
+			msgOpt.SelectWriter(pMsg.Header)
+			var useMux bool
+			switch pMsg.Header {
+			case message.MagicNumber:
+				useMux = false
+			case mux.Enabled:
+				useMux = true
+			}
+			codecI, encoderI := msgOpt.Message.GetCodecType(), msgOpt.Message.GetEncoderType()
+			// 将使用完的Message归还给Parser
+			msgOpt.FreeMessage(pasrser)
+			if msgOpt.Method.Option.SyncCall {
+				s.callHandleUnit(*msgOpt, msgId, codecI, encoderI, useMux)
+				continue
+			}
+			if msgOpt.Method.Option.UseRawGoroutine {
+				go func() {
+					s.callHandleUnit(*msgOpt, msgId, codecI, encoderI, useMux)
+				}()
+				continue
+			}
+			err = s.taskPool.Push(func() {
+				s.callHandleUnit(*msgOpt, msgId, codecI, encoderI, useMux)
+			})
+			if err != nil {
+				s.handleError(c, msgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
+			}
 		default:
 			s.handleError(c, pMsg.Message.GetMsgId(), lerror.LWarpStdError(common.ErrServer,
 				"Unknown Message Call Type", pMsg.Message.GetMsgType()))
 			continue
-		}
-		msgOpt.SelectCodecAndEncoder()
-		lErr := msgOpt.RealPayload()
-		if lErr != nil {
-			msgOpt.FreeMessage(pasrser)
-			s.handleError(c, msgId, lErr)
-			continue
-		}
-		lErr = msgOpt.Check()
-		if lErr != nil {
-			msgOpt.FreeMessage(pasrser)
-			s.handleError(c, msgId, lErr)
-			continue
-		}
-		msgOpt.SelectWriter(pMsg.Header)
-		var useMux bool
-		switch pMsg.Header {
-		case message.MagicNumber:
-			useMux = false
-		case mux.Enabled:
-			useMux = true
-		}
-		codecI, encoderI := msgOpt.Message.GetCodecType(), msgOpt.Message.GetEncoderType()
-		// 将使用完的Message归还给Parser
-		msgOpt.FreeMessage(pasrser)
-		if msgOpt.Method.Option.SyncCall {
-			s.callHandleUnit(msgOpt, msgId, codecI, encoderI, useMux)
-			continue
-		}
-		err = s.taskPool.Push(func() {
-			s.callHandleUnit(msgOpt, msgId, codecI, encoderI, useMux)
-		})
-		if err != nil {
-			s.handleError(c, msgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
 		}
 	}
 }
 
 // 提供用于任务池的处理调用用户过程的单元
 // 因为用户过程可能会有阻塞操作
-func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, codecI, encoderI uint8, useMux bool) {
+func (s *Server) callHandleUnit(msgOpt messageOpt, msgId uint64, codecI, encoderI uint8, useMux bool) {
 	messageBuffer := sharedPool.TakeMessagePool()
 	msg := messageBuffer.Get().(*message.Message)
 	msg.Reset()
@@ -272,6 +307,11 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, codecI, encode
 		messageBuffer.Put(msg)
 	}()
 	callResult := msgOpt.Method.Value.Call(msgOpt.CallArgs)
+	// context存在时则在调用结束之后取消
+	if msgOpt.ContextId != 0 {
+		// context可能已经被client cancel, 忽略错误
+		_ = s.ctxManager.CancelContext(msgOpt.Conn, msgOpt.ContextId)
+	}
 	// 函数在没有返回error则填充nil
 	if len(callResult) == 0 {
 		callResult = append(callResult, reflect.ValueOf(nil))
@@ -293,8 +333,14 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64, codecI, encode
 	}
 	s.handleResult(msgOpt, msg, callResult)
 	if msgOpt.Method.Option.CompleteReUsage {
+		// 不能重用接收器, 而且接收器所在的slot要置空, 否则会使底层数组得不到回收
+		// 这将会导致内存泄漏, 导致系统中的内存维持在请求量最大时分配的内存
+		if !msgOpt.Method.AnonymousFunc {
+			msgOpt.CallArgs[0] = reflect.ValueOf(nil)
+		}
 		tmp := msgOpt.CallArgs
-		for i := 1; i < len(tmp); i++ {
+		reUsageOffset := metaDataUtil.InputOffset(msgOpt.Method)
+		for i := 1 + reUsageOffset; i < len(tmp); i++ {
 			tmp[i].Interface().(export.Reset).Reset()
 		}
 		msgOpt.Method.Pool.Put(&tmp)
@@ -319,6 +365,7 @@ func (s *Server) onOpen(conn transport.ConnAdapter) {
 	// 初始化连接的相关数据
 	parser := msgparser.New(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()})
 	s.noReadyBufferDesc.Store(conn, parser)
+	s.ctxManager.RegisterConnection(conn)
 }
 
 func (s *Server) onErr(err error) {

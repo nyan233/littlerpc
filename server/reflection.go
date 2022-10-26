@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"reflect"
 )
@@ -18,7 +19,7 @@ type ArgumentType struct {
 
 // LittleRpcReflection 反射服务
 type LittleRpcReflection struct {
-	elems *container.SyncMap118[string, common.ElemMeta]
+	elems *container.SyncMap118[string, metadata.ElemMeta]
 }
 
 func (l *LittleRpcReflection) MethodTable(instanceName string) (*MethodTable, error) {
@@ -38,7 +39,7 @@ func (l *LittleRpcReflection) MethodTable(instanceName string) (*MethodTable, er
 
 func (l *LittleRpcReflection) AllInstance() (map[string]string, error) {
 	mp := make(map[string]string, 4)
-	l.elems.Range(func(key string, value common.ElemMeta) bool {
+	l.elems.Range(func(key string, value metadata.ElemMeta) bool {
 		mp[key] = value.Typ.String()
 		return true
 	})

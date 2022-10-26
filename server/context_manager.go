@@ -13,7 +13,7 @@ type contextManager struct {
 
 func (manager *contextManager) RegisterConnection(conn transport.ConnAdapter) {
 	_, ok := manager.manager.LoadOk(conn)
-	if !ok {
+	if ok {
 		return
 	}
 	manager.manager.Store(conn, &container.MutexMap[uint64, context.CancelFunc]{})
@@ -33,7 +33,7 @@ func (manager *contextManager) RegisterContextCancel(conn transport.ConnAdapter,
 	return nil
 }
 
-func (manager *contextManager) CancleContext(conn transport.ConnAdapter, contextId uint64) error {
+func (manager *contextManager) CancelContext(conn transport.ConnAdapter, contextId uint64) error {
 	ctxCollect, ok := manager.manager.LoadOk(conn)
 	if !ok {
 		return errors.New("context collection not found")

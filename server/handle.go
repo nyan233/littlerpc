@@ -5,11 +5,14 @@ import (
 	"fmt"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/check"
+	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/common/utils/debug"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/stream"
+	"github.com/nyan233/littlerpc/pkg/utils/control"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
 	messageUtils "github.com/nyan233/littlerpc/pkg/utils/message"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
@@ -55,11 +58,11 @@ func (s *Server) setErrResult(msg *message.Message, callResult reflect.Value) pe
 	return nil
 }
 
-func (s *Server) encodeAndSendMsg(msgOpt *messageOpt, msg *message.Message, useMux bool) {
+func (s *Server) encodeAndSendMsg(msgOpt messageOpt, msg *message.Message, useMux bool) {
 	err := msgOpt.Writer.Writer(msgwriter.Argument{
 		Message: msg,
 		Conn:    msgOpt.Conn,
-		Option:  &common2.MethodOption{UseMux: useMux},
+		Option:  &metadata.ProcessOption{UseMux: useMux},
 		Encoder: msgOpt.Encoder,
 		Pool:    sharedPool.TakeBytesPool(),
 		OnDebug: debug.MessageDebug(s.logger, s.debug, useMux),
@@ -75,7 +78,7 @@ func (s *Server) encodeAndSendMsg(msgOpt *messageOpt, msg *message.Message, useM
 }
 
 func (s *Server) sendOnNoMux(msgOpt *messageOpt, msg *message.Message, bytes []byte) {
-	err := common2.WriteControl(msgOpt.Conn, bytes)
+	err := control.WriteControl(msgOpt.Conn, bytes)
 	if err != nil {
 		s.logger.ErrorFromString(fmt.Sprintf("Write NoMuxMessage failed: %v", msgOpt.Conn.Close()))
 	}
@@ -98,7 +101,7 @@ func (s *Server) sendOnMux(msgOpt *messageOpt, bytesBuffer *sync.Pool, msg *mess
 	// 大于一个MuxBlock时则分片发送
 	sendBuf := bytesBuffer.Get().(*container.Slice[byte])
 	defer bytesBuffer.Put(sendBuf)
-	err := common2.MuxWriteAll(msgOpt.Conn, muxMsg, sendBuf, bytes, nil)
+	err := control.MuxWriteAll(msgOpt.Conn, muxMsg, sendBuf, bytes, nil)
 	if err != nil {
 		s.logger.ErrorFromString(fmt.Sprintf("Write MuxMessage failed: %v", msgOpt.Conn.Close()))
 		return
@@ -109,7 +112,7 @@ func (s *Server) sendOnMux(msgOpt *messageOpt, bytesBuffer *sync.Pool, msg *mess
 }
 
 // 将用户过程的返回结果集序列化为可传输的json数据
-func (s *Server) handleResult(msgOpt *messageOpt, msg *message.Message, callResult []reflect.Value) {
+func (s *Server) handleResult(msgOpt messageOpt, msg *message.Message, callResult []reflect.Value) {
 	for _, v := range callResult[:len(callResult)-1] {
 		// NOTE : 对于指针类型或者隐含指针的类型, 他检查用户过程是否返回nil
 		// NOTE : 对于非指针的值传递类型, 它检查该类型是否是零值
@@ -197,7 +200,7 @@ func (s *Server) getCallArgsFromClient(sArg serverCallContext, msg *message.Mess
 			callArgs = append(callArgs, reflect.ValueOf(eface))
 			continue
 		}
-		callArg, err := common2.CheckCoderType(sArg.Codec, argBytes, eface)
+		callArg, err := check.CoderType(sArg.Codec, argBytes, eface)
 		if err != nil {
 			return nil, s.eHandle.LWarpErrorDesc(common2.ErrServer, err.Error())
 		}
@@ -248,7 +251,7 @@ func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo per
 		bp.Reset()
 		defer bytesBuffer.Put(bp)
 		message.Marshal(msg, bp)
-		err := common2.WriteControl(desc, *bp)
+		err := control.WriteControl(desc, *bp)
 		if err != nil {
 			s.logger.ErrorFromErr(err)
 			_ = desc.Close()

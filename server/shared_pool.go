@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/sharedpool"
 )
 
-var sharedPool = common.NewSharedPool()
+var sharedPool = sharedpool.NewSharedPool()

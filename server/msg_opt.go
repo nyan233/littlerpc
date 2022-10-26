@@ -6,9 +6,12 @@ import (
 	"fmt"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/check"
+	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
+	metaDataUtil "github.com/nyan233/littlerpc/pkg/common/utils/metadata"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/stream"
@@ -16,17 +19,20 @@ import (
 	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/nyan233/littlerpc/protocol/mux"
 	"reflect"
+	"strconv"
 )
 
+// 该类型拥有的方法都有很多的副作用, 请谨慎
 type messageOpt struct {
-	Server   *Server
-	Codec    codec.Codec
-	Encoder  packet.Encoder
-	Message  *message.Message
-	Conn     transport.ConnAdapter
-	Method   *common.Method
-	Writer   msgwriter.Writer
-	CallArgs []reflect.Value
+	Server    *Server
+	ContextId uint64
+	Codec     codec.Codec
+	Encoder   packet.Encoder
+	Message   *message.Message
+	Conn      transport.ConnAdapter
+	Method    *metadata.Process
+	Writer    msgwriter.Writer
+	CallArgs  []reflect.Value
 }
 
 func newConnDesc(s *Server, msg *message.Message, c transport.ConnAdapter) *messageOpt {
@@ -94,7 +100,7 @@ func (c *messageOpt) Check() perror.LErrorDesc {
 	}
 	c.Method = method
 	// 从客户端校验并获得合法的调用参数
-	callArgs, lErr := c.checkCallArgs(elemData.Data, method.Value)
+	callArgs, lErr := c.checkCallArgs(elemData.Data)
 	// 参数校验为不合法
 	if lErr != nil {
 		if err := c.Server.pManager.OnCallBefore(c.Message, &callArgs, errors.New("arguments check failed")); err != nil {
@@ -110,23 +116,34 @@ func (c *messageOpt) Check() perror.LErrorDesc {
 	return nil
 }
 
-func (c *messageOpt) checkCallArgs(receiver, method reflect.Value) (values []reflect.Value, err perror.LErrorDesc) {
+func (c *messageOpt) checkCallArgs(receiver reflect.Value) (values []reflect.Value, err perror.LErrorDesc) {
 	// 去除接收者之后的输入参数长度
 	// 校验客户端传递的参数和服务端是否一致
 	iter := c.Message.PayloadsIterator()
-	if nInput := method.Type().NumIn() - 1; nInput != iter.Tail() {
+	method := c.Method.Value
+	if nInput := method.Type().NumIn() - 1 - metaDataUtil.InputOffset(c.Method); nInput != iter.Tail() {
 		return nil, c.Server.eHandle.LWarpErrorDesc(common.ErrServer,
 			"client input args number no equal server",
 			fmt.Sprintf("Client : %d", iter.Tail()), fmt.Sprintf("Server : %d", nInput))
 	}
+	// 哨兵条件, 过程不要求任何输入时即可以提前结束
+	if method.Type().NumIn() == 1 {
+		values = append(values, receiver)
+		return values, nil
+	}
+	defer func() {
+		if err == nil {
+			return
+		}
+		if c.ContextId != 0 {
+			err := c.Server.ctxManager.CancelContext(c.Conn, c.ContextId)
+			if err != nil {
+				c.Server.logger.ErrorFromString(fmt.Sprintf("return err cancel context failed : %v", err.Error()))
+			}
+		}
+	}()
 	var callArgs []reflect.Value
 	var inputStart int
-	if c.Message.MetaData.Load("context-timeout") != "" {
-		inputStart++
-	}
-	if c.Message.MetaData.Load("stream-id") != "" {
-		inputStart++
-	}
 	if c.Method.Option.CompleteReUsage {
 		callArgs = *c.Method.Pool.Get().(*[]reflect.Value)
 		defer func() {
@@ -134,12 +151,25 @@ func (c *messageOpt) checkCallArgs(receiver, method reflect.Value) (values []ref
 				c.Method.Pool.Put(&callArgs)
 			}
 		}()
+		tmp := callArgs
+		if !c.Method.AnonymousFunc {
+			callArgs[0] = receiver
+			tmp = callArgs[:1]
+		}
+		inputStart, err = c.checkContextAndStream(&tmp)
+		if err != nil {
+			return
+		}
 	} else {
 		callArgs = []reflect.Value{
 			// receiver
 			receiver,
 		}
-		inputTypeList := reflect2.FuncInputTypeList(method, 0, true, func(i int) bool {
+		inputStart, err = c.checkContextAndStream(&callArgs)
+		if err != nil {
+			return
+		}
+		inputTypeList := reflect2.FuncInputTypeList(method, inputStart, true, func(i int) bool {
 			if len(iter.Take()) == 0 {
 				return true
 			}
@@ -150,43 +180,14 @@ func (c *messageOpt) checkCallArgs(receiver, method reflect.Value) (values []ref
 		}
 
 	}
-	if inputStart == 2 {
-		val1 := reflect.New(method.Type().In(1)).Interface()
-		val2 := reflect.New(method.Type().In(2)).Interface()
-		switch val1.(type) {
-		case *context.Context:
-			break
-		default:
-			// TODO Handle Error
-		}
-		switch val2.(type) {
-		case *stream.LStream:
-			break
-		default:
-			// TODO Handle Error
-		}
-	} else if inputStart == 1 {
-		typ1 := method.Type().In(1)
-		if typ1.Kind() != reflect.Interface {
-			// TODO Handle Error
-		}
-		switch reflect.New(typ1).Interface().(type) {
-		case *context.Context:
-			break
-		case *stream.LStream:
-			break
-		default:
-			// TODO Handle Error
-		}
-	}
 	iter.Reset()
-	for i := 1; i < len(callArgs) && iter.Next(); i++ {
+	for i := 1 + inputStart; i < len(callArgs) && iter.Next(); i++ {
 		eface := callArgs[i]
 		argBytes := iter.Take()
 		if len(argBytes) == 0 {
 			continue
 		}
-		callArg, err := common.CheckCoderType(c.Codec, argBytes, eface.Interface())
+		callArg, err := check.CoderType(c.Codec, argBytes, eface.Interface())
 		if err != nil {
 			return nil, c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
 		}
@@ -195,4 +196,38 @@ func (c *messageOpt) checkCallArgs(receiver, method reflect.Value) (values []ref
 		callArgs[i] = reflect.ValueOf(callArg)
 	}
 	return callArgs, nil
+}
+
+func (c *messageOpt) checkContextAndStream(callArgs *[]reflect.Value) (offset int, err perror.LErrorDesc) {
+	// 存在contextId则注册context
+	ctx := context.Background()
+	ctxIdStr, ok := c.Message.MetaData.LoadOk(message.ContextId)
+	if ok {
+		ctxId, err := strconv.ParseUint(ctxIdStr, 10, 64)
+		if err != nil {
+			return 0, c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
+		}
+		c.ContextId = ctxId
+		iCtx, cancel := context.WithCancel(ctx)
+		ctx = iCtx
+		err = c.Server.ctxManager.RegisterContextCancel(c.Conn, ctxId, cancel)
+		if err != nil {
+			return 0, c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
+		}
+	}
+	switch {
+	case c.Method.SupportContext:
+		offset = 1
+		*callArgs = append(*callArgs, reflect.ValueOf(ctx))
+	case c.Method.SupportContext && c.Method.SupportStream:
+		offset = 2
+		*callArgs = append(*callArgs, reflect.ValueOf(ctx), reflect.ValueOf(*new(stream.LStream)))
+	case c.Method.SupportStream:
+		offset = 1
+		*callArgs = append(*callArgs, reflect.ValueOf(*new(stream.LStream)))
+	default:
+		// 不支持context&stream
+		break
+	}
+	return
 }
