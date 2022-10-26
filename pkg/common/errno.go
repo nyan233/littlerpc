@@ -16,4 +16,5 @@ var (
 	ErrCodecUnMarshalError = error.LNewStdError(error.CodecMarshalErr, "codec.UnMarshal return one error")
 	ErrClient              = error.LNewStdError(error.ClientError, "client error")
 	ErrConnection          = error.LNewStdError(error.ConnectionErr, "connection error")
+	ContextNotFound        = error.LNewStdError(error.ContextNotFound, "context not found")
 )

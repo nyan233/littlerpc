@@ -35,6 +35,7 @@ const (
 	CallArgsTypeErr       = 1030 // 过程的调用参数类型错误
 	CodecMarshalErr       = 1050 // Codec在序列化数据时出错
 	ConnectionErr         = 1070 // 连接错误
+	ContextNotFound       = 1080 // 要取消的context不存在
 	UnsafeOption          = 2060 // 不安全的选项, 通常在服务器需要的东西没有准备好时触发
 )
 

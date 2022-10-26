@@ -25,6 +25,7 @@ const (
 	ErrorCode    string = "code"
 	ErrorMessage string = "message"
 	ErrorMore    string = "bin"
+	ContextId    string = "context-id"
 )
 
 var (
