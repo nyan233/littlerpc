@@ -5,8 +5,12 @@ import (
 	"fmt"
 	lreflect "github.com/nyan233/littlerpc/internal/reflect"
 	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/check"
+	metadata2 "github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/utils/debug"
+	"github.com/nyan233/littlerpc/pkg/common/utils/metadata"
+	"github.com/nyan233/littlerpc/pkg/stream"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
@@ -36,6 +40,7 @@ func (c *Client) handleProcessRetErr(msg *message.Message) perror.LErrorDesc {
 	return desc
 }
 
+// NOTE: 使用完的Message一定要放回给Parser的分配器中
 func (c *Client) readMsg(ctx context.Context, msgId uint64, lc *lockConn) (*message.Message, perror.LErrorDesc) {
 	// 接收服务器返回的调用结果并将header反序列化
 	done, ok := lc.notify.LoadOk(msgId)
@@ -43,27 +48,45 @@ func (c *Client) readMsg(ctx context.Context, msgId uint64, lc *lockConn) (*mess
 		return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, "readMessage Lookup done channel failed")
 	}
 	defer lc.notify.Delete(msgId)
-	pMsg := <-done
-	if pMsg.Error != nil {
-		return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, pMsg.Error.Error())
-	}
-	msg := pMsg.Message
-	// TODO : Client Handle Ping&Pong
-	// encoder类型为text时不需要额外的内存拷贝
-	// 默认的encoder即text
-	if msg.GetEncoderType() != message.DefaultEncodingType {
-		packet, err := c.encoderWp.Instance().UnPacket(msg.Payloads())
+readStart:
+	select {
+	case <-ctx.Done():
+		mp := sharedPool.TakeMessagePool()
+		cancelMsg := mp.Get().(*message.Message)
+		defer mp.Put(cancelMsg)
+		cancelMsg.Reset()
+		cancelMsg.SetMsgType(message.ContextCancel)
+		cancelMsg.SetMsgId(msgId)
+		cancelMsg.MetaData.Store(message.ContextId, ctx.Value(message.ContextId).(string))
+		err := c.sendCallMsg(ctx, cancelMsg, lc, true)
 		if err != nil {
-			return nil, c.eHandle.LNewErrorDesc(perror.ClientError, "UnPacket failed", err)
+			return nil, err
 		}
-		msg.ReWritePayload(packet)
+		// 重置ctx
+		ctx = context.Background()
+		goto readStart
+	case pMsg := <-done:
+		if pMsg.Error != nil {
+			return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, pMsg.Error.Error())
+		}
+		msg := pMsg.Message
+		// TODO : Client Handle Ping&Pong
+		// encoder类型为text时不需要额外的内存拷贝
+		// 默认的encoder即text
+		if msg.GetEncoderType() != message.DefaultEncodingType {
+			packet, err := c.encoderWp.Instance().UnPacket(msg.Payloads())
+			if err != nil {
+				return nil, c.eHandle.LNewErrorDesc(perror.ClientError, "UnPacket failed", err)
+			}
+			msg.ReWritePayload(packet)
+		}
+		// OnReceiveMessage 接收完消息之后调用的插件过程
+		stdErr := c.pluginManager.OnReceiveMessage(msg, nil)
+		if stdErr != nil {
+			c.logger.ErrorFromErr(stdErr)
+		}
+		return msg, nil
 	}
-	// OnReceiveMessage 接收完消息之后调用的插件过程
-	stdErr := c.pluginManager.OnReceiveMessage(msg, nil)
-	if stdErr != nil {
-		c.logger.ErrorFromErr(stdErr)
-	}
-	return msg, nil
 }
 
 func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lockConn, method reflect.Value, rep []interface{}) perror.LErrorDesc {
@@ -99,9 +122,9 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lo
 				rep[k] = v
 				continue
 			}
-			returnV, err2 := common.CheckCoderType(c.codecWp.Instance(), bytes, v)
+			returnV, err2 := check.CoderType(c.codecWp.Instance(), bytes, v)
 			if err2 != nil {
-				return c.eHandle.LWarpErrorDesc(common.ErrClient, "CheckCoderType failed", err2.Error())
+				return c.eHandle.LWarpErrorDesc(common.ErrClient, "CoderType failed", err2.Error())
 			}
 			rep[k] = returnV
 		}
@@ -116,32 +139,74 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lo
 }
 
 // return method
-func (c *Client) identArgAndEncode(processName string, msg *message.Message, args []interface{}) (reflect.Value, context.Context, perror.LErrorDesc) {
+func (c *Client) identArgAndEncode(processName string, msg *message.Message, lc *lockConn, args []interface{}, raw bool) (
+	value reflect.Value, ctx context.Context, err perror.LErrorDesc) {
+
 	methodData := strings.SplitN(processName, ".", 2)
 	if len(methodData) != 2 || (methodData[0] == "" || methodData[1] == "") {
+		//TODO: 修改为正常返回错误
 		panic(interface{}("the illegal type name and method name"))
 	}
+	ctx = context.Background()
 	msg.SetInstanceName(methodData[0])
 	msg.SetMethodName(methodData[1])
-	instance, ok := c.elems.LoadOk(msg.GetInstanceName())
-	if !ok {
-		return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(
-			common.ErrElemTypeNoRegister, "client error", msg.GetInstanceName())
-	}
-	method, ok := instance.Methods[msg.GetMethodName()]
-	if !ok {
-		return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(
-			common.ErrMethodNoRegister, "client error", msg.GetMethodName())
-	}
-	rCtx := context.Background()
-	// 哨兵条件
-	if args == nil || len(args) == 0 {
-		return method.Value, rCtx, nil
-	}
-	// 检查是否携带context.Context
-	if ctx, ok := args[0].(context.Context); ok {
-		rCtx = ctx
-		args = args[1:]
+	if !raw {
+		instance, ok := c.elems.LoadOk(msg.GetInstanceName())
+		if !ok {
+			return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(
+				common.ErrElemTypeNoRegister, "client error", msg.GetInstanceName())
+		}
+		method, ok := instance.Methods[msg.GetMethodName()]
+		if !ok {
+			return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(
+				common.ErrMethodNoRegister, "client error", msg.GetMethodName())
+		}
+		value = method.Value
+		// 哨兵条件
+		if args == nil || len(args) == 0 {
+			return
+		}
+		switch {
+		case method.SupportContext:
+			rCtx := args[0].(context.Context)
+			if rCtx == context.Background() {
+				break
+			}
+			ctxIdStr := strconv.FormatUint(lc.GetContextId(), 10)
+			ctx = context.WithValue(ctx, message.ContextId, ctxIdStr)
+		case method.SupportStream:
+			break
+		case method.SupportStream && method.SupportContext:
+			rCtx := args[0].(context.Context)
+			if rCtx == context.Background() {
+				break
+			}
+			ctxIdStr := strconv.FormatUint(lc.GetContextId(), 10)
+			ctx = context.WithValue(ctx, message.ContextId, ctxIdStr)
+		}
+		args = args[metadata.InputOffset(method):]
+	} else {
+		var inputStart int
+		for i := 0; i < 2; i++ {
+			if i == len(args) {
+				break
+			}
+			switch args[i].(type) {
+			case context.Context:
+				inputStart++
+				iCtx := args[i].(context.Context)
+				if iCtx == context.Background() {
+					break
+				}
+				ctxIdStr := strconv.FormatUint(lc.GetContextId(), 10)
+				ctx = context.WithValue(iCtx, message.ContextId, ctxIdStr)
+			case stream.LStream:
+				break
+			default:
+				break
+			}
+		}
+		args = args[inputStart:]
 	}
 	for _, v := range args {
 		bytes, err := c.codecWp.Instance().Marshal(v)
@@ -151,21 +216,28 @@ func (c *Client) identArgAndEncode(processName string, msg *message.Message, arg
 		}
 		msg.AppendPayloads(bytes)
 	}
-	return method.Value, rCtx, nil
+	return
 }
 
-func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *lockConn) perror.LErrorDesc {
+// direct == true表示直接发送消息, false表示sendMsg自己会将Message的类型修改为Call
+// context中保存ContextId则不够true or false都会被写入
+func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *lockConn, direct bool) perror.LErrorDesc {
 	// init header
-	msg.SetMsgId(lc.GetMsgId())
-	msg.SetMsgType(message.Call)
-	msg.SetCodecType(uint8(c.codecWp.Index()))
-	msg.SetEncoderType(uint8(c.encoderWp.Index()))
-	// 注册用于通知的Channel
-	lc.notify.Store(msg.GetMsgId(), make(chan Complete, 1))
+	if !direct {
+		msg.SetMsgId(lc.GetMsgId())
+		msg.SetMsgType(message.Call)
+		msg.SetCodecType(uint8(c.codecWp.Index()))
+		msg.SetEncoderType(uint8(c.encoderWp.Index()))
+		// 注册用于通知的Channel
+		lc.notify.Store(msg.GetMsgId(), make(chan Complete, 1))
+	}
+	if ctx != context.Background() {
+		msg.MetaData.Store(message.ContextId, ctx.Value(message.ContextId).(string))
+	}
 	stdErr := c.writer.Writer(msgwriter.Argument{
 		Message: msg,
 		Conn:    lc.conn,
-		Option: &common.MethodOption{
+		Option: &metadata2.ProcessOption{
 			SyncCall:        false,
 			CompleteReUsage: false,
 			UseMux:          c.useMux,

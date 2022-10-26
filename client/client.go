@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"github.com/nyan233/littlerpc/internal/pool"
 	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
+	metaDataUtil "github.com/nyan233/littlerpc/pkg/common/utils/metadata"
 	container2 "github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
@@ -17,7 +19,6 @@ import (
 	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/zbh255/bilog"
 	"reflect"
-	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -31,6 +32,8 @@ type lockConn struct {
 	conn transport.ConnAdapter
 	// message ID的起始, 开始时随机分配
 	initSeq uint64
+	// context id的起始, 开始时随机分配
+	initCtxId uint64
 	// 负责消息的解析
 	parser *msgparser.LMessageParser
 	// 用于事件循环读取完毕的通知
@@ -39,6 +42,10 @@ type lockConn struct {
 
 func (lc *lockConn) GetMsgId() uint64 {
 	return atomic.AddUint64(&lc.initSeq, 1)
+}
+
+func (lc *lockConn) GetContextId() uint64 {
+	return atomic.AddUint64(&lc.initCtxId, 1)
 }
 
 // Client 在Client中同时使用同步调用和异步调用将导致同步调用阻塞某一连接上的所有异步调用
@@ -54,7 +61,7 @@ type Client struct {
 	connDesc *container2.RWMutexMap[transport.ConnAdapter, *lockConn]
 	// elems 可以支持不同实例的调用
 	// 所有的操作都是线程安全的
-	elems  container2.SyncMap118[string, common.ElemMeta]
+	elems  container2.SyncMap118[string, metadata.ElemMeta]
 	logger bilog.Logger
 	writer msgwriter.Writer
 	// 是否开启调试模式
@@ -130,9 +137,10 @@ func New(opts ...Option) (*Client, error) {
 			return nil, err
 		}
 		desc := &lockConn{
-			conn:    conn,
-			parser:  msgparser.New(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()}),
-			initSeq: uint64(random.FastRand()),
+			conn:      conn,
+			parser:    msgparser.New(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()}),
+			initSeq:   uint64(random.FastRand()),
+			initCtxId: uint64(random.FastRand()),
 		}
 		client.concurrentConnect[k] = desc
 		client.connDesc.Store(conn, desc)
@@ -175,11 +183,11 @@ func (c *Client) BindFunc(instanceName string, i interface{}) error {
 	if instanceName == "" {
 		return errors.New("the typ name is not defined")
 	}
-	elemD := common.ElemMeta{}
+	elemD := metadata.ElemMeta{}
 	elemD.Typ = reflect.TypeOf(i)
 	elemD.Data = reflect.ValueOf(i)
 	// init map
-	elemD.Methods = make(map[string]*common.Method, elemD.Typ.NumMethod())
+	elemD.Methods = make(map[string]*metadata.Process, elemD.Typ.NumMethod())
 	// NOTE: 这里的判断不能依靠map的len/cap来确定实例用于多少的绑定方法
 	// 因为len/cap都不能提供准确的信息,调用make()时指定的cap只是给真正创建map的函数一个提示
 	// 并不代表真实大小，对没有插入过数据的map调用len()永远为0
@@ -189,9 +197,11 @@ func (c *Client) BindFunc(instanceName string, i interface{}) error {
 	for i := 0; i < elemD.Typ.NumMethod(); i++ {
 		method := elemD.Typ.Method(i)
 		if method.IsExported() {
-			elemD.Methods[method.Name] = &common.Method{
+			opt := &metadata.Process{
 				Value: method.Func,
 			}
+			metaDataUtil.IFContextOrStream(opt, method.Type)
+			elemD.Methods[method.Name] = opt
 		}
 	}
 	c.elems.Store(instanceName, elemD)
@@ -203,23 +213,17 @@ func (c *Client) BindFunc(instanceName string, i interface{}) error {
 func (c *Client) RawCall(processName string, args ...interface{}) ([]interface{}, error) {
 	conn := getConnFromMux(c)
 	mp := sharedPool.TakeMessagePool()
-	msg := mp.Get().(*message.Message)
-	msg.Reset()
-	defer mp.Put(msg)
-	proceSplit := strings.Split(processName, ".")
-	msg.SetInstanceName(proceSplit[0])
-	msg.SetMethodName(proceSplit[1])
-	for _, arg := range args {
-		bytes, err := c.codecWp.Instance().Marshal(arg)
-		if err != nil {
-			return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, err.Error())
-		}
-		msg.AppendPayloads(bytes)
-	}
-	if err := c.sendCallMsg(context.Background(), msg, conn); err != nil {
+	wMsg := mp.Get().(*message.Message)
+	wMsg.Reset()
+	defer mp.Put(wMsg)
+	_, ctx, err := c.identArgAndEncode(processName, wMsg, conn, args, true)
+	if err != nil {
 		return nil, err
 	}
-	rMsg, err := c.readMsg(context.Background(), msg.GetMsgId(), conn)
+	if err := c.sendCallMsg(ctx, wMsg, conn, false); err != nil {
+		return nil, err
+	}
+	rMsg, err := c.readMsg(ctx, wMsg.GetMsgId(), conn)
 	if err != nil {
 		return nil, err
 	}
@@ -246,21 +250,17 @@ func (c *Client) RawCall(processName string, args ...interface{}) ([]interface{}
 func (c *Client) SingleCall(processName string, ctx context.Context, req interface{}, rep interface{}) error {
 	conn := getConnFromMux(c)
 	mp := sharedPool.TakeMessagePool()
-	msg := mp.Get().(*message.Message)
-	msg.Reset()
-	defer mp.Put(msg)
-	proceSplit := strings.Split(processName, ".")
-	msg.SetInstanceName(proceSplit[0])
-	msg.SetMethodName(proceSplit[1])
-	bytes, err := c.codecWp.Instance().Marshal(req)
+	wMsg := mp.Get().(*message.Message)
+	wMsg.Reset()
+	defer mp.Put(wMsg)
+	_, iCtx, err := c.identArgAndEncode(processName, wMsg, conn, []interface{}{ctx, req}, true)
 	if err != nil {
-		return c.eHandle.LWarpErrorDesc(common.ErrClient, err.Error())
-	}
-	msg.AppendPayloads(bytes)
-	if err := c.sendCallMsg(ctx, msg, conn); err != nil {
 		return err
 	}
-	rMsg, err := c.readMsg(ctx, msg.GetMsgId(), conn)
+	if err := c.sendCallMsg(iCtx, wMsg, conn, false); err != nil {
+		return err
+	}
+	rMsg, err := c.readMsg(iCtx, wMsg.GetMsgId(), conn)
 	if err != nil {
 		return err
 	}
@@ -268,7 +268,7 @@ func (c *Client) SingleCall(processName string, ctx context.Context, req interfa
 	iter := rMsg.PayloadsIterator()
 	switch {
 	case iter.Tail() == 0:
-		return c.handleProcessRetErr(msg)
+		return c.handleProcessRetErr(rMsg)
 	default:
 		err := c.codecWp.Instance().Unmarshal(iter.Take(), rep)
 		if err != nil {
@@ -285,24 +285,24 @@ func (c *Client) SingleCall(processName string, ctx context.Context, req interfa
 func (c *Client) Call(processName string, args ...interface{}) ([]interface{}, error) {
 	conn := getConnFromMux(c)
 	mp := sharedPool.TakeMessagePool()
-	msg := mp.Get().(*message.Message)
-	defer mp.Put(msg)
-	msg.Reset()
-	method, ctx, err := c.identArgAndEncode(processName, msg, args)
+	wMsg := mp.Get().(*message.Message)
+	defer mp.Put(wMsg)
+	wMsg.Reset()
+	method, ctx, err := c.identArgAndEncode(processName, wMsg, conn, args, false)
 	if err != nil {
 		return nil, err
 	}
 	// 插件的OnCall阶段
-	if err := c.pluginManager.OnCall(msg, &args); err != nil {
+	if err := c.pluginManager.OnCall(wMsg, &args); err != nil {
 		c.logger.ErrorFromErr(err)
 	}
-	err = c.sendCallMsg(ctx, msg, conn)
+	err = c.sendCallMsg(ctx, wMsg, conn, false)
 	if err != nil {
 		return nil, err
 	}
 	rep := make([]interface{}, method.Type().NumOut()-1)
-	err = c.readMsgAndDecodeReply(ctx, msg.GetMsgId(), conn, method, rep)
-	c.pluginManager.OnResult(msg, &rep, err)
+	err = c.readMsgAndDecodeReply(ctx, wMsg.GetMsgId(), conn, method, rep)
+	c.pluginManager.OnResult(wMsg, &rep, err)
 	if err != nil {
 		return rep, err
 	}
@@ -313,7 +313,7 @@ func (c *Client) Call(processName string, args ...interface{}) ([]interface{}, e
 // 该函数可能会传递来自Codec和内部组件的错误，因为它在发送消息之前完成
 func (c *Client) AsyncCall(processName string, args ...interface{}) error {
 	msg := message.New()
-	method, ctx, err := c.identArgAndEncode(processName, msg, args)
+	method, ctx, err := c.identArgAndEncode(processName, msg, nil, args, false)
 	if err != nil {
 		return err
 	}
@@ -324,7 +324,7 @@ func (c *Client) AsyncCall(processName string, args ...interface{}) error {
 		callBackIsOk = ok
 		// 在池中获取一个底层传输的连接
 		conn := getConnFromMux(c)
-		err := c.sendCallMsg(ctx, msg, conn)
+		err := c.sendCallMsg(ctx, msg, conn, false)
 		if err != nil && callBackIsOk {
 			cbFn(nil, err)
 			return
