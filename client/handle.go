@@ -99,12 +99,11 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lo
 	// 但error是不在返回值列表中处理的
 	iter := msg.PayloadsIterator()
 	if iter.Tail() > 0 {
-		// 处理结果再处理错误, 因为游戏过程可能因为某种原因失败返回错误, 但也会返回处理到一定
+		// 处理结果再处理错误, 因为调用过程可能因为某种原因失败返回错误, 但也会返回处理到一定
 		// 进度的结果, 这个时候检查到错误就激进地抛弃结果是不可取的
 		if method.Type().NumOut()-1 != iter.Tail() {
 			panic("server return args number no equal client")
 		}
-		iter := msg.PayloadsIterator()
 		outputList := lreflect.FuncOutputTypeList(method, func(i int) bool {
 			// 最后的是error, false/true都可以
 			if i >= iter.Tail() {
@@ -119,7 +118,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *lo
 		for k, v := range outputList[:len(outputList)-1] {
 			bytes := iter.Take()
 			if bytes == nil || len(bytes) == 0 {
-				rep[k] = v
+				rep[k] = nil
 				continue
 			}
 			returnV, err2 := check.CoderType(c.codecWp.Instance(), bytes, v)
