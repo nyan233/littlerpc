@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc/internal/pool"
@@ -307,9 +308,13 @@ func (s *Server) callHandleUnit(msgOpt messageOpt, msgId uint64, codecI, encoder
 		messageBuffer.Put(msg)
 	}()
 	callResult := msgOpt.Method.Value.Call(msgOpt.CallArgs)
-	// context存在时则在调用结束之后取消
-	if msgOpt.ContextId != 0 {
-		// context可能已经被client cancel, 忽略错误
+	// context存在时且未被取消, 则在调用结束之后取消
+	var ctxIndex int
+	if !msgOpt.Method.AnonymousFunc {
+		ctxIndex++
+	}
+	if msgOpt.Method.SupportContext &&
+		msgOpt.CallArgs[ctxIndex].Interface().(context.Context).Err() == nil && msgOpt.ContextId != 0 {
 		_ = s.ctxManager.CancelContext(msgOpt.Conn, msgOpt.ContextId)
 	}
 	// 函数在没有返回error则填充nil
