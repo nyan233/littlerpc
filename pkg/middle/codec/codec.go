@@ -2,7 +2,6 @@ package codec
 
 import (
 	"encoding/json"
-	"sync"
 )
 
 type Codec interface {
@@ -12,54 +11,25 @@ type Codec interface {
 }
 
 var (
-	manager = &codecManager{
-		codecCollection:      map[string]Wrapper{},
-		indexCodecCollection: []Wrapper{},
-	}
+	codecCollection = make(map[string]Codec, 8)
 )
 
-type codecManager struct {
-	mu                   sync.Mutex
-	codecCollection      map[string]Wrapper
-	indexCodecCollection []Wrapper
-}
-
-func (m *codecManager) registerCodec(c Codec) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	wrapper := newCodecWrapper(len(m.indexCodecCollection), c)
-	m.codecCollection[c.Scheme()] = wrapper
-	m.indexCodecCollection = append(m.indexCodecCollection, wrapper)
-}
-
-func (m *codecManager) getCodecFromScheme(scheme string) Wrapper {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.codecCollection[scheme]
-}
-
-func (m *codecManager) getCodecFromIndex(index int) Wrapper {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if index >= len(m.indexCodecCollection) {
-		return nil
-	}
-	return m.indexCodecCollection[index]
-}
-
-// RegisterCodec 该调用是线程安全的
+// RegisterCodec 注册一个Code, 按照定义的scheme获取Codec
+// 从v0.4.0版本开始LittleRpc在Codec中使用普通map来管理
 func RegisterCodec(c Codec) {
-	manager.registerCodec(c)
+	if c == nil {
+		panic("codec is nil")
+	}
+	if c.Scheme() == "" {
+		panic("codec scheme is empty")
+	}
+	codecCollection[c.Scheme()] = c
 }
 
-// GetCodecFromScheme 该调用是线程安全的
-func GetCodecFromScheme(scheme string) Wrapper {
-	return manager.getCodecFromScheme(scheme)
-}
-
-// GetCodecFromIndex 该调用是线程安全的,且可以安全的使用任何数值来作为索引
-func GetCodecFromIndex(index int) Wrapper {
-	return manager.getCodecFromIndex(index)
+// GetCodec 根据Scheme获取Codec, 如果Codec不存在, 那么返回的Codec == nil
+// 从v0.4.0版本开始LittleRpc在Codec中使用普通map来管理
+func GetCodec(scheme string) Codec {
+	return codecCollection[scheme]
 }
 
 type JsonCodec struct{}
