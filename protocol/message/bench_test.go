@@ -9,7 +9,7 @@ import (
 
 func BenchmarkProtocol(b *testing.B) {
 	msg := &Message{
-		scope:         [4]uint8{MagicNumber, Call, DefaultEncodingType, DefaultCodecType},
+		scope:         [4]uint8{MagicNumber, Call},
 		instanceName:  "Hello",
 		methodName:    "Add",
 		msgId:         rand.Uint64(),

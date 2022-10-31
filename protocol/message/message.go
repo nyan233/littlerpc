@@ -18,14 +18,16 @@ const (
 	Pong uint8 = 0x35
 
 	// BaseLen 的基本长度
-	BaseLen                   = 4 + 4 + 8
-	DefaultEncodingType uint8 = 0 // encoding == text
-	DefaultCodecType    uint8 = 0 // codec == text
+	BaseLen               = 4 + 4 + 8
+	DefaultEncoder string = "text" // encoding == text
+	DefaultCodec   string = "json" // codec == text
 
-	ErrorCode    string = "code"
-	ErrorMessage string = "message"
-	ErrorMore    string = "bin"
-	ContextId    string = "context-id"
+	ErrorCode     string = "code"
+	ErrorMessage  string = "message"
+	ErrorMore     string = "bin"
+	ContextId     string = "context-id"
+	CodecScheme   string = "codec"
+	EncoderScheme string = "encoder"
 )
 
 var (
@@ -51,8 +53,8 @@ type Message struct {
 	// int/uint数值统一使用大端序
 	//	[0] == Magic (魔数，表示这是由littlerpc客户端发起或者服务端回复)
 	//	[1] == MsgType (call/return & ping/pong)
-	//	[2] == Encoding (default text/gzip)
-	//	[3] == CodecType (default json)
+	//	[2] == 保留, 以后可能会移除(Codec Type从v0.4.0版本开始)
+	//	[3] == 保留, 以后可能会移除(Encoder Type从v0.4.0版本开始)
 	scope [4]uint8
 	// 消息ID，用于表示一次完整的call/return的回复
 	msgId uint64
@@ -134,24 +136,8 @@ func (m *Message) First() uint8 {
 	return m.scope[0]
 }
 
-func (m *Message) GetCodecType() uint8 {
-	return m.scope[3]
-}
-
-func (m *Message) GetEncoderType() uint8 {
-	return m.scope[2]
-}
-
 func (m *Message) GetMsgType() uint8 {
 	return m.scope[1]
-}
-
-func (m *Message) SetCodecType(codecType uint8) {
-	m.scope[3] = codecType
-}
-
-func (m *Message) SetEncoderType(encoderTyp uint8) {
-	m.scope[2] = encoderTyp
 }
 
 func (m *Message) SetMsgType(msgTyp uint8) {
