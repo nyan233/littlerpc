@@ -5,14 +5,17 @@ package container
 type Iterator[Elem any] struct {
 	iterate func(current int) Elem
 	reset   func()
+	// 是否支持前进
+	forward bool
 	current int
 	tail    int
 }
 
-func NewIterator[Elem any](tail int, iterate func(current int) Elem, reset func()) *Iterator[Elem] {
+func NewIterator[Elem any](tail int, forward bool, iterate func(current int) Elem, reset func()) *Iterator[Elem] {
 	return &Iterator[Elem]{
 		iterate: iterate,
 		tail:    tail,
+		forward: forward,
 		reset:   reset,
 	}
 }
@@ -32,6 +35,24 @@ func (iter *Iterator[Elem]) Take() Elem {
 	e := iter.iterate(iter.current)
 	iter.current++
 	return e
+}
+
+func (iter *Iterator[Elem]) Forward() (Elem, bool) {
+	if !iter.forward {
+		return *new(Elem), false
+	}
+	iter.current -= 1
+	return iter.iterate(iter.current), true
+}
+
+func (iter *Iterator[Elem]) Index(i int) (Elem, bool) {
+	if !iter.forward {
+		return *new(Elem), false
+	}
+	if i > iter.tail {
+		return *new(Elem), false
+	}
+	return iter.iterate(i), true
 }
 
 func (iter *Iterator[Elem]) Reset() {
