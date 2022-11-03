@@ -15,25 +15,18 @@ import (
 	metaDataUtil "github.com/nyan233/littlerpc/pkg/common/utils/metadata"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/export"
-	"github.com/nyan233/littlerpc/pkg/middle/codec"
-	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	messageUtils "github.com/nyan233/littlerpc/pkg/utils/message"
 	"github.com/nyan233/littlerpc/plugins/metrics"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/mux"
+	"github.com/nyan233/littlerpc/protocol/message/mux"
 	"github.com/zbh255/bilog"
-	"math"
 	"reflect"
 	"strconv"
 	"sync"
+	"time"
 )
-
-type serverCallContext struct {
-	Codec   codec.Codec
-	Encoder packet.Encoder
-}
 
 type Server struct {
 	// 存储绑定的实例的集合
@@ -44,20 +37,15 @@ type Server struct {
 	server transport.ServerEngine
 	// 任务池
 	taskPool pool.TaskPool
-	// 简单的缓冲内存池
-	noReadyBufferDesc container.RWMutexMap[transport.ConnAdapter, *msgparser.LMessageParser]
+	// 管理的连接与其拥有的资源
+	connSourceDesc container.RWMutexMap[transport.ConnAdapter, *msgparser.LMessageParser]
 	// logger
 	logger bilog.Logger
-	// 缓存一些Codec以加速索引
-	cacheCodec []codec.Wrapper
-	// 缓存一些Encoder以加速索引
-	cacheEncoder []packet.Wrapper
 	// 注册的插件的管理器
 	pManager *pluginManager
 	// Error Handler
 	eHandle lerror.LErrors
-	// 是否开启调试模式
-	debug bool
+	config  *Config
 }
 
 func New(opts ...Option) *Server {
@@ -67,7 +55,7 @@ func New(opts ...Option) *Server {
 	for _, v := range opts {
 		v(sc)
 	}
-	server.debug = sc.Debug
+	server.config = sc
 	if sc.Logger != nil {
 		server.logger = sc.Logger
 	} else {
@@ -75,7 +63,7 @@ func New(opts ...Option) *Server {
 	}
 	builder := transport.Manager.GetServerEngine(sc.NetWork)(transport.NetworkServerConfig{
 		Addrs:     sc.Address,
-		KeepAlive: sc.ServerKeepAlive,
+		KeepAlive: sc.KeepAlive,
 		TLSPubPem: nil,
 	})
 	eventD := builder.EventDriveInter()
@@ -84,24 +72,6 @@ func New(opts ...Option) *Server {
 	eventD.OnOpen(server.onOpen)
 	// server engine
 	server.server = builder.Server()
-	// init encoder cache
-	for i := 0; i < math.MaxUint8; i++ {
-		wp := packet.GetEncoderFromIndex(i)
-		if wp != nil {
-			server.cacheEncoder = append(server.cacheEncoder, wp)
-		} else {
-			break
-		}
-	}
-	// init codec cache
-	for i := 0; i < math.MaxUint8; i++ {
-		wp := codec.GetCodecFromIndex(i)
-		if wp != nil {
-			server.cacheCodec = append(server.cacheCodec, wp)
-		} else {
-			break
-		}
-	}
 	// init plugin manager
 	server.pManager = &pluginManager{
 		plugins: append([]plugin.ServerPlugin{
@@ -203,13 +173,13 @@ func (s *Server) RegisterAnonymousFunc(funcName string, fn interface{}, option *
 }
 
 func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
-	pasrser, ok := s.noReadyBufferDesc.LoadOk(c)
+	pasrser, ok := s.connSourceDesc.LoadOk(c)
 	if !ok {
 		s.logger.ErrorFromErr(errors.New("no register message-parser"))
 		_ = c.Close()
 		return
 	}
-	if s.debug {
+	if s.config.Debug {
 		s.logger.Debug(messageUtils.AnalysisMessage(data).String())
 	}
 	msgs, err := pasrser.ParseMsg(data)
@@ -222,73 +192,13 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 	for _, pMsg := range msgs {
 		// 根据读取的头信息初始化一些需要的Codec/Encoder
 		msgOpt := newConnDesc(s, pMsg.Message, c)
-		msgId := pMsg.Message.GetMsgId()
 		switch pMsg.Message.GetMsgType() {
 		case message.Ping:
-			pMsg.Message.SetMsgType(message.Pong)
-			msgOpt.SelectCodecAndEncoder()
-			s.encodeAndSendMsg(*msgOpt, pMsg.Message, false)
+			s.messageKeepAlive(msgOpt, pMsg.Header, pasrser)
 		case message.ContextCancel:
-			// TODO 实现context的远程传递
-			msgOpt.SelectCodecAndEncoder()
-			ctxIdStr, ok := msgOpt.Message.MetaData.LoadOk(message.ContextId)
-			if !ok {
-				s.handleError(c, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
-					common.ContextNotFound, fmt.Sprintf("contextId : %s", ctxIdStr)))
-				continue
-			}
-			ctxId, err := strconv.ParseUint(ctxIdStr, 10, 64)
-			if err != nil {
-				s.handleError(c, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
-					common.ErrServer, err.Error()))
-				continue
-			}
-			err = s.ctxManager.CancelContext(c, ctxId)
-			if err != nil {
-				s.handleError(c, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
-					common.ErrServer, err.Error()))
-			}
+			s.messageContextCancel(msgOpt, pMsg.Header, pasrser)
 		case message.Call:
-			msgOpt.SelectCodecAndEncoder()
-			lErr := msgOpt.RealPayload()
-			if lErr != nil {
-				msgOpt.FreeMessage(pasrser)
-				s.handleError(c, msgId, lErr)
-				continue
-			}
-			lErr = msgOpt.Check()
-			if lErr != nil {
-				msgOpt.FreeMessage(pasrser)
-				s.handleError(c, msgId, lErr)
-				continue
-			}
-			msgOpt.SelectWriter(pMsg.Header)
-			var useMux bool
-			switch pMsg.Header {
-			case message.MagicNumber:
-				useMux = false
-			case mux.Enabled:
-				useMux = true
-			}
-			codecI, encoderI := msgOpt.Message.GetCodecType(), msgOpt.Message.GetEncoderType()
-			// 将使用完的Message归还给Parser
-			msgOpt.FreeMessage(pasrser)
-			if msgOpt.Method.Option.SyncCall {
-				s.callHandleUnit(*msgOpt, msgId, codecI, encoderI, useMux)
-				continue
-			}
-			if msgOpt.Method.Option.UseRawGoroutine {
-				go func() {
-					s.callHandleUnit(*msgOpt, msgId, codecI, encoderI, useMux)
-				}()
-				continue
-			}
-			err = s.taskPool.Push(func() {
-				s.callHandleUnit(*msgOpt, msgId, codecI, encoderI, useMux)
-			})
-			if err != nil {
-				s.handleError(c, msgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
-			}
+			s.messageCall(msgOpt, pMsg.Header, pasrser)
 		default:
 			s.handleError(c, pMsg.Message.GetMsgId(), lerror.LWarpStdError(common.ErrServer,
 				"Unknown Message Call Type", pMsg.Message.GetMsgType()))
@@ -297,9 +207,87 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 	}
 }
 
+// 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
+func (s *Server) messageKeepAlive(msgOpt *messageOpt, header byte, parser *msgparser.LMessageParser) {
+	defer msgOpt.FreeMessage(parser)
+	msgOpt.Message.SetMsgType(message.Pong)
+	msgOpt.SelectCodecAndEncoder()
+	if s.config.KeepAlive {
+		err := msgOpt.Conn.SetDeadline(time.Now().Add(s.config.KeepAliveTimeout))
+		if err != nil {
+			s.logger.ErrorFromErr(err)
+			_ = msgOpt.Conn.Close()
+			return
+		}
+	}
+	s.encodeAndSendMsg(*msgOpt, msgOpt.Message, false)
+}
+
+// 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
+func (s *Server) messageContextCancel(msgOpt *messageOpt, header byte, parser *msgparser.LMessageParser) {
+	defer msgOpt.FreeMessage(parser)
+	msgOpt.SelectCodecAndEncoder()
+	ctxIdStr, ok := msgOpt.Message.MetaData.LoadOk(message.ContextId)
+	if !ok {
+		s.handleError(msgOpt.Conn, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
+			common.ContextNotFound, fmt.Sprintf("contextId : %s", ctxIdStr)))
+	}
+	ctxId, err := strconv.ParseUint(ctxIdStr, 10, 64)
+	if err != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
+			common.ErrServer, err.Error()))
+	}
+	err = s.ctxManager.CancelContext(msgOpt.Conn, ctxId)
+	if err != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
+			common.ErrServer, err.Error()))
+	}
+}
+
+// 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
+func (s *Server) messageCall(msgOpt *messageOpt, header byte, parser *msgparser.LMessageParser) {
+	msgId := msgOpt.Message.GetMsgId()
+	msgOpt.SelectCodecAndEncoder()
+	lErr := msgOpt.RealPayload()
+	if lErr != nil {
+		msgOpt.FreeMessage(parser)
+		s.handleError(msgOpt.Conn, msgId, lErr)
+		return
+	}
+	lErr = msgOpt.Check()
+	if lErr != nil {
+		msgOpt.FreeMessage(parser)
+		s.handleError(msgOpt.Conn, msgId, lErr)
+	}
+	msgOpt.SelectWriter(header)
+	var useMux bool
+	switch header {
+	case message.MagicNumber:
+		useMux = false
+	case mux.Enabled:
+		useMux = true
+	}
+	// 将使用完的Message归还给Parser
+	msgOpt.FreeMessage(parser)
+	if msgOpt.Method.Option.SyncCall {
+		s.callHandleUnit(*msgOpt, msgId, useMux)
+	}
+	if msgOpt.Method.Option.UseRawGoroutine {
+		go func() {
+			s.callHandleUnit(*msgOpt, msgId, useMux)
+		}()
+	}
+	err := s.taskPool.Push(func() {
+		s.callHandleUnit(*msgOpt, msgId, useMux)
+	})
+	if err != nil {
+		s.handleError(msgOpt.Conn, msgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
+	}
+}
+
 // 提供用于任务池的处理调用用户过程的单元
 // 因为用户过程可能会有阻塞操作
-func (s *Server) callHandleUnit(msgOpt messageOpt, msgId uint64, codecI, encoderI uint8, useMux bool) {
+func (s *Server) callHandleUnit(msgOpt messageOpt, msgId uint64, useMux bool) {
 	messageBuffer := sharedPool.TakeMessagePool()
 	msg := messageBuffer.Get().(*message.Message)
 	msg.Reset()
@@ -323,8 +311,12 @@ func (s *Server) callHandleUnit(msgOpt messageOpt, msgId uint64, codecI, encoder
 	}
 	// TODO 正确设置消息
 	msg.SetMsgType(message.Return)
-	msg.SetCodecType(codecI)
-	msg.SetEncoderType(encoderI)
+	if msgOpt.Codec.Scheme() != message.CodecScheme {
+		msg.MetaData.Store(message.CodecScheme, msgOpt.Codec.Scheme())
+	}
+	if msgOpt.Encoder.Scheme() != message.EncoderScheme {
+		msg.MetaData.Store(message.EncoderScheme, msgOpt.Encoder.Scheme())
+	}
 	msg.SetMsgId(msgId)
 	// OnCallResult Plugin
 	if err := s.pManager.OnCallResult(msg, &callResult); err != nil {
@@ -363,14 +355,22 @@ func (s *Server) onClose(conn transport.ConnAdapter, err error) {
 			conn.LocalAddr().String(), conn.RemoteAddr().String()))
 	}
 	// 关闭之前的清理工作
-	s.noReadyBufferDesc.Delete(conn)
+	s.connSourceDesc.Delete(conn)
+	s.ctxManager.DeleteConnection(conn)
 }
 
 func (s *Server) onOpen(conn transport.ConnAdapter) {
 	// 初始化连接的相关数据
 	parser := msgparser.New(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()})
-	s.noReadyBufferDesc.Store(conn, parser)
+	s.connSourceDesc.Store(conn, parser)
 	s.ctxManager.RegisterConnection(conn)
+	// init keepalive
+	if s.config.KeepAlive {
+		if err := conn.SetDeadline(time.Now().Add(s.config.KeepAliveTimeout)); err != nil {
+			s.logger.ErrorFromErr(err)
+			_ = conn.Close()
+		}
+	}
 }
 
 func (s *Server) onErr(err error) {

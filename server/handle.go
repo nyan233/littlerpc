@@ -58,7 +58,7 @@ func (s *Server) encodeAndSendMsg(msgOpt messageOpt, msg *message.Message, useMu
 		Option:  &metadata.ProcessOption{UseMux: useMux},
 		Encoder: msgOpt.Encoder,
 		Pool:    sharedPool.TakeBytesPool(),
-		OnDebug: debug.MessageDebug(s.logger, s.debug, useMux),
+		OnDebug: debug.MessageDebug(s.logger, s.config.Debug),
 		EHandle: s.eHandle,
 	})
 	if err != nil {

@@ -17,7 +17,7 @@ import (
 	"github.com/nyan233/littlerpc/pkg/stream"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/mux"
+	"github.com/nyan233/littlerpc/protocol/message/mux"
 	"reflect"
 	"strconv"
 )
@@ -41,19 +41,19 @@ func newConnDesc(s *Server, msg *message.Message, c transport.ConnAdapter) *mess
 
 func (c *messageOpt) SelectCodecAndEncoder() {
 	// 根据读取的头信息初始化一些需要的Codec/Encoder
-	cwp := safeIndexCodecWps(c.Server.cacheCodec, int(c.Message.GetCodecType()))
-	ewp := safeIndexEncoderWps(c.Server.cacheEncoder, int(c.Message.GetEncoderType()))
+	cwp := codec.GetCodec(c.Message.MetaData.Load(message.CodecScheme))
+	ewp := packet.GetEncoder(c.Message.MetaData.Load(message.EncoderScheme))
 	if cwp == nil || ewp == nil {
-		c.Codec = safeIndexCodecWps(c.Server.cacheCodec, int(message.DefaultCodecType)).Instance()
-		c.Encoder = safeIndexEncoderWps(c.Server.cacheEncoder, int(message.DefaultEncodingType)).Instance()
+		c.Codec = codec.GetCodec(message.CodecScheme)
+		c.Encoder = packet.GetEncoder(message.EncoderScheme)
 	} else {
-		c.Codec = cwp.Instance()
-		c.Encoder = ewp.Instance()
+		c.Codec = cwp
+		c.Encoder = ewp
 	}
 }
 
 func (c *messageOpt) SelectWriter(header uint8) {
-	c.Writer = msgwriter.Manager.GetWriter(header)
+	c.Writer = msgwriter.Get(header)
 }
 
 // RealPayload 获取真正的Payload, 如果有压缩则解压

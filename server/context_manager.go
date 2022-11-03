@@ -20,7 +20,15 @@ func (manager *contextManager) RegisterConnection(conn transport.ConnAdapter) {
 }
 
 func (manager *contextManager) DeleteConnection(conn transport.ConnAdapter) {
+	contextSet := manager.manager.Load(conn)
 	manager.manager.Store(conn, nil)
+	// 取消所有context
+	if contextSet != nil {
+		contextSet.Range(func(_ uint64, cancel context.CancelFunc) bool {
+			cancel()
+			return true
+		})
+	}
 	manager.manager.Delete(conn)
 }
 

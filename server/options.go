@@ -6,10 +6,8 @@ import (
 	common2 "github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/logger"
 	"github.com/nyan233/littlerpc/pkg/export"
-	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	perror "github.com/nyan233/littlerpc/protocol/error"
-	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/zbh255/bilog"
 	"runtime"
 	"time"
@@ -21,9 +19,9 @@ func (opt Option) apply(config *Config) {
 	opt(config)
 }
 
-func DirectConfig(uCfg *Config) Option {
+func DirectConfig(uCfg Config) Option {
 	return func(config *Config) {
-		*config = *uCfg
+		*config = uCfg
 	}
 }
 
@@ -37,10 +35,9 @@ func WithDefaultServer() Option {
 	return func(config *Config) {
 		config.Logger = logger.Logger
 		config.TlsConfig = nil
-		config.ServerKeepAlive = true
-		config.ServerPPTimeout = 5 * time.Second
+		config.KeepAlive = true
+		config.KeepAliveTimeout = 5 * time.Second
 		config.ServerTimeout = 90 * time.Second
-		config.Encoder = packet.GetEncoderFromIndex(int(message.DefaultEncodingType))
 		config.NetWork = "nbio_tcp"
 		config.ErrHandler = common2.DefaultErrHandler
 		config.PoolBufferSize = 2048
@@ -58,12 +55,6 @@ func WithAddressServer(adds ...string) Option {
 func WithTlsServer(tlsC *tls.Config) Option {
 	return func(config *Config) {
 		config.TlsConfig = tlsC
-	}
-}
-
-func WithServerEncoder(scheme string) Option {
-	return func(config *Config) {
-		config.Encoder = packet.GetEncoderFromScheme(scheme)
 	}
 }
 
