@@ -11,7 +11,7 @@ import (
 	"github.com/nyan233/littlerpc/pkg/utils/random"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/mux"
+	"github.com/nyan233/littlerpc/protocol/message/mux"
 	"sync"
 )
 
@@ -27,7 +27,8 @@ type Argument struct {
 	// 用于统一内存复用的池, 类型是: *container.Slice[byte]
 	Pool *sync.Pool
 	// 不为nil时则说明Server开启了Debug模式
-	OnDebug func([]byte)
+	// 为true表示开启了Mux
+	OnDebug func([]byte, bool)
 	// 在消息发送完成时会调用
 	OnComplete func([]byte, perror.LErrorDesc)
 	EHandle    perror.LErrors
@@ -40,9 +41,6 @@ func (l *LRPC) Writer(arg Argument) perror.LErrorDesc {
 	// rep Header已经被调用者提前设置好内容，所以这里发送消息的逻辑不用设置
 	// write header
 	msg := arg.Message
-	bp := arg.Pool.Get().(*container.Slice[byte])
-	bp.Reset()
-	defer arg.Pool.Put(bp)
 	// write body
 	if arg.Encoder.Scheme() != "text" {
 		bytes, err := arg.Encoder.EnPacket(msg.Payloads())
@@ -51,50 +49,73 @@ func (l *LRPC) Writer(arg Argument) perror.LErrorDesc {
 		}
 		msg.ReWritePayload(bytes)
 	}
-	message.Marshal(msg, bp)
 	if arg.Option.UseMux {
-		return lRPCMuxWriter(arg, *bp)
+		return lRPCMuxWriter(arg)
 	} else {
-		return lRPCNoMuxWriter(arg, *bp)
+		return lRPCNoMuxWriter(arg)
 	}
 }
 
-func lRPCNoMuxWriter(arg Argument, bytes []byte) (err perror.LErrorDesc) {
-	wErr := control.WriteControl(arg.Conn, bytes)
+func lRPCNoMuxWriter(arg Argument) (err perror.LErrorDesc) {
+	bp := arg.Pool.Get().(*container.Slice[byte])
+	bp.Reset()
+	defer arg.Pool.Put(bp)
+	message.Marshal(arg.Message, bp)
+	wErr := control.WriteControl(arg.Conn, *bp)
 	defer func() {
 		if arg.OnComplete != nil {
-			arg.OnComplete(bytes, err)
+			arg.OnComplete(*bp, err)
 		}
 	}()
 	if wErr != nil {
-		return arg.EHandle.LWarpErrorDesc(common.ErrConnection, fmt.Sprintf("Write NoMuxMessage failed, bytes len : %v", len(bytes)))
+		return arg.EHandle.LWarpErrorDesc(common.ErrConnection, fmt.Sprintf("Write NoMuxMessage failed, bytes len : %v", len(*bp)))
 	}
 	if arg.OnDebug != nil {
-		arg.OnDebug(bytes)
+		arg.OnDebug(*bp, false)
 	}
 	return nil
 }
 
 // TODO: Mux消息支持Debug选项
-func lRPCMuxWriter(arg Argument, bytes []byte) (err perror.LErrorDesc) {
+func lRPCMuxWriter(arg Argument) (err perror.LErrorDesc) {
 	msg := arg.Message
-	muxMsg := &mux.Block{
+	// write data
+	// 大于一个MuxBlock时则分片发送
+	buf1 := arg.Pool.Get().(*container.Slice[byte])
+	buf2 := arg.Pool.Get().(*container.Slice[byte])
+	iter := mux.MarshalIteratorFromMessage(msg, buf1, buf2, mux.Block{
 		Flags:    mux.Enabled,
 		StreamId: random.FastRand(),
 		MsgId:    msg.GetMsgId(),
-	}
-	// write data
-	// 大于一个MuxBlock时则分片发送
-	sendBuf := arg.Pool.Get().(*container.Slice[byte])
-	defer arg.Pool.Put(sendBuf)
+	})
 	defer func() {
-		if arg.OnComplete != nil {
-			arg.OnComplete(bytes, err)
+		// 避免OnComplete遗漏
+		if err, ok := recover().(perror.LErrorDesc); ok && arg.OnComplete != nil {
+			bytes, ok := iter.Forward()
+			if ok {
+				arg.OnComplete(bytes, err)
+			}
 		}
+		arg.Pool.Put(buf2)
 	}()
-	wErr := control.MuxWriteAll(arg.Conn, muxMsg, sendBuf, bytes, nil)
-	if wErr != nil {
-		return arg.EHandle.LWarpErrorDesc(common.ErrConnection, fmt.Sprintf("Write NoMuxMessage failed, bytes len : %v", len(bytes)))
+	arg.Pool.Put(buf1)
+	for iter.Next() {
+		bytes := iter.Take()
+		if bytes == nil {
+			return arg.EHandle.LWarpErrorDesc(common.ErrMessageDecoding,
+				fmt.Sprintf("NoMuxMessage Decoding failed, bytes len : %v", len(bytes)))
+		}
+		err := control.WriteControl(arg.Conn, bytes)
+		if err != nil {
+			return arg.EHandle.LWarpErrorDesc(common.ErrConnection,
+				fmt.Sprintf("Write NoMuxMessage failed, bytes len : %v", len(bytes)))
+		}
+		if arg.OnDebug != nil {
+			arg.OnDebug(bytes, true)
+		}
+		if arg.OnComplete != nil {
+			arg.OnComplete(bytes, nil)
+		}
 	}
 	return nil
 }

@@ -8,7 +8,8 @@ import (
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	messageUtils "github.com/nyan233/littlerpc/pkg/utils/message"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/mux"
+	"github.com/nyan233/littlerpc/protocol/message/mux"
+	"github.com/stretchr/testify/assert"
 	"net"
 	"sync"
 	"syscall"
@@ -72,7 +73,7 @@ func TestLRPCWriter(t *testing.T) {
 }
 
 func testWriter(t *testing.T, writer Writer) {
-	msg := messageUtils.GenProtocolMessage()
+	msg := messageUtils.GenProtocolMessage(messageUtils.Big)
 	msg.MetaData.Store(message.ErrorCode, "200")
 	msg.MetaData.Store(message.ErrorMessage, "Hello world!")
 	msg.MetaData.Store(message.ErrorMore, "[\"hello world\",123]")
@@ -85,7 +86,7 @@ func testWriter(t *testing.T, writer Writer) {
 			CompleteReUsage: true,
 			UseMux:          false,
 		},
-		Encoder: packet.GetEncoderFromScheme("text").Instance(),
+		Encoder: packet.GetEncoder("text"),
 		Pool: &sync.Pool{
 			New: func() interface{} {
 				var tmp container.Slice[byte] = make([]byte, mux.MaxBlockSize)
@@ -95,19 +96,12 @@ func testWriter(t *testing.T, writer Writer) {
 		OnDebug: nil,
 		EHandle: common.DefaultErrHandler,
 	}
-	err := writer.Writer(arg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.NotEqual(t, writer.Writer(arg), nil)
+
 	arg.Message.SetMsgType(message.Return)
 	arg.Option.UseMux = true
-	err = writer.Writer(arg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.NotEqual(t, writer.Writer(arg), nil)
+
 	arg.Conn = &NilConn{writeFailed: true}
-	err = writer.Writer(arg)
-	if err == nil {
-		t.Fatal("write return error but Writer no return")
-	}
+	assert.Equal(t, writer.Writer(arg), nil, "write return error but Writer no return")
 }
