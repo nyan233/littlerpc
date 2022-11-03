@@ -54,7 +54,7 @@ func MarshalIteratorFromMessage(msg *message.Message, buf1, buf2 *container.Slic
 		*buf1 = (*buf1)[copyLength:]
 		Marshal(&base, buf2)
 	}
-	iter := container.NewIterator[[]byte](nBlock, func(current int) []byte {
+	iter := container.NewIterator[[]byte](nBlock, true, func(current int) []byte {
 		start := current * MaxBlockSize
 		payloadLength := binary.BigEndian.Uint16((*buf2)[start+13 : start+15])
 		return (*buf2)[start : start+15+int(payloadLength)]

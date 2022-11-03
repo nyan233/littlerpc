@@ -194,7 +194,7 @@ func (m *Message) PayloadsIterator() *container2.Iterator[[]byte] {
 	} else {
 		length = m.payloadLayout.Len()
 	}
-	return container2.NewIterator[[]byte](length, func(current int) []byte {
+	return container2.NewIterator[[]byte](length, false, func(current int) []byte {
 		if current+1 == m.payloadLayout.Len() {
 			return m.payloads[rangCount : rangCount+int(m.payloadLayout[current])]
 		}
