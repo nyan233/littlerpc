@@ -18,7 +18,6 @@ func (j *JsonRpc2Handler) BaseLen() (BaseLenType, int) {
 }
 
 func (j *JsonRpc2Handler) MessageLength(base []byte) int {
-	//TODO implement me
 	panic("implement me")
 }
 
@@ -32,12 +31,12 @@ func (j *JsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, 
 		return -1, errors.New("hash")
 	}
 	if request.Codec == "" {
-		msg.SetCodecType(message.DefaultCodecType)
+		msg.SetCodecType(message.DefaultCodec)
 	} else {
-		msg.SetCodecType(uint8(codec.GetCodecFromScheme(request.Codec).Index()))
+		msg.SetCodecType(uint8(codec.GetCodec(request.Codec).Index()))
 	}
 	// jsonrpc2不支持压缩编码
-	msg.SetEncoderType(message.DefaultEncodingType)
+	msg.SetEncoderType(message.DefaultEncoder)
 	msg.SetMsgId(uint64(request.Id))
 	if request.MetaData != nil {
 		for k, v := range request.MetaData {

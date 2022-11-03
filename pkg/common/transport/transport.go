@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"github.com/nyan233/littlerpc/protocol/mux"
+	"github.com/nyan233/littlerpc/protocol/message/mux"
 	"net"
 )
 

@@ -82,7 +82,6 @@ func lRPCNoMuxWriter(arg Argument) (err perror.LErrorDesc) {
 	return nil
 }
 
-// TODO: Mux消息支持Debug选项
 func lRPCMuxWriter(arg Argument) (err perror.LErrorDesc) {
 	msg := arg.Message
 	// write data

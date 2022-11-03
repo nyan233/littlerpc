@@ -6,7 +6,7 @@ import (
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/mux"
+	"github.com/nyan233/littlerpc/protocol/message/mux"
 	"github.com/stretchr/testify/assert"
 	"strconv"
 	"strings"
@@ -42,7 +42,7 @@ func TestParser(t *testing.T) {
 	}
 	muxBlock.SetPayloads(marshalBytes)
 	var muxMarshalBytes []byte
-	err := mux.Marshal(&muxBlock, (*container.Slice[byte])(&muxMarshalBytes))
+	mux.Marshal(&muxBlock, (*container.Slice[byte])(&muxMarshalBytes))
 	if err != nil {
 		t.Fatal(err)
 	}

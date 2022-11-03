@@ -50,7 +50,6 @@ func FuzzMessageReal(f *testing.F) {
 	})
 }
 
-// TODO 计划上模拟测试来测试协议的各种字段
 func TestProtocol(t *testing.T) {
 	msg := New()
 	msg.SetMsgType(Return)

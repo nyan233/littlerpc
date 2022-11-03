@@ -2,7 +2,7 @@ package msgparser
 
 import (
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/mux"
+	"github.com/nyan233/littlerpc/protocol/message/mux"
 )
 
 type muxHandler struct {

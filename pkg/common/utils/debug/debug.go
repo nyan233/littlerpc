@@ -13,8 +13,8 @@ func ServerRecover(logger bilog.Logger) pool.RecoverFunc {
 	}
 }
 
-func MessageDebug(logger bilog.Logger, open, useMux bool) func(bytes []byte) {
-	return func(bytes []byte) {
+func MessageDebug(logger bilog.Logger, open bool) func(bytes []byte, useMux bool) {
+	return func(bytes []byte, useMux bool) {
 		switch {
 		case open && useMux:
 			logger.Debug(messageUtils.AnalysisMuxMessage(bytes).String())

@@ -22,7 +22,6 @@ type NilConn struct {
 }
 
 func (n2 *NilConn) Read(b []byte) (n int, err error) {
-	//TODO implement me
 	panic("implement me")
 }
 
@@ -34,32 +33,26 @@ func (n2 *NilConn) Write(b []byte) (n int, err error) {
 }
 
 func (n2 *NilConn) Close() error {
-	//TODO implement me
 	panic("implement me")
 }
 
 func (n2 *NilConn) LocalAddr() net.Addr {
-	//TODO implement me
 	panic("implement me")
 }
 
 func (n2 *NilConn) RemoteAddr() net.Addr {
-	//TODO implement me
 	panic("implement me")
 }
 
 func (n2 *NilConn) SetDeadline(t time.Time) error {
-	//TODO implement me
 	panic("implement me")
 }
 
 func (n2 *NilConn) SetReadDeadline(t time.Time) error {
-	//TODO implement me
 	panic("implement me")
 }
 
 func (n2 *NilConn) SetWriteDeadline(t time.Time) error {
-	//TODO implement me
 	panic("implement me")
 }
 
