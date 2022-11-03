@@ -2,9 +2,9 @@ package msgwriter
 
 import (
 	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/container"
-	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	messageUtils "github.com/nyan233/littlerpc/pkg/utils/message"
 	"github.com/nyan233/littlerpc/protocol/message"
@@ -65,10 +65,10 @@ func (n2 *NilConn) SetWriteDeadline(t time.Time) error {
 
 func TestLRPCWriter(t *testing.T) {
 	t.Run("TestLRPCWriter", func(t *testing.T) {
-		testWriter(t, &LRPC{})
+		testWriter(t, Get(message.MagicNumber))
 	})
 	t.Run("TestJsonRPC2Writer", func(t *testing.T) {
-		testWriter(t, &JsonRPC2{Codec: codec.JsonCodec{}})
+		testWriter(t, Get(jsonrpc2.Header))
 	})
 }
 
@@ -96,12 +96,12 @@ func testWriter(t *testing.T, writer Writer) {
 		OnDebug: nil,
 		EHandle: common.DefaultErrHandler,
 	}
-	assert.NotEqual(t, writer.Writer(arg), nil)
+	assert.Equal(t, writer.Writer(arg), nil)
 
 	arg.Message.SetMsgType(message.Return)
 	arg.Option.UseMux = true
-	assert.NotEqual(t, writer.Writer(arg), nil)
+	assert.Equal(t, writer.Writer(arg), nil)
 
 	arg.Conn = &NilConn{writeFailed: true}
-	assert.Equal(t, writer.Writer(arg), nil, "write return error but Writer no return")
+	assert.NotEqual(t, writer.Writer(arg), nil, "write return error but Writer no return")
 }

@@ -16,6 +16,8 @@ import (
 )
 
 type Writer interface {
+	// Header 每个byte代表一个Header, 一个Writer可以绑定多种Header
+	Header() []byte
 	Writer(arg Argument) perror.LErrorDesc
 }
 
@@ -35,6 +37,10 @@ type Argument struct {
 }
 
 type LRPC struct{}
+
+func (l *LRPC) Header() []byte {
+	return []byte{message.MagicNumber, mux.Enabled}
+}
 
 // Writer LittleRpc默认的写入器
 func (l *LRPC) Writer(arg Argument) perror.LErrorDesc {

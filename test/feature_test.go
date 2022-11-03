@@ -106,7 +106,7 @@ func TestServerAndClient(t *testing.T) {
 	//t.Run("TestJsonRPC2SingleProtocolNonTls", func(t *testing.T) {
 	//	cOpts := clientOpts
 	//	cOpts = append(cOpts, lclient.WithUseMux(false))
-	//	cOpts = append(cOpts, lclient.WithWriter(msgwriter.Manager.GetWriter(jsonrpc2.Header)))
+	//	cOpts = append(cOpts, lclient.WithWriter(msgwriter.Manager.Get(jsonrpc2.Header)))
 	//	cOpts = append(cOpts, lclient.WithProtocol("nbio_ws"))
 	//	sOpts := serverOpts
 	//	sOpts = append(sOpts, lserver.WithTransProtocol("nbio_ws"))

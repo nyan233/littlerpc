@@ -15,6 +15,10 @@ type JsonRPC2 struct {
 	Codec codec.Codec
 }
 
+func (j *JsonRPC2) Header() []byte {
+	return []byte{jsonrpc2.Header}
+}
+
 func (j *JsonRPC2) Writer(arg Argument) perror.LErrorDesc {
 	switch arg.Message.GetMsgType() {
 	case message.Call:
