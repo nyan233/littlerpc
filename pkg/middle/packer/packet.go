@@ -1,9 +1,9 @@
-package packet
+package packer
 
-// Encoder 负责解包/拆包的实例要实现的接口
+// Packer 负责解包/拆包的实例要实现的接口
 // 获得数据是经过json encode之后的Body,Header不会被发送到此处理
 // 默认实现text&gzip
-type Encoder interface {
+type Packer interface {
 	Scheme() string
 	// EnPacket 装包
 	EnPacket(p []byte) ([]byte, error)
@@ -12,7 +12,7 @@ type Encoder interface {
 }
 
 var (
-	encoderCollection = make(map[string]Encoder, 8)
+	encoderCollection = make(map[string]Packer, 8)
 )
 
 // Text 注意:text类型的压缩器只是提供给client&server
@@ -32,7 +32,7 @@ func (t Text) UnPacket(p []byte) ([]byte, error) {
 }
 
 // Register 该调用是线程安全的
-func Register(p Encoder) {
+func Register(p Packer) {
 	if p == nil {
 		panic("encoder is empty")
 	}
@@ -43,7 +43,7 @@ func Register(p Encoder) {
 }
 
 // Get 该调用是线程安全的
-func Get(scheme string) Encoder {
+func Get(scheme string) Packer {
 	return encoderCollection[scheme]
 }
 
