@@ -3,7 +3,6 @@ package msgwriter
 import (
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
-	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	messageUtils "github.com/nyan233/littlerpc/pkg/utils/message"
@@ -57,8 +56,11 @@ func (n2 *NilConn) SetWriteDeadline(t time.Time) error {
 }
 
 func TestLRPCWriter(t *testing.T) {
-	t.Run("TestLRPCWriter", func(t *testing.T) {
+	t.Run("TestLRPCNoMuxWriter", func(t *testing.T) {
 		testWriter(t, Get(message.MagicNumber))
+	})
+	t.Run("TestLRPCMuxWriter", func(t *testing.T) {
+		testWriter(t, Get(mux.Enabled))
 	})
 	t.Run("TestJsonRPC2Writer", func(t *testing.T) {
 		testWriter(t, Get(jsonrpc2.Header))
@@ -74,12 +76,7 @@ func testWriter(t *testing.T, writer Writer) {
 	arg := Argument{
 		Message: msg,
 		Conn:    &NilConn{},
-		Option: &metadata.ProcessOption{
-			SyncCall:        false,
-			CompleteReUsage: true,
-			UseMux:          false,
-		},
-		Encoder: packet.GetEncoder("text"),
+		Encoder: packet.Get("text"),
 		Pool: &sync.Pool{
 			New: func() interface{} {
 				var tmp container.Slice[byte] = make([]byte, mux.MaxBlockSize)
@@ -92,8 +89,11 @@ func testWriter(t *testing.T, writer Writer) {
 	assert.Equal(t, writer.Writer(arg), nil)
 
 	arg.Message.SetMsgType(message.Return)
-	arg.Option.UseMux = true
 	assert.Equal(t, writer.Writer(arg), nil)
+
+	// test gzip
+	arg.Encoder = packet.Get("gzip")
+	assert.Equal(t, writer.Writer(arg), nil, "encoder encode failed")
 
 	arg.Conn = &NilConn{writeFailed: true}
 	assert.NotEqual(t, writer.Writer(arg), nil, "write return error but Writer no return")

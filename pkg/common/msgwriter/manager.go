@@ -26,6 +26,7 @@ func Get(header byte) Writer {
 }
 
 func init() {
-	Register(&LRPC{})
-	Register(&JsonRPC2{Codec: &codec.JsonCodec{}})
+	Register(&lRPCMux{})
+	Register(&lRPCNoMux{})
+	Register(&JsonRPC2{Codec: codec.Get("json")})
 }
