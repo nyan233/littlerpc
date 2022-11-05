@@ -6,13 +6,13 @@ import (
 	"io/ioutil"
 )
 
-type GzipPacket struct{}
+type Gzip struct{}
 
-func (g *GzipPacket) Scheme() string {
+func (g *Gzip) Scheme() string {
 	return "gzip"
 }
 
-func (g *GzipPacket) UnPacket(p []byte) ([]byte, error) {
+func (g *Gzip) UnPacket(p []byte) ([]byte, error) {
 	gr, err := gzip.NewReader(bytes.NewReader(p))
 	if err != nil {
 		return nil, err
@@ -26,7 +26,7 @@ func (g *GzipPacket) UnPacket(p []byte) ([]byte, error) {
 	}
 }
 
-func (g *GzipPacket) EnPacket(p []byte) ([]byte, error) {
+func (g *Gzip) EnPacket(p []byte) ([]byte, error) {
 	var bb bytes.Buffer
 	gw, _ := gzip.NewWriterLevel(&bb, gzip.BestCompression)
 	defer gw.Close()

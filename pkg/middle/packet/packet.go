@@ -15,26 +15,26 @@ var (
 	encoderCollection = make(map[string]Encoder, 8)
 )
 
-// TextPacket 注意:text类型的压缩器只是提供给client&server
+// Text 注意:text类型的压缩器只是提供给client&server
 // 的一个提示,client&server的代码应该针对此特殊处理，真实调用会导致panic
-type TextPacket struct{}
+type Text struct{}
 
-func (t TextPacket) Scheme() string {
+func (t Text) Scheme() string {
 	return "text"
 }
 
-func (t TextPacket) EnPacket(p []byte) ([]byte, error) {
+func (t Text) EnPacket(p []byte) ([]byte, error) {
 	panic(interface{}("text packet not able call"))
 }
 
-func (t TextPacket) UnPacket(p []byte) ([]byte, error) {
+func (t Text) UnPacket(p []byte) ([]byte, error) {
 	panic(interface{}("text packet not able call"))
 }
 
-// RegisterEncoder 该调用是线程安全的
-func RegisterEncoder(p Encoder) {
+// Register 该调用是线程安全的
+func Register(p Encoder) {
 	if p == nil {
-		panic("encoder is nil")
+		panic("encoder is empty")
 	}
 	if p.Scheme() == "" {
 		panic("encoder scheme is empty")
@@ -42,12 +42,12 @@ func RegisterEncoder(p Encoder) {
 	encoderCollection[p.Scheme()] = p
 }
 
-// GetEncoder 该调用是线程安全的
-func GetEncoder(scheme string) Encoder {
+// Get 该调用是线程安全的
+func Get(scheme string) Encoder {
 	return encoderCollection[scheme]
 }
 
 func init() {
-	RegisterEncoder(new(TextPacket))
-	RegisterEncoder(new(GzipPacket))
+	Register(new(Text))
+	Register(new(Gzip))
 }

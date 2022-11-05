@@ -3,7 +3,7 @@ package packet
 import "testing"
 
 func TestGzip(t *testing.T) {
-	gz := &GzipPacket{}
+	gz := &Gzip{}
 	bigBytes := make([]byte, 1<<20)
 	initStr := "hello world"
 	for i := 0; i < len(bigBytes); i += len(initStr) {
@@ -20,7 +20,7 @@ func TestGzip(t *testing.T) {
 }
 
 func TestText(t *testing.T) {
-	text := &TextPacket{}
+	text := &Text{}
 	bigBytes := make([]byte, 1<<20)
 	initStr := "hello world"
 	for i := 0; i < len(bigBytes); i += len(initStr) {
