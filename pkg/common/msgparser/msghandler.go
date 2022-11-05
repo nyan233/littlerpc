@@ -1,10 +1,8 @@
 package msgparser
 
 import (
-	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/message/mux"
 	"math"
 )
 
@@ -26,21 +24,31 @@ const (
 )
 
 type MessageHandler interface {
+	Header() []byte
 	BaseLen() (BaseLenType, int)
 	MessageLength(base []byte) int
 	Unmarshal(data []byte, msg *message.Message) (Action, error)
 }
 
-func RegisterMessageHandler(magicNumber uint8, handler MessageHandler) {
-	handlerCollect[magicNumber] = handler
+func Register(handler MessageHandler) {
+	if handler == nil {
+		panic("handler is empty")
+	}
+	headers := handler.Header()
+	if headers == nil || len(headers) == 0 {
+		panic("header not found")
+	}
+	for _, header := range headers {
+		handlerCollect[header] = handler
+	}
 }
 
-func GetMessageHandler(magicNumber uint8) MessageHandler {
+func Get(magicNumber uint8) MessageHandler {
 	return handlerCollect[magicNumber]
 }
 
 func init() {
-	RegisterMessageHandler(message.MagicNumber, &noMuxHandler{})
-	RegisterMessageHandler(mux.Enabled, &muxHandler{})
-	RegisterMessageHandler(jsonrpc2.Header, &JsonRpc2Handler{Codec: codec.GetCodec("json").Instance()})
+	Register(&noMuxHandler{})
+	Register(&muxHandler{})
+	Register(&JsonRpc2Handler{Codec: codec.Get("json")})
 }

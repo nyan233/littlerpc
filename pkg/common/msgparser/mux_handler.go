@@ -8,6 +8,10 @@ import (
 type muxHandler struct {
 }
 
+func (m *muxHandler) Header() []byte {
+	return []byte{mux.Enabled}
+}
+
 func (m *muxHandler) BaseLen() (BaseLenType, int) {
 	return SingleRequest, mux.BlockBaseLen
 }

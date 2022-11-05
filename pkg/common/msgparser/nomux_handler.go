@@ -7,6 +7,10 @@ import (
 type noMuxHandler struct {
 }
 
+func (n *noMuxHandler) Header() []byte {
+	return []byte{message.MagicNumber}
+}
+
 func (n *noMuxHandler) BaseLen() (BaseLenType, int) {
 	return MultiRequest, message.BaseLen
 }

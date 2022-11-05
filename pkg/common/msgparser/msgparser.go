@@ -80,7 +80,7 @@ func (h *LMessageParser) ParseMsg(data []byte) (msgs []ParserMessage, err error)
 		case _ScanInit:
 			h.halfBuffer = append(h.halfBuffer, data[0])
 			data = data[1:]
-			if handler := GetMessageHandler(h.halfBuffer[0]); handler != nil {
+			if handler := Get(h.halfBuffer[0]); handler != nil {
 				h.handler = handler
 			} else {
 				return nil, errors.New(fmt.Sprintf("MagicNumber no MessageHandler -> %d", data[0]))

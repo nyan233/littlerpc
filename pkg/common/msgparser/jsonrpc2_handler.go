@@ -13,6 +13,10 @@ type JsonRpc2Handler struct {
 	Codec codec.Codec
 }
 
+func (j *JsonRpc2Handler) Header() []byte {
+	return []byte{jsonrpc2.Header}
+}
+
 func (j *JsonRpc2Handler) BaseLen() (BaseLenType, int) {
 	return SingleRequest, -1
 }
@@ -33,7 +37,7 @@ func (j *JsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, 
 	if request.Codec == "" {
 		msg.SetCodecType(message.DefaultCodec)
 	} else {
-		msg.SetCodecType(uint8(codec.GetCodec(request.Codec).Index()))
+		msg.SetCodecType(uint8(codec.Get(request.Codec).Index()))
 	}
 	// jsonrpc2不支持压缩编码
 	msg.SetEncoderType(message.DefaultEncoder)
