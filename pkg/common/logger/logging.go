@@ -2,7 +2,6 @@ package logger
 
 import (
 	"fmt"
-	"github.com/lesismal/nbio/logging"
 	"github.com/zbh255/bilog"
 	"os"
 	"sync/atomic"
@@ -13,47 +12,55 @@ const (
 	CloseLogger int64 = 1 << 11
 )
 
-var Logger bilog.Logger = bilog.NewLogger(os.Stdout, bilog.PANIC, bilog.WithTimes(),
-	bilog.WithCaller(), bilog.WithLowBuffer(0), bilog.WithTopBuffer(0))
+type LLogger interface {
+	Info(format string, v ...interface{})
+	Debug(format string, v ...interface{})
+	Warn(format string, v ...interface{})
+	Error(format string, v ...interface{})
+	Panic(format string, v ...interface{})
+}
 
-var NilLogger bilog.Logger = new(nilLogger)
-
-var NoCallerLogger bilog.Logger = bilog.NewLogger(os.Stdout, bilog.PANIC, bilog.WithDefault())
+var DefaultLogger LLogger
 
 var loggerOpen int64
 
-type CustomLogger string
-
-func (c CustomLogger) SetLevel(lvl int) {
-	return
+type LLoggerImpl struct {
+	logging *bilog.SimpleLogger
 }
 
-func (c CustomLogger) Debug(format string, v ...interface{}) {
+func (c *LLoggerImpl) Debug(format string, v ...interface{}) {
 	if !ReadLoggerStatus() {
 		return
 	}
-	NoCallerLogger.Debug(fmt.Sprintf(format, v...))
+	c.logging.Debug(fmt.Sprintf(format, v...))
 }
 
-func (c CustomLogger) Info(format string, v ...interface{}) {
+func (c *LLoggerImpl) Info(format string, v ...interface{}) {
 	if !ReadLoggerStatus() {
 		return
 	}
-	NoCallerLogger.Info(fmt.Sprintf(format, v...))
+	c.logging.Info(fmt.Sprintf(format, v...))
 }
 
-func (c CustomLogger) Warn(format string, v ...interface{}) {
+func (c *LLoggerImpl) Warn(format string, v ...interface{}) {
 	if !ReadLoggerStatus() {
 		return
 	}
-	NoCallerLogger.Trace(fmt.Sprintf(format, v...))
+	c.logging.Trace(fmt.Sprintf(format, v...))
 }
 
-func (c CustomLogger) Error(format string, v ...interface{}) {
+func (c *LLoggerImpl) Error(format string, v ...interface{}) {
 	if !ReadLoggerStatus() {
 		return
 	}
-	NoCallerLogger.ErrorFromString(fmt.Sprintf(format, v...))
+	c.logging.ErrorFromString(fmt.Sprintf(format, v...))
+}
+
+func (c *LLoggerImpl) Panic(format string, v ...interface{}) {
+	if !ReadLoggerStatus() {
+		return
+	}
+	c.logging.PanicFromString(fmt.Sprintf(format, v...))
 }
 
 func SetOpenLogger(ok bool) {
@@ -69,6 +76,15 @@ func ReadLoggerStatus() bool {
 }
 
 func init() {
-	logging.DefaultLogger = new(CustomLogger)
 	SetOpenLogger(true)
+	bilogLogger := bilog.NewLogger(
+		os.Stdout, bilog.PANIC,
+		bilog.WithTimes(),
+		bilog.WithCaller(1),
+		bilog.WithLowBuffer(0),
+		bilog.WithTopBuffer(0),
+	)
+	DefaultLogger = &LLoggerImpl{
+		logging: bilogLogger,
+	}
 }

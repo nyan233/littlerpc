@@ -1,39 +1,23 @@
 package logger
 
-type nilLogger struct{}
+type NilLogger struct{}
 
-func (n nilLogger) Level() int {
-	return 0
-}
-
-func (n nilLogger) Info(s string) {
+func (n NilLogger) Info(format string, v ...interface{}) {
 	return
 }
 
-func (n nilLogger) Debug(s string) {
+func (n NilLogger) Debug(format string, v ...interface{}) {
 	return
 }
 
-func (n nilLogger) Trace(s string) {
+func (n NilLogger) Warn(format string, v ...interface{}) {
 	return
 }
 
-func (n nilLogger) ErrorFromErr(e error) {
+func (n NilLogger) Error(format string, v ...interface{}) {
 	return
 }
 
-func (n nilLogger) ErrorFromString(s string) {
-	return
-}
-
-func (n nilLogger) PanicFromErr(e error) {
-	return
-}
-
-func (n nilLogger) PanicFromString(s string) {
-	return
-}
-
-func (n nilLogger) Flush() {
+func (n NilLogger) Panic(format string, v ...interface{}) {
 	return
 }
