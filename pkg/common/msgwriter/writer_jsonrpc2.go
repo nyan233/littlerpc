@@ -1,10 +1,10 @@
 package msgwriter
 
 import (
+	"fmt"
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
-	"github.com/nyan233/littlerpc/pkg/utils/control"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
@@ -73,9 +73,14 @@ handleResult:
 	if err != nil {
 		return arg.EHandle.LWarpErrorDesc(common.ErrCodecMarshalError, j.Codec.Scheme(), err.Error())
 	}
-	err = control.WriteControl(arg.Conn, bytes)
+	writeN, err := arg.Conn.Write(bytes)
 	if err != nil {
-		return arg.EHandle.LWarpErrorDesc(common.ErrConnection, err)
+		return arg.EHandle.LWarpErrorDesc(common.ErrConnection,
+			fmt.Sprintf("JsonRpc2 NoMux write error: %v", err))
+	}
+	if writeN != len(bytes) {
+		return arg.EHandle.LWarpErrorDesc(common.ErrConnection,
+			fmt.Sprintf("JsonRpc2 NoMux write bytes not equal : w(%d) != b(%d)", writeN, len(bytes)))
 	}
 	return nil
 }

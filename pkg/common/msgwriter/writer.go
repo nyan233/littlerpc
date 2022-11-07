@@ -3,7 +3,7 @@ package msgwriter
 import (
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
-	"github.com/nyan233/littlerpc/pkg/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/middle/packer"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
 	"sync"
@@ -18,7 +18,7 @@ type Writer interface {
 type Argument struct {
 	Message *message.Message
 	Conn    transport.ConnAdapter
-	Encoder packet.Encoder
+	Encoder packer.Packer
 	// 用于统一内存复用的池, 类型是: *container.Slice[byte]
 	Pool *sync.Pool
 	// 不为nil时则说明Server开启了Debug模式
