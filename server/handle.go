@@ -4,12 +4,10 @@ import (
 	"fmt"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	common2 "github.com/nyan233/littlerpc/pkg/common"
-	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/common/utils/debug"
-	"github.com/nyan233/littlerpc/pkg/container"
-	"github.com/nyan233/littlerpc/pkg/utils/control"
+	"github.com/nyan233/littlerpc/pkg/middle/packer"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
@@ -51,11 +49,10 @@ func (s *Server) setErrResult(msg *message.Message, callResult reflect.Value) pe
 	return nil
 }
 
-func (s *Server) encodeAndSendMsg(msgOpt messageOpt, msg *message.Message, useMux bool) {
+func (s *Server) encodeAndSendMsg(msgOpt messageOpt, msg *message.Message) {
 	err := msgOpt.Writer.Writer(msgwriter.Argument{
 		Message: msg,
 		Conn:    msgOpt.Conn,
-		Option:  &metadata.ProcessOption{UseMux: useMux},
 		Encoder: msgOpt.Encoder,
 		Pool:    sharedPool.TakeBytesPool(),
 		OnDebug: debug.MessageDebug(s.logger, s.config.Debug),
@@ -64,9 +61,9 @@ func (s *Server) encodeAndSendMsg(msgOpt messageOpt, msg *message.Message, useMu
 	if err != nil {
 		pErr := s.pManager.OnComplete(msg, err)
 		if err != nil {
-			s.logger.ErrorFromErr(pErr)
+			s.logger.Error("LRPC: call OnComplete plugin failed: %v", pErr)
 		}
-		s.handleError(msgOpt.Conn, msg.GetMsgId(), err)
+		s.handleError(msgOpt.Conn, msgOpt.Writer, msg.GetMsgId(), err)
 	}
 }
 
@@ -87,7 +84,7 @@ func (s *Server) handleResult(msgOpt messageOpt, msg *message.Message, callResul
 		// 可替换的Codec已经不需要Any包装器了
 		bytes, err := msgOpt.Codec.Marshal(eface)
 		if err != nil {
-			s.handleError(msgOpt.Conn, msg.GetMsgId(), common2.ErrServer)
+			s.handleError(msgOpt.Conn, msgOpt.Writer, msg.GetMsgId(), common2.ErrServer)
 			return
 		}
 		msg.AppendPayloads(bytes)
@@ -98,18 +95,22 @@ func (s *Server) handleResult(msgOpt messageOpt, msg *message.Message, callResul
 // NOTE: 严重错误 -> UnsafeOption | MessageDecodingFailed | MessageEncodingFailed
 // NOTE: 轻微错误 -> 除了严重错误都是
 // Update: LittleRpc现在的错误返回统一使用NoMux类型的消息
-func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo perror.LErrorDesc) {
+// writer == nil时从msgwriter选择一个Writer, 默认选择NoMux Writer
+func (s *Server) handleError(conn transport.ConnAdapter, writer msgwriter.Writer, msgId uint64, errNo perror.LErrorDesc) {
 	bytesBuffer := sharedPool.TakeBytesPool()
+	if writer == nil {
+		writer = msgwriter.Get(message.MagicNumber)
+	}
 	switch errNo.Code() {
 	case perror.ConnectionErr:
 		// 连接错误默认已经被关闭连接, 所以打印日志即可
-		s.logger.ErrorFromErr(errNo)
+		s.logger.Error("LRPC: trigger connection error: %v", errNo)
 	case perror.UnsafeOption, perror.MessageDecodingFailed, perror.MessageEncodingFailed:
 		// 严重影响到后续运行的错误需要关闭连接
-		s.logger.ErrorFromErr(errNo)
-		err := desc.Close()
+		s.logger.Error("LRPC: trigger must close connection error: %v", errNo)
+		err := conn.Close()
 		if err != nil {
-			s.logger.ErrorFromErr(err)
+			s.logger.Error("LRPC: close connection error: %v", err)
 		}
 	default:
 		// 普通一些的错误可以不关闭连接
@@ -123,22 +124,24 @@ func (s *Server) handleError(desc transport.ConnAdapter, msgId uint64, errNo per
 		if mores != nil && len(mores) > 0 {
 			bytes, err := errNo.MarshalMores()
 			if err != nil {
-				s.logger.ErrorFromErr(err)
-				_ = desc.Close()
+				s.logger.Error("LRPC: handleError marshal error mores failed: %v", err)
+				_ = conn.Close()
 				return
 			} else {
 				msg.MetaData.Store(message.ErrorMore, convert.BytesToString(bytes))
 			}
 		}
-		bp := bytesBuffer.Get().(*container.Slice[byte])
-		bp.Reset()
-		defer bytesBuffer.Put(bp)
-		message.Marshal(msg, bp)
-		err := control.WriteControl(desc, *bp)
+		err := writer.Writer(msgwriter.Argument{
+			Message:    msg,
+			Conn:       conn,
+			Encoder:    packer.Get("text"),
+			Pool:       bytesBuffer,
+			OnDebug:    debug.MessageDebug(s.logger, s.config.Debug),
+			OnComplete: nil, // TODO: 将某个合适的插件注入
+			EHandle:    s.eHandle,
+		})
 		if err != nil {
-			s.logger.ErrorFromErr(err)
-			_ = desc.Close()
-			return
+			s.logger.Error("LRPC: handleError write bytes error: %v", err)
 		}
 	}
 }

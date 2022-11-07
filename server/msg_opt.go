@@ -13,7 +13,7 @@ import (
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	metaDataUtil "github.com/nyan233/littlerpc/pkg/common/utils/metadata"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
-	"github.com/nyan233/littlerpc/pkg/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/middle/packer"
 	"github.com/nyan233/littlerpc/pkg/stream"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
@@ -27,7 +27,7 @@ type messageOpt struct {
 	Server    *Server
 	ContextId uint64
 	Codec     codec.Codec
-	Encoder   packet.Encoder
+	Encoder   packer.Packer
 	Message   *message.Message
 	Conn      transport.ConnAdapter
 	Method    *metadata.Process
@@ -40,12 +40,12 @@ func newConnDesc(s *Server, msg *message.Message, c transport.ConnAdapter) *mess
 }
 
 func (c *messageOpt) SelectCodecAndEncoder() {
-	// 根据读取的头信息初始化一些需要的Codec/Encoder
-	cwp := codec.GetCodec(c.Message.MetaData.Load(message.CodecScheme))
-	ewp := packet.GetEncoder(c.Message.MetaData.Load(message.EncoderScheme))
+	// 根据读取的头信息初始化一些需要的Codec/Packer
+	cwp := codec.Get(c.Message.MetaData.Load(message.CodecScheme))
+	ewp := packer.Get(c.Message.MetaData.Load(message.EncoderScheme))
 	if cwp == nil || ewp == nil {
-		c.Codec = codec.GetCodec(message.CodecScheme)
-		c.Encoder = packet.GetEncoder(message.EncoderScheme)
+		c.Codec = codec.Get(message.CodecScheme)
+		c.Encoder = packer.Get(message.EncoderScheme)
 	} else {
 		c.Codec = cwp
 		c.Encoder = ewp
@@ -70,7 +70,7 @@ func (c *messageOpt) RealPayload() perror.LErrorDesc {
 	p := c.Message.Payloads()
 	err = c.Server.pManager.OnMessage(c.Message, (*[]byte)(&p))
 	if err != nil {
-		c.Server.logger.ErrorFromErr(err)
+		c.Server.logger.Error("LRPC: call plugin OnMessage failed: %v", err)
 	}
 	return nil
 }
@@ -104,13 +104,13 @@ func (c *messageOpt) Check() perror.LErrorDesc {
 	// 参数校验为不合法
 	if lErr != nil {
 		if err := c.Server.pManager.OnCallBefore(c.Message, &callArgs, errors.New("arguments check failed")); err != nil {
-			c.Server.logger.ErrorFromErr(err)
+			c.Server.logger.Error("LRPC: call plugin OnCallBefore failed: %v", err)
 		}
 		return lErr
 	}
 	// Plugin
 	if err := c.Server.pManager.OnCallBefore(c.Message, &callArgs, nil); err != nil {
-		c.Server.logger.ErrorFromErr(err)
+		c.Server.logger.Error("LRPC: call plugin OnCallBefore failed: %v", err)
 	}
 	c.CallArgs = callArgs
 	return nil
@@ -138,7 +138,7 @@ func (c *messageOpt) checkCallArgs(receiver reflect.Value) (values []reflect.Val
 		if c.ContextId != 0 {
 			err := c.Server.ctxManager.CancelContext(c.Conn, c.ContextId)
 			if err != nil {
-				c.Server.logger.ErrorFromString(fmt.Sprintf("return err cancel context failed : %v", err.Error()))
+				c.Server.logger.Error("return err cancel context failed : %v", err)
 			}
 		}
 	}()

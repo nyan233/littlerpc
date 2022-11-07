@@ -8,7 +8,6 @@ import (
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	perror "github.com/nyan233/littlerpc/protocol/error"
-	"github.com/zbh255/bilog"
 	"runtime"
 	"time"
 )
@@ -25,7 +24,7 @@ func DirectConfig(uCfg Config) Option {
 	}
 }
 
-func WithCustomLogger(logger bilog.Logger) Option {
+func WithCustomLogger(logger logger.LLogger) Option {
 	return func(config *Config) {
 		config.Logger = logger
 	}
@@ -33,7 +32,7 @@ func WithCustomLogger(logger bilog.Logger) Option {
 
 func WithDefaultServer() Option {
 	return func(config *Config) {
-		config.Logger = logger.Logger
+		config.Logger = logger.DefaultLogger
 		config.TlsConfig = nil
 		config.KeepAlive = true
 		config.KeepAliveTimeout = 5 * time.Second
@@ -67,7 +66,7 @@ func WithTransProtocol(scheme string) Option {
 func WithOpenLogger(ok bool) Option {
 	return func(config *Config) {
 		if !ok {
-			config.Logger = logger.NilLogger
+			config.Logger = logger.NilLogger{}
 		}
 	}
 }

@@ -16,12 +16,10 @@ import (
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
-	messageUtils "github.com/nyan233/littlerpc/pkg/utils/message"
 	"github.com/nyan233/littlerpc/plugins/metrics"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/message/mux"
-	"github.com/zbh255/bilog"
+	"github.com/nyan233/littlerpc/protocol/message/analysis"
 	"reflect"
 	"strconv"
 	"sync"
@@ -40,7 +38,7 @@ type Server struct {
 	// 管理的连接与其拥有的资源
 	connSourceDesc container.RWMutexMap[transport.ConnAdapter, *msgparser.LMessageParser]
 	// logger
-	logger bilog.Logger
+	logger logger.LLogger
 	// 注册的插件的管理器
 	pManager *pluginManager
 	// Error Handler
@@ -59,7 +57,7 @@ func New(opts ...Option) *Server {
 	if sc.Logger != nil {
 		server.logger = sc.Logger
 	} else {
-		server.logger = logger.Logger
+		server.logger = logger.DefaultLogger
 	}
 	builder := transport.Manager.GetServerEngine(sc.NetWork)(transport.NetworkServerConfig{
 		Addrs:     sc.Address,
@@ -175,32 +173,36 @@ func (s *Server) RegisterAnonymousFunc(funcName string, fn interface{}, option *
 func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 	pasrser, ok := s.connSourceDesc.LoadOk(c)
 	if !ok {
-		s.logger.ErrorFromErr(errors.New("no register message-parser"))
+		s.logger.Error("LRPC: no register message-parser, remote ip = %s", c.RemoteAddr())
 		_ = c.Close()
 		return
 	}
 	if s.config.Debug {
-		s.logger.Debug(messageUtils.AnalysisMessage(data).String())
+		s.logger.Debug(analysis.NoMux(data).String())
 	}
 	msgs, err := pasrser.ParseMsg(data)
 	if err != nil {
 		// 错误处理过程会在严重错误时关闭连接, 所以msgId == 0也没有关系
 		// 在解码消息失败时也不可能拿到正确的msgId
-		s.handleError(c, 0, s.eHandle.LWarpErrorDesc(common.ErrMessageDecoding, err.Error()))
+		s.handleError(c, nil, 0, s.eHandle.LWarpErrorDesc(common.ErrMessageDecoding, err.Error()))
 		return
 	}
 	for _, pMsg := range msgs {
-		// 根据读取的头信息初始化一些需要的Codec/Encoder
+		// init message option
 		msgOpt := newConnDesc(s, pMsg.Message, c)
+		msgOpt.SelectWriter(pMsg.Header)
+		msgOpt.SelectCodecAndEncoder()
 		switch pMsg.Message.GetMsgType() {
 		case message.Ping:
-			s.messageKeepAlive(msgOpt, pMsg.Header, pasrser)
+			s.messageKeepAlive(msgOpt, pasrser)
 		case message.ContextCancel:
-			s.messageContextCancel(msgOpt, pMsg.Header, pasrser)
+			s.messageContextCancel(msgOpt, pasrser)
 		case message.Call:
-			s.messageCall(msgOpt, pMsg.Header, pasrser)
+			s.messageCall(msgOpt, pasrser)
 		default:
-			s.handleError(c, pMsg.Message.GetMsgId(), lerror.LWarpStdError(common.ErrServer,
+			// 释放消息, 这一步所有分支内都不可少
+			msgOpt.FreeMessage(pasrser)
+			s.handleError(c, msgOpt.Writer, pMsg.Message.GetMsgId(), lerror.LWarpStdError(common.ErrServer,
 				"Unknown Message Call Type", pMsg.Message.GetMsgType()))
 			continue
 		}
@@ -208,86 +210,76 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 }
 
 // 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
-func (s *Server) messageKeepAlive(msgOpt *messageOpt, header byte, parser *msgparser.LMessageParser) {
+func (s *Server) messageKeepAlive(msgOpt *messageOpt, parser *msgparser.LMessageParser) {
 	defer msgOpt.FreeMessage(parser)
 	msgOpt.Message.SetMsgType(message.Pong)
-	msgOpt.SelectCodecAndEncoder()
 	if s.config.KeepAlive {
 		err := msgOpt.Conn.SetDeadline(time.Now().Add(s.config.KeepAliveTimeout))
 		if err != nil {
-			s.logger.ErrorFromErr(err)
+			s.logger.Error("LRPC: connection set deadline failed: %v", err)
 			_ = msgOpt.Conn.Close()
 			return
 		}
 	}
-	s.encodeAndSendMsg(*msgOpt, msgOpt.Message, false)
+	s.encodeAndSendMsg(*msgOpt, msgOpt.Message)
 }
 
 // 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
-func (s *Server) messageContextCancel(msgOpt *messageOpt, header byte, parser *msgparser.LMessageParser) {
+func (s *Server) messageContextCancel(msgOpt *messageOpt, parser *msgparser.LMessageParser) {
 	defer msgOpt.FreeMessage(parser)
-	msgOpt.SelectCodecAndEncoder()
 	ctxIdStr, ok := msgOpt.Message.MetaData.LoadOk(message.ContextId)
 	if !ok {
-		s.handleError(msgOpt.Conn, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
+		s.handleError(msgOpt.Conn, msgOpt.Writer, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
 			common.ContextNotFound, fmt.Sprintf("contextId : %s", ctxIdStr)))
 	}
 	ctxId, err := strconv.ParseUint(ctxIdStr, 10, 64)
 	if err != nil {
-		s.handleError(msgOpt.Conn, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
+		s.handleError(msgOpt.Conn, msgOpt.Writer, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
 			common.ErrServer, err.Error()))
 	}
 	err = s.ctxManager.CancelContext(msgOpt.Conn, ctxId)
 	if err != nil {
-		s.handleError(msgOpt.Conn, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
+		s.handleError(msgOpt.Conn, msgOpt.Writer, msgOpt.Message.GetMsgId(), lerror.LWarpStdError(
 			common.ErrServer, err.Error()))
 	}
 }
 
 // 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
-func (s *Server) messageCall(msgOpt *messageOpt, header byte, parser *msgparser.LMessageParser) {
+func (s *Server) messageCall(msgOpt *messageOpt, parser *msgparser.LMessageParser) {
 	msgId := msgOpt.Message.GetMsgId()
 	msgOpt.SelectCodecAndEncoder()
 	lErr := msgOpt.RealPayload()
 	if lErr != nil {
 		msgOpt.FreeMessage(parser)
-		s.handleError(msgOpt.Conn, msgId, lErr)
+		s.handleError(msgOpt.Conn, msgOpt.Writer, msgId, lErr)
 		return
 	}
 	lErr = msgOpt.Check()
 	if lErr != nil {
 		msgOpt.FreeMessage(parser)
-		s.handleError(msgOpt.Conn, msgId, lErr)
-	}
-	msgOpt.SelectWriter(header)
-	var useMux bool
-	switch header {
-	case message.MagicNumber:
-		useMux = false
-	case mux.Enabled:
-		useMux = true
+		s.handleError(msgOpt.Conn, msgOpt.Writer, msgId, lErr)
 	}
 	// 将使用完的Message归还给Parser
 	msgOpt.FreeMessage(parser)
 	if msgOpt.Method.Option.SyncCall {
-		s.callHandleUnit(*msgOpt, msgId, useMux)
+		s.callHandleUnit(*msgOpt, msgId)
 	}
 	if msgOpt.Method.Option.UseRawGoroutine {
 		go func() {
-			s.callHandleUnit(*msgOpt, msgId, useMux)
+			s.callHandleUnit(*msgOpt, msgId)
 		}()
 	}
 	err := s.taskPool.Push(func() {
-		s.callHandleUnit(*msgOpt, msgId, useMux)
+		s.callHandleUnit(*msgOpt, msgId)
 	})
 	if err != nil {
-		s.handleError(msgOpt.Conn, msgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
+		s.handleError(msgOpt.Conn, msgOpt.Writer, msgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
 	}
 }
 
 // 提供用于任务池的处理调用用户过程的单元
 // 因为用户过程可能会有阻塞操作
-func (s *Server) callHandleUnit(msgOpt messageOpt, msgId uint64, useMux bool) {
+func (s *Server) callHandleUnit(msgOpt messageOpt, msgId uint64) {
 	messageBuffer := sharedPool.TakeMessagePool()
 	msg := messageBuffer.Get().(*message.Message)
 	msg.Reset()
@@ -320,12 +312,12 @@ func (s *Server) callHandleUnit(msgOpt messageOpt, msgId uint64, useMux bool) {
 	msg.SetMsgId(msgId)
 	// OnCallResult Plugin
 	if err := s.pManager.OnCallResult(msg, &callResult); err != nil {
-		s.logger.ErrorFromErr(err)
+		s.logger.Error("LRPC: plugin OnCallResult run failed: %v", err)
 	}
 	// 处理用户过程返回的错误，v0.30开始规定每个符合规范的API最后一个返回值是error接口
 	lErr := s.setErrResult(msg, callResult[len(callResult)-1])
 	if lErr != nil {
-		s.handleError(msgOpt.Conn, msg.GetMsgId(), lErr)
+		s.handleError(msgOpt.Conn, msgOpt.Writer, msg.GetMsgId(), lErr)
 		return
 	}
 	s.handleResult(msgOpt, msg, callResult)
@@ -343,16 +335,14 @@ func (s *Server) callHandleUnit(msgOpt messageOpt, msgId uint64, useMux bool) {
 		msgOpt.Method.Pool.Put(&tmp)
 	}
 	// 处理结果发送
-	s.encodeAndSendMsg(msgOpt, msg, useMux)
+	s.encodeAndSendMsg(msgOpt, msg)
 }
 
 func (s *Server) onClose(conn transport.ConnAdapter, err error) {
 	if err != nil {
-		s.logger.ErrorFromString(fmt.Sprintf("Close Connection: %s:%s err: %v",
-			conn.LocalAddr().String(), conn.RemoteAddr().String(), err))
+		s.logger.Error("LRPC: Close Connection: %s:%s err: %v", conn.LocalAddr(), conn.RemoteAddr(), err)
 	} else {
-		s.logger.Info(fmt.Sprintf("Close Connection: %s:%s",
-			conn.LocalAddr().String(), conn.RemoteAddr().String()))
+		s.logger.Info("LRPC: Close Connection: %s:%s", conn.LocalAddr(), conn.RemoteAddr())
 	}
 	// 关闭之前的清理工作
 	s.connSourceDesc.Delete(conn)
@@ -361,20 +351,19 @@ func (s *Server) onClose(conn transport.ConnAdapter, err error) {
 
 func (s *Server) onOpen(conn transport.ConnAdapter) {
 	// 初始化连接的相关数据
-	parser := msgparser.New(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()})
+	parser := msgparser.New(
+		&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()},
+		msgparser.DefaultBufferSize*16,
+	)
 	s.connSourceDesc.Store(conn, parser)
 	s.ctxManager.RegisterConnection(conn)
 	// init keepalive
 	if s.config.KeepAlive {
 		if err := conn.SetDeadline(time.Now().Add(s.config.KeepAliveTimeout)); err != nil {
-			s.logger.ErrorFromErr(err)
+			s.logger.Error("LRPC: keepalive set deadline failed: %v", err)
 			_ = conn.Close()
 		}
 	}
-}
-
-func (s *Server) onErr(err error) {
-	s.logger.ErrorFromErr(err)
 }
 
 func (s *Server) Start() error {
