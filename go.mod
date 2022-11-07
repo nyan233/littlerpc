@@ -6,7 +6,7 @@ require (
 	github.com/lesismal/llib v1.1.6
 	github.com/lesismal/nbio v1.3.0
 	github.com/stretchr/testify v1.8.0
-	github.com/zbh255/bilog v0.3.0
+	github.com/zbh255/bilog v0.3.1
 )
 
 require (
