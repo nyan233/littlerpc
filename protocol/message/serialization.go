@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"github.com/nyan233/littlerpc/pkg/container"
-	. "github.com/nyan233/littlerpc/protocol"
 	"math"
 	"unsafe"
 )
@@ -50,39 +49,39 @@ func Unmarshal(p container.Slice[byte], msg *Message) error {
 	methodNameLen := binary.BigEndian.Uint32(p[4:8])
 	p = p[8:]
 	if p.Len() < int(instanceLen) {
-		return ErrBadMessage
+		return errors.New("instance name length greater than p")
 	}
 	msg.SetInstanceName(string(p[:instanceLen]))
 	p = p[instanceLen:]
 	if p.Len() < int(methodNameLen) {
-		return ErrBadMessage
+		return errors.New("method name length greater than p")
 	}
 	msg.SetMethodName(string(p[:methodNameLen]))
 	p = p[methodNameLen:]
 	// 有多少个元数据
 	// 在可变长数据之后, 需要校验
 	if p.Len() < 4 {
-		return ErrBadMessage
+		return errors.New("p length less than 4")
 	}
 	nMetaData := binary.BigEndian.Uint32(p[:4])
 	p = p[4:]
 	for i := 0; i < int(nMetaData); i++ {
 		if p.Len() < 8 {
-			return ErrBadMessage
+			return errors.New("p length less than 8 on nMetaData")
 		}
 		keySize := binary.BigEndian.Uint32(p[:4])
 		valueSize := binary.BigEndian.Uint32(p[4:8])
 		p = p[8:]
 		// 相加防止溢出, 所以需要检查溢出
 		if p.Len() < int(keySize+valueSize) || keySize > math.MaxUint32-valueSize {
-			return ErrBadMessage
+			return errors.New("key and value size overflow")
 		}
 		msg.MetaData.Store(string(p[:keySize]), string(p[keySize:keySize+valueSize]))
 		p = p[keySize+valueSize:]
 	}
 	// 在可变长数据之后, 需要校验
 	if p.Len() < 4 {
-		return ErrBadMessage
+		return errors.New("p length less than 4 on nArgs")
 	}
 	nArgs := binary.BigEndian.Uint32(p[:4])
 	p = p[4:]
@@ -93,7 +92,7 @@ func Unmarshal(p container.Slice[byte], msg *Message) error {
 	}
 	for i := 0; i < int(nArgs); i++ {
 		if p.Len() < 4 {
-			return ErrBadMessage
+			return errors.New("p length less than 4 on argument layout")
 		}
 		argsSize := binary.BigEndian.Uint32(p[:4])
 		p = p[4:]

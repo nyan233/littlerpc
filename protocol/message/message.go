@@ -18,15 +18,17 @@ const (
 	Pong uint8 = 0x35
 
 	// BaseLen 的基本长度
-	BaseLen               = 4 + 4 + 8
+	BaseLen = 4 + 4 + 8
+	// DefaultEncoder TODO: 将Encoder改为Packer
 	DefaultEncoder string = "text" // encoding == text
 	DefaultCodec   string = "json" // codec == text
 
-	ErrorCode     string = "code"
-	ErrorMessage  string = "message"
-	ErrorMore     string = "bin"
-	ContextId     string = "context-id"
-	CodecScheme   string = "codec"
+	ErrorCode    string = "code"
+	ErrorMessage string = "message"
+	ErrorMore    string = "bin"
+	ContextId    string = "context-id"
+	CodecScheme  string = "codec"
+	// EncoderScheme TODO: 将Encoder改为Packer
 	EncoderScheme string = "encoder"
 )
 
@@ -34,6 +36,37 @@ var (
 	FourBytesPadding  = []byte{0, 0, 0, 0}
 	EightBytesPadding = []byte{0, 0, 0, 0, 0, 0, 0, 0}
 )
+
+type Getter interface {
+	First() uint8
+	BaseLength() int
+	Length() uint32
+	GetAndSetLength() uint32
+	GetMsgType() uint8
+	GetInstanceName() string
+	GetMethodName() string
+	GetMsgId() uint64
+	Payloads() container2.Slice[byte]
+	PayloadsIterator() *container2.Iterator[[]byte]
+	MinMux() int
+}
+
+type Setter interface {
+	GetAndSetLength() uint32
+	SetMsgType(msgTyp uint8)
+	SetInstanceName(instanceName string)
+	SetMethodName(methodName string)
+	SetMsgId(msgId uint64)
+	AppendPayloads(p []byte)
+	ReWritePayload(p []byte)
+	SetPayloads(payloads []byte)
+	Reset()
+}
+
+type GetterSetter interface {
+	Getter
+	Setter
+}
 
 func New() *Message {
 	return &Message{
@@ -54,7 +87,7 @@ type Message struct {
 	//	[0] == Magic (魔数，表示这是由littlerpc客户端发起或者服务端回复)
 	//	[1] == MsgType (call/return & ping/pong)
 	//	[2] == 保留, 以后可能会移除(Codec Type从v0.4.0版本开始)
-	//	[3] == 保留, 以后可能会移除(Encoder Type从v0.4.0版本开始)
+	//	[3] == 保留, 以后可能会移除(Packer Type从v0.4.0版本开始)
 	scope [4]uint8
 	// 消息ID，用于表示一次完整的call/return的回复
 	msgId uint64
