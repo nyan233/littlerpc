@@ -15,14 +15,7 @@ import (
 )
 
 func TestParser(t *testing.T) {
-	allocTor := &SimpleAllocTor{
-		SharedPool: &sync.Pool{
-			New: func() interface{} {
-				return message.New()
-			},
-		},
-	}
-	parser := New(allocTor)
+	parser := New(NewDefaultSimpleAllocTor(), 4096)
 	msg := message.New()
 	msg.SetMsgId(uint64(random.FastRand()))
 	msg.SetMethodName("TestParser")
@@ -43,11 +36,8 @@ func TestParser(t *testing.T) {
 	muxBlock.SetPayloads(marshalBytes)
 	var muxMarshalBytes []byte
 	mux.Marshal(&muxBlock, (*container.Slice[byte])(&muxMarshalBytes))
-	if err != nil {
-		t.Fatal(err)
-	}
 	marshalBytes = append(marshalBytes, muxMarshalBytes...)
-	_, err = parser.ParseMsg(marshalBytes[:11])
+	_, err := parser.ParseMsg(marshalBytes[:11])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +71,7 @@ func TestJsonRPC2Parser(t *testing.T) {
 			},
 		},
 	}
-	parser := New(allocTor)
+	parser := New(allocTor, 4096)
 	msg, err := parser.ParseMsg(bytes)
 	if err != nil {
 		t.Fatal(err)

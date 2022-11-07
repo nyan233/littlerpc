@@ -35,12 +35,12 @@ func (j *JsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, 
 		return -1, errors.New("hash")
 	}
 	if request.Codec == "" {
-		msg.SetCodecType(message.DefaultCodec)
+		msg.MetaData.Store(message.CodecScheme, message.DefaultCodec)
 	} else {
-		msg.SetCodecType(uint8(codec.Get(request.Codec).Index()))
+		msg.MetaData.Store(message.CodecScheme, j.Codec.Scheme())
 	}
 	// jsonrpc2不支持压缩编码
-	msg.SetEncoderType(message.DefaultEncoder)
+	msg.MetaData.Store(message.EncoderScheme, message.DefaultEncoder)
 	msg.SetMsgId(uint64(request.Id))
 	if request.MetaData != nil {
 		for k, v := range request.MetaData {

@@ -78,11 +78,11 @@ func TestWriteControl(t *testing.T) {
 		clickInterval:  ClickInterval,
 		oneCompleteNum: OneCompleteNum,
 	}
-	assert.Equal(t, ReadControl(inter, bytes), nil)
+	assert.Equal(t, Read(inter, bytes), nil)
 	inter.callCount = 0
-	assert.Equal(t, WriteControl(inter, bytes), nil)
+	assert.Equal(t, Write(inter, bytes), nil)
 	inter.callCount = 0
 	inter.throw = true
-	assert.NotEqual(t, ReadControl(inter, bytes), nil)
-	assert.NotEqual(t, WriteControl(inter, bytes), nil)
+	assert.NotEqual(t, Read(inter, bytes), nil)
+	assert.NotEqual(t, Write(inter, bytes), nil)
 }

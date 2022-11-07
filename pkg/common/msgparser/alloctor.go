@@ -21,3 +21,13 @@ func (s *SimpleAllocTor) AllocMessage() *message.Message {
 func (s *SimpleAllocTor) FreeMessage(message *message.Message) {
 	s.SharedPool.Put(message)
 }
+
+func NewDefaultSimpleAllocTor() AllocTor {
+	return &SimpleAllocTor{
+		SharedPool: &sync.Pool{
+			New: func() interface{} {
+				return message.New()
+			},
+		},
+	}
+}

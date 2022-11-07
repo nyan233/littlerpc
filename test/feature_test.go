@@ -82,7 +82,7 @@ func TestServerAndClient(t *testing.T) {
 		//lserver.WithDebug(true),
 	}
 	clientOpts := []lclient.Option{
-		lclient.WithAddressClient(":1234"),
+		lclient.WithAddress(":1234"),
 		lclient.WithClientCodec("json"),
 		lclient.WithMuxConnectionNumber(16),
 		lclient.WithPlugin(&metrics.ClientMetricsPlugin{}),

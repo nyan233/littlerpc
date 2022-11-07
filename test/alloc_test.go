@@ -50,7 +50,7 @@ func BenchmarkClientAlloc(b *testing.B) {
 		b.Fatal(err)
 	}
 	defer s1.Stop()
-	c1, err := client.New(client.WithAddressClient(":1234"))
+	c1, err := client.New(client.WithAddress(":1234"))
 	if err != nil {
 		b.Fatal(err)
 	}

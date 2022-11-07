@@ -1,14 +1,11 @@
-package message
+package analysis
 
 import (
 	"encoding/json"
 	container2 "github.com/nyan233/littlerpc/pkg/container"
-	"github.com/nyan233/littlerpc/pkg/middle/codec"
-	"github.com/nyan233/littlerpc/pkg/middle/packet"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
-	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/mux"
+	mux2 "github.com/nyan233/littlerpc/protocol/message/mux"
 	"unsafe"
 )
 
@@ -61,7 +58,7 @@ func (g *MuxGraph) String() string {
 	return convert.BytesToString(bytes)
 }
 
-func AnalysisMessage(data []byte) *Graph {
+func NoMux(data []byte) *Graph {
 	g := &Graph{
 		MetaData: make(map[string]string),
 	}
@@ -71,7 +68,7 @@ func AnalysisMessage(data []byte) *Graph {
 	switch msg.Scope[0] {
 	case message.MagicNumber:
 		g.First = "no_mux"
-	case mux.Enabled:
+	case mux2.Enabled:
 		g.First = "mux"
 	default:
 		g.First = "unknown"
@@ -90,13 +87,13 @@ func AnalysisMessage(data []byte) *Graph {
 	default:
 		g.MsgType = "unknown"
 	}
-	if w := codec.GetCodecFromIndex(int(rawMsg.GetCodecType())); w != nil {
-		g.Codec = w.Scheme()
+	if codecScheme := rawMsg.MetaData.Load(message.CodecScheme); codecScheme != "" {
+		g.Codec = codecScheme
 	} else {
 		g.Codec = "unknown"
 	}
-	if w := packet.GetEncoderFromIndex(int(rawMsg.GetEncoderType())); w != nil {
-		g.Encoder = w.Scheme()
+	if encoderScheme := rawMsg.MetaData.Load(message.CodecScheme); encoderScheme != "" {
+		g.Encoder = encoderScheme
 	} else {
 		g.Encoder = "unknown"
 	}
@@ -123,12 +120,12 @@ func AnalysisMessage(data []byte) *Graph {
 	return g
 }
 
-func AnalysisMuxMessage(data []byte) *MuxGraph {
-	var muxBlock mux.Block
-	_ = mux.Unmarshal(data, &muxBlock)
+func Mux(data []byte) *MuxGraph {
+	var muxBlock mux2.Block
+	_ = mux2.Unmarshal(data, &muxBlock)
 	g := &MuxGraph{}
 	switch muxBlock.Flags {
-	case mux.Enabled:
+	case mux2.Enabled:
 		g.MuxType = "mux_enabled"
 	default:
 		g.MuxType = "unknown"
@@ -139,23 +136,6 @@ func AnalysisMuxMessage(data []byte) *MuxGraph {
 	if muxBlock.Payloads == nil {
 		return g
 	}
-	g.Graph = AnalysisMessage(muxBlock.Payloads)
+	g.Graph = NoMux(muxBlock.Payloads)
 	return g
-}
-
-func GenProtocolMessage() *message.Message {
-	msg := message.New()
-	msg.SetMsgId(uint64(random.FastRand()))
-	msg.SetCodecType(uint8(random.FastRand()))
-	msg.SetEncoderType(uint8(random.FastRand()))
-	msg.SetMsgType(uint8(random.FastRand()))
-	msg.SetInstanceName(random.GenStringOnAscii(100))
-	msg.SetMethodName(random.GenStringOnAscii(100))
-	for i := 0; i < int(random.FastRandN(10)+1); i++ {
-		msg.AppendPayloads(random.GenBytesOnAscii(random.FastRandN(50)))
-	}
-	for i := 0; i < int(random.FastRandN(10)+1); i++ {
-		msg.MetaData.Store(random.GenStringOnAscii(10), random.GenStringOnAscii(10))
-	}
-	return msg
 }

@@ -1,32 +1,29 @@
-package message
+package analysis
 
 import (
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/mux"
+	mux2 "github.com/nyan233/littlerpc/protocol/message/mux"
 	"testing"
 )
 
-func TestMessageUtils(t *testing.T) {
+func TestAnalysisNoMuxMessage(t *testing.T) {
 	var bytes []byte
 	message.Marshal(message.New(), (*container.Slice[byte])(&bytes))
-	t.Log(AnalysisMessage(bytes))
+	t.Log(NoMux(bytes))
 }
 
-func TestMuxMessageUtils(t *testing.T) {
+func TestAnalysisMuxMessage(t *testing.T) {
 	var bytes []byte
 	message.Marshal(message.New(), (*container.Slice[byte])(&bytes))
-	muxBlock := &mux.Block{
-		Flags:    mux.Enabled,
+	muxBlock := &mux2.Block{
+		Flags:    mux2.Enabled,
 		StreamId: random.FastRand(),
 		MsgId:    uint64(random.FastRand()),
 	}
 	muxBlock.SetPayloads(bytes)
 	var bytes2 []byte
-	err := mux.Marshal(muxBlock, (*container.Slice[byte])(&bytes2))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Log(AnalysisMuxMessage(bytes2))
+	mux2.Marshal(muxBlock, (*container.Slice[byte])(&bytes2))
+	t.Log(Mux(bytes2))
 }

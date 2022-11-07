@@ -1,25 +1,24 @@
 package debug
 
 import (
-	"fmt"
 	"github.com/nyan233/littlerpc/internal/pool"
-	messageUtils "github.com/nyan233/littlerpc/pkg/utils/message"
-	"github.com/zbh255/bilog"
+	"github.com/nyan233/littlerpc/pkg/common/logger"
+	"github.com/nyan233/littlerpc/protocol/message/analysis"
 )
 
-func ServerRecover(logger bilog.Logger) pool.RecoverFunc {
+func ServerRecover(logger logger.LLogger) pool.RecoverFunc {
 	return func(poolId int, err interface{}) {
-		logger.ErrorFromString(fmt.Sprintf("poolId : %d -> Panic : %v", poolId, err))
+		logger.Error("LRPC: poolId : %d -> Panic : %v", poolId, err)
 	}
 }
 
-func MessageDebug(logger bilog.Logger, open bool) func(bytes []byte, useMux bool) {
+func MessageDebug(logger logger.LLogger, open bool) func(bytes []byte, useMux bool) {
 	return func(bytes []byte, useMux bool) {
 		switch {
 		case open && useMux:
-			logger.Debug(messageUtils.AnalysisMuxMessage(bytes).String())
+			logger.Debug(analysis.Mux(bytes).String())
 		case open && !useMux:
-			logger.Debug(messageUtils.AnalysisMessage(bytes).String())
+			logger.Debug(analysis.NoMux(bytes).String())
 		}
 	}
 }

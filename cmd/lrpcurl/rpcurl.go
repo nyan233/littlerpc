@@ -40,11 +40,11 @@ func main() {
 
 func dial() *client.Client {
 	c, err := client.New(
-		client.WithCustomLoggerClient(logger.NilLogger),
+		client.WithCustomLogger(logger.NilLogger{}),
 		client.WithUseMux(false),
 		client.WithMuxConnection(false),
 		client.WithProtocol("std_tcp"),
-		client.WithAddressClient(*source),
+		client.WithAddress(*source),
 	)
 	*call = strings.TrimPrefix(*call, "\xef\xbb\xbf")
 	if err != nil {

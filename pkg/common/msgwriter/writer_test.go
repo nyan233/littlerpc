@@ -4,9 +4,9 @@ import (
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/pkg/container"
-	"github.com/nyan233/littlerpc/pkg/middle/packet"
-	messageUtils "github.com/nyan233/littlerpc/pkg/utils/message"
+	"github.com/nyan233/littlerpc/pkg/middle/packer"
 	"github.com/nyan233/littlerpc/protocol/message"
+	messageGen "github.com/nyan233/littlerpc/protocol/message/gen"
 	"github.com/nyan233/littlerpc/protocol/message/mux"
 	"github.com/stretchr/testify/assert"
 	"net"
@@ -68,7 +68,7 @@ func TestLRPCWriter(t *testing.T) {
 }
 
 func testWriter(t *testing.T, writer Writer) {
-	msg := messageUtils.GenProtocolMessage(messageUtils.Big)
+	msg := messageGen.NoMux(messageGen.Big)
 	msg.MetaData.Store(message.ErrorCode, "200")
 	msg.MetaData.Store(message.ErrorMessage, "Hello world!")
 	msg.MetaData.Store(message.ErrorMore, "[\"hello world\",123]")
@@ -76,7 +76,7 @@ func testWriter(t *testing.T, writer Writer) {
 	arg := Argument{
 		Message: msg,
 		Conn:    &NilConn{},
-		Encoder: packet.Get("text"),
+		Encoder: packer.Get("text"),
 		Pool: &sync.Pool{
 			New: func() interface{} {
 				var tmp container.Slice[byte] = make([]byte, mux.MaxBlockSize)
@@ -92,7 +92,7 @@ func testWriter(t *testing.T, writer Writer) {
 	assert.Equal(t, writer.Writer(arg), nil)
 
 	// test gzip
-	arg.Encoder = packet.Get("gzip")
+	arg.Encoder = packer.Get("gzip")
 	assert.Equal(t, writer.Writer(arg), nil, "encoder encode failed")
 
 	arg.Conn = &NilConn{writeFailed: true}

@@ -6,7 +6,6 @@ import (
 	"github.com/nyan233/littlerpc/internal/reflect"
 	"github.com/nyan233/littlerpc/pkg/utils"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/nyan233/littlerpc/protocol/message/mux"
 	"sync"
 )
 
@@ -14,6 +13,11 @@ const (
 	_ScanInit      int = iota // 初始化状态, 扫描到数据包的第1个Byte时
 	_ScanMsgParse1            // 扫描基本信息状态, 扫描到描述数据包的基本信息, 这些信息可以确定数据包的长度/MsgId
 	_ScanMsgParse2            // 扫描完整数据状态, 扫描完整数据包
+)
+
+const (
+	DefaultBufferSize = 4096    // 4KB
+	MaxBufferSize     = 1 << 20 // 1MB
 )
 
 type ParserMessage struct {
@@ -49,13 +53,18 @@ type LMessageParser struct {
 	halfBuffer []byte
 }
 
-func New(allocTor AllocTor) *LMessageParser {
+func New(allocTor AllocTor, bufSize uint) *LMessageParser {
+	if bufSize > MaxBufferSize {
+		bufSize = MaxBufferSize
+	} else if bufSize == 0 {
+		bufSize = DefaultBufferSize
+	}
 	return &LMessageParser{
 		allocTor:      allocTor,
 		clickInterval: 1,
 		state:         _ScanInit,
 		noReadyBuffer: make(map[uint64]readyBuffer, 16),
-		halfBuffer:    make([]byte, 0, mux.MaxBlockSize),
+		halfBuffer:    make([]byte, 0, bufSize),
 	}
 }
 

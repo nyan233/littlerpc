@@ -5,12 +5,12 @@ import (
 	"syscall"
 )
 
-// ReadControl
+// Read
 //
 //	NOTE: data中的数据应该被置零
 //	NOTE: Read应该检测属于Nio的中断错误, 因为不确定其它框架中是否实现
 //	NOTE: 这些错误的过滤
-func ReadControl(c io.Reader, data []byte) error {
+func Read(c io.Reader, data []byte) error {
 	var readCount int
 	for {
 		readN, err := c.Read(data[readCount:])
@@ -27,11 +27,11 @@ func ReadControl(c io.Reader, data []byte) error {
 	return nil
 }
 
-// WriteControl
+// Write
 //
 //	NOTE: Write应该检测属于Nio的中断错误, 因为不确定其它框架中是否实现
 //	NOTE: 这些错误的过滤
-func WriteControl(c io.Writer, data []byte) error {
+func Write(c io.Writer, data []byte) error {
 	var writeCount int
 	for {
 		writeN, err := c.Write(data[writeCount:])
