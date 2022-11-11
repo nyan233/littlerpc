@@ -47,9 +47,12 @@ var mappingStr = map[Code]string{
 	MethodNoRegister:      "\"MethodNoRegister\"",
 	InstanceNoRegister:    "\"InstanceNoRegister\"",
 	MessageDecodingFailed: "\"MessageDecodingFailed\"",
+	MessageEncodingFailed: "\"MessageEncodingFailed\"",
 	ServerError:           "\"ServerError\"",
 	ClientError:           "\"ClientError\"",
 	CallArgsTypeErr:       "\"CallArgsTypeErr\"",
 	CodecMarshalErr:       "\"CodecMarshalErr\"",
+	ConnectionErr:         "\"ConnectionErr\"",
+	ContextNotFound:       "\"ContextNotFound\"",
 	UnsafeOption:          "\"UnsafeOption\"",
 }
