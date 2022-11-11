@@ -18,18 +18,25 @@ const (
 	Pong uint8 = 0x35
 
 	// BaseLen 的基本长度
-	BaseLen = 4 + 4 + 8
-	// DefaultEncoder TODO: 将Encoder改为Packer
-	DefaultEncoder string = "text" // encoding == text
-	DefaultCodec   string = "json" // codec == text
+	BaseLen = _ScopeLength + 4 + 8
+	// DefaultPacker TODO: 将Encoder改为Packer
+	DefaultPacker string = "text" // encoding == text
+	DefaultCodec  string = "json" // codec == text
 
 	ErrorCode    string = "code"
 	ErrorMessage string = "message"
 	ErrorMore    string = "bin"
 	ContextId    string = "context-id"
 	CodecScheme  string = "codec"
-	// EncoderScheme TODO: 将Encoder改为Packer
-	EncoderScheme string = "encoder"
+	// PackerScheme TODO: 将Encoder改为Packer
+	PackerScheme string = "packer"
+)
+
+const (
+	_ScopeLength   = 2
+	_ServiceName   = 1
+	_Metadata      = 1
+	_PayloadLayout = 1
 )
 
 var (
@@ -43,8 +50,7 @@ type Getter interface {
 	Length() uint32
 	GetAndSetLength() uint32
 	GetMsgType() uint8
-	GetInstanceName() string
-	GetMethodName() string
+	GetServiceName() string
 	GetMsgId() uint64
 	Payloads() container2.Slice[byte]
 	PayloadsIterator() *container2.Iterator[[]byte]
@@ -54,8 +60,7 @@ type Getter interface {
 type Setter interface {
 	GetAndSetLength() uint32
 	SetMsgType(msgTyp uint8)
-	SetInstanceName(instanceName string)
-	SetMethodName(methodName string)
+	SetServiceName(serviceName string)
 	SetMsgId(msgId uint64)
 	AppendPayloads(p []byte)
 	ReWritePayload(p []byte)
@@ -71,7 +76,7 @@ type GetterSetter interface {
 func New() *Message {
 	return &Message{
 		MetaData:      container2.NewSliceMap[string, string](4),
-		scope:         [4]uint8{MagicNumber},
+		scope:         [2]uint8{MagicNumber},
 		payloadLayout: make([]uint32, 0, 2),
 		payloads:      nil,
 	}
@@ -86,24 +91,19 @@ type Message struct {
 	// int/uint数值统一使用大端序
 	//	[0] == Magic (魔数，表示这是由littlerpc客户端发起或者服务端回复)
 	//	[1] == MsgType (call/return & ping/pong)
-	//	[2] == 保留, 以后可能会移除(Codec Type从v0.4.0版本开始)
-	//	[3] == 保留, 以后可能会移除(Packer Type从v0.4.0版本开始)
-	scope [4]uint8
+	scope [2]uint8
 	// 消息ID，用于表示一次完整的call/return的回复
 	msgId uint64
 	// 载荷数据的总长度
 	payloadLength uint32
 	// 实例名和调用方法名的布局
-	//	InstanceName-Size|MethodName-Size
-	// 实例名
-	instanceName string
-	// 要调用的方法名
-	methodName string
+	//	Length (1 Byte) | ServiceName
+	serviceName string
 	// NOTE:
 	//	有效载荷和元数据的范围
 	//	在Mux模式中MetaData及其Desc必须能在一个MuxBlock下被装下，否则将会丢失数据
 	// 元数据的布局
-	//	NMetaData(4 Byte)|Key-Size(4 Byte)|Value-Size(4 Byte)|Key|Size
+	//	NMetaData(1 Byte)|Key-Size(4 Byte)|Value-Size(4 Byte)|Key|Size
 	// Example :
 	//	"hello":"world","world:hello"
 	// OutPut:
@@ -111,7 +111,7 @@ type Message struct {
 	MetaData *container2.SliceMap[string, string]
 	// 有效载荷数据的布局描述
 	// Format :
-	//	NArgs(4 Byte)|Arg1-Size(4 Byte)|Arg2-Size(4 Byte)|Arg3-Size(4 Byte)
+	//	NArgs(1 Byte)|Arg1-Size(4 Byte)|Arg2-Size(4 Byte)|Arg3-Size(4 Byte)
 	// Example :
 	//	{"mypyload1":"haha"},{"mypyload2":"hehe"}
 	// OutPut:
@@ -126,7 +126,7 @@ type Message struct {
 func (m *Message) BaseLength() int {
 	ml := m.MinMux()
 	// MinMux + NameLayout + NMetaData + NArgs
-	return ml + (2 * 4) + (4 * 2)
+	return ml + _PayloadLayout + _ServiceName + _Metadata
 }
 
 // Length 根据结构计算序列化之后的数据长度
@@ -135,14 +135,10 @@ func (m *Message) Length() uint32 {
 	if m.payloadLength > 0 {
 		return m.payloadLength
 	}
-	// Scope & MsgId & PayloadLength
-	baseLen := BaseLen
-	// NameLayout
-	baseLen += 8
+	// desc : Scope & MsgId & PayloadLength & ServiceName & MetaData & Args
+	baseLen := m.MinMux() + _ServiceName + _Metadata + _PayloadLayout
 	// InstanceName & MethodName
-	baseLen += len(m.instanceName) + len(m.methodName)
-	// NMetaData
-	baseLen += 4
+	baseLen += len(m.serviceName)
 	if m.MetaData != nil && m.MetaData.Len() > 0 {
 		// Key&Value Struct MetaData
 		baseLen += (m.MetaData.Len() * 4) * 2
@@ -153,10 +149,8 @@ func (m *Message) Length() uint32 {
 		})
 	}
 	// NArgs
-	baseLen += 4
 	baseLen += m.payloadLayout.Len() * 4
 	baseLen += m.payloads.Len()
-	m.payloadLength = uint32(baseLen)
 	return uint32(baseLen)
 }
 
@@ -177,20 +171,12 @@ func (m *Message) SetMsgType(msgTyp uint8) {
 	m.scope[1] = msgTyp
 }
 
-func (m *Message) GetInstanceName() string {
-	return m.instanceName
+func (m *Message) GetServiceName() string {
+	return m.serviceName
 }
 
-func (m *Message) SetInstanceName(instanceName string) {
-	m.instanceName = instanceName
-}
-
-func (m *Message) GetMethodName() string {
-	return m.methodName
-}
-
-func (m *Message) SetMethodName(methodName string) {
-	m.methodName = methodName
+func (m *Message) SetServiceName(s string) {
+	m.serviceName = s
 }
 
 func (m *Message) GetMsgId() uint64 {
@@ -246,9 +232,8 @@ func (m *Message) MinMux() int {
 
 // Reset 给内存复用的操作提供一致性的语义
 func (m *Message) Reset() {
-	m.scope = [...]uint8{MagicNumber, 0, 0, 0}
-	m.instanceName = ""
-	m.methodName = ""
+	m.scope = [...]uint8{MagicNumber, 0}
+	m.serviceName = ""
 	m.msgId = 0
 	m.payloadLength = 0
 	m.MetaData.Reset()

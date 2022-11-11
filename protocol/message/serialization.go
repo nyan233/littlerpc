@@ -3,17 +3,20 @@ package message
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"math"
-	"unsafe"
 )
 
 // MarshaToMux 此API只会序列化Mux功能需要的数据
 func MarshaToMux(msg *Message, payloads *container.Slice[byte]) error {
-	*payloads = (*payloads)[:msg.MinMux()]
+	if payloads.Cap() < msg.MinMux() {
+		*payloads = make([]byte, 0, msg.MinMux())
+	}
 	*payloads = append(*payloads, msg.scope[:]...)
-	binary.BigEndian.PutUint64((*payloads)[4:12], msg.msgId)
-	binary.BigEndian.PutUint32((*payloads)[12:16], msg.payloadLength)
+	*payloads = (*payloads)[:msg.MinMux()]
+	binary.BigEndian.PutUint64((*payloads)[2:10], msg.msgId)
+	binary.BigEndian.PutUint32((*payloads)[10:14], msg.payloadLength)
 	return nil
 }
 
@@ -22,9 +25,9 @@ func UnmarshalFromMux(data container.Slice[byte], msg *Message) error {
 	if data.Len() < msg.MinMux() {
 		return errors.New("mux message is bad")
 	}
-	copy(msg.scope[:], data[:4])
-	msg.msgId = binary.BigEndian.Uint64(data[4:12])
-	msg.payloadLength = binary.BigEndian.Uint32(data[12:16])
+	copy(msg.scope[:], data[:_ScopeLength])
+	msg.msgId = binary.BigEndian.Uint64(data[_ScopeLength:10])
+	msg.payloadLength = binary.BigEndian.Uint32(data[10:14])
 	return nil
 }
 
@@ -34,40 +37,31 @@ func Unmarshal(p container.Slice[byte], msg *Message) error {
 		return errors.New("data or message is nil")
 	}
 	if p.Len() < msg.BaseLength() {
-		return errors.New("data length < baseLen")
+		return errors.New("data Length < baseLen")
 	}
-	*(*uint32)(unsafe.Pointer(&msg.scope)) = *(*uint32)(unsafe.Pointer(&p[0]))
-	if msg.scope[0] != MagicNumber {
-		return errors.New("not littlerpc protocol")
+	err := UnmarshalFromMux(p, msg)
+	if err != nil {
+		return err
 	}
-	p = p[4:]
-	msg.msgId = binary.BigEndian.Uint64(p[:8])
-	msg.payloadLength = binary.BigEndian.Uint32(p[8:12])
-	p = p[12:]
+	p = p[msg.MinMux():]
 	// NameLayout
-	instanceLen := binary.BigEndian.Uint32(p[:4])
-	methodNameLen := binary.BigEndian.Uint32(p[4:8])
-	p = p[8:]
-	if p.Len() < int(instanceLen) {
-		return errors.New("instance name length greater than p")
+	serviceNameLen := p[0]
+	p = p[_ServiceName:]
+	if p.Len() < int(serviceNameLen) {
+		return errors.New("service name Length greater than p")
 	}
-	msg.SetInstanceName(string(p[:instanceLen]))
-	p = p[instanceLen:]
-	if p.Len() < int(methodNameLen) {
-		return errors.New("method name length greater than p")
-	}
-	msg.SetMethodName(string(p[:methodNameLen]))
-	p = p[methodNameLen:]
+	msg.SetServiceName(string(p[:serviceNameLen]))
+	p = p[serviceNameLen:]
 	// 有多少个元数据
 	// 在可变长数据之后, 需要校验
-	if p.Len() < 4 {
-		return errors.New("p length less than 4")
+	if p.Len() < _Metadata {
+		return errors.New("p Length less than 1")
 	}
-	nMetaData := binary.BigEndian.Uint32(p[:4])
-	p = p[4:]
+	nMetaData := p[0]
+	p = p[_Metadata:]
 	for i := 0; i < int(nMetaData); i++ {
 		if p.Len() < 8 {
-			return errors.New("p length less than 8 on nMetaData")
+			return errors.New("p Length less than 8 on nMetaData")
 		}
 		keySize := binary.BigEndian.Uint32(p[:4])
 		valueSize := binary.BigEndian.Uint32(p[4:8])
@@ -80,11 +74,11 @@ func Unmarshal(p container.Slice[byte], msg *Message) error {
 		p = p[keySize+valueSize:]
 	}
 	// 在可变长数据之后, 需要校验
-	if p.Len() < 4 {
-		return errors.New("p length less than 4 on nArgs")
+	if p.Len() < _PayloadLayout {
+		return errors.New("p Length less than 4 on nArgs")
 	}
-	nArgs := binary.BigEndian.Uint32(p[:4])
-	p = p[4:]
+	nArgs := p[0]
+	p = p[_PayloadLayout:]
 	// 为了保证更好的反序列化体验，如果不将layout置0的话
 	// 会导致与Marshal/Unmarshal的结果重叠
 	if msg.payloadLayout != nil {
@@ -92,7 +86,7 @@ func Unmarshal(p container.Slice[byte], msg *Message) error {
 	}
 	for i := 0; i < int(nArgs); i++ {
 		if p.Len() < 4 {
-			return errors.New("p length less than 4 on argument layout")
+			return errors.New("p Length less than 4 on argument layout")
 		}
 		argsSize := binary.BigEndian.Uint32(p[:4])
 		p = p[4:]
@@ -108,25 +102,20 @@ func Unmarshal(p container.Slice[byte], msg *Message) error {
 
 // Marshal 根据Msg Header编码出对应的字节Slice
 // *[]byte是为了提供更好的内存复用语义
-func Marshal(msg *Message, p *container.Slice[byte]) {
-	p.Reset()
-	msg.payloadLength = uint32(msg.Length())
-	// 设置魔数值
-	msg.scope[0] = MagicNumber
-	*p = append(*p, msg.scope[:]...)
-	p.Append(EightBytesPadding)
-	binary.BigEndian.PutUint64((*p)[len(*p)-8:], msg.msgId)
-	p.Append(FourBytesPadding)
-	binary.BigEndian.PutUint32((*p)[len(*p)-4:], msg.payloadLength)
-	p.Append(FourBytesPadding)
-	binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(msg.GetInstanceName())))
-	p.Append(FourBytesPadding)
-	binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(msg.GetMethodName())))
-	*p = append(*p, msg.GetInstanceName()...)
-	*p = append(*p, msg.GetMethodName()...)
+func Marshal(msg *Message, p *container.Slice[byte]) error {
+	if err := MarshaToMux(msg, p); err != nil {
+		return err
+	}
+	if len(msg.serviceName) > math.MaxUint8 {
+		return errors.New(fmt.Sprintf("serviceName max Length = 255, but now Length = %d", len(msg.serviceName)))
+	}
+	p.AppendS(byte(len(msg.serviceName)))
+	*p = append(*p, msg.serviceName...)
 	// 序列化元数据
-	p.Append(FourBytesPadding)
-	binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(msg.MetaData.Len()))
+	if msg.MetaData.Len() > math.MaxUint8 {
+		return errors.New(fmt.Sprintf("metaData max Length = 255, but now Length = %d", msg.MetaData.Len()))
+	}
+	p.AppendS(byte(msg.MetaData.Len()))
 	msg.MetaData.Range(func(k, v string) bool {
 		*p = append(*p, FourBytesPadding...)
 		binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(k)))
@@ -137,13 +126,16 @@ func Marshal(msg *Message, p *container.Slice[byte]) {
 		return true
 	})
 	// 序列化载荷数据描述信息
-	p.Append(FourBytesPadding)
-	binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(msg.payloadLayout)))
+	if msg.payloadLayout.Len() > math.MaxUint8 {
+		return errors.New(fmt.Sprintf("payloadLayout max Length = 255, but now Length = %d", msg.payloadLayout.Len()))
+	}
+	p.AppendS(byte(msg.payloadLayout.Len()))
 	for _, v := range msg.payloadLayout {
 		p.Append(FourBytesPadding)
 		binary.BigEndian.PutUint32((*p)[len(*p)-4:], v)
 	}
 	p.Append(msg.payloads)
+	return nil
 }
 
 // ResetMsg 指定策略的复用，对内存重用更加友好
@@ -169,9 +161,8 @@ func ResetMsg(msg *Message, resetOther, freeMetaData, usePayload bool, useSize i
 		msg.payloads.Reset()
 	}
 	if resetOther {
-		msg.scope = [...]uint8{MagicNumber, 0, 0, 0}
-		msg.instanceName = ""
-		msg.methodName = ""
+		msg.scope = [...]uint8{MagicNumber, 0}
+		msg.serviceName = ""
 		msg.msgId = 0
 		msg.payloadLength = 0
 	}

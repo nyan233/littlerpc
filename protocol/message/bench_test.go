@@ -9,9 +9,8 @@ import (
 
 func BenchmarkProtocol(b *testing.B) {
 	msg := &Message{
-		scope:         [4]uint8{MagicNumber, Call},
-		instanceName:  "Hello",
-		methodName:    "Add",
+		scope:         [...]uint8{MagicNumber, Call},
+		serviceName:   "Hello/Add",
 		msgId:         rand.Uint64(),
 		MetaData:      container2.NewSliceMap[string, string](10),
 		payloadLayout: []uint32{1 << 10, 1 << 11, 1 << 12, 1 << 13},

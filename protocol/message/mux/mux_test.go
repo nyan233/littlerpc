@@ -2,7 +2,7 @@ package mux
 
 import (
 	"github.com/nyan233/littlerpc/pkg/container"
-	random "github.com/nyan233/littlerpc/pkg/utils/random"
+	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -12,10 +12,9 @@ func GenProtocolMessage() *message.Message {
 	msg := message.New()
 	msg.SetMsgId(uint64(random.FastRand()))
 	msg.MetaData.Store(message.CodecScheme, random.GenStringOnAscii(100))
-	msg.MetaData.Store(message.EncoderScheme, random.GenStringOnAscii(100))
+	msg.MetaData.Store(message.PackerScheme, random.GenStringOnAscii(100))
 	msg.SetMsgType(uint8(random.FastRand()))
-	msg.SetInstanceName(random.GenStringOnAscii(100))
-	msg.SetMethodName(random.GenStringOnAscii(100))
+	msg.SetServiceName(random.GenStringOnAscii(100))
 	for i := 0; i < int(random.FastRandN(1000)+1); i++ {
 		msg.AppendPayloads(random.GenBytesOnAscii(random.FastRandN(500)))
 	}

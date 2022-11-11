@@ -10,11 +10,10 @@ import (
 )
 
 type messageCopyDefined struct {
-	Scope         [4]uint8
+	Scope         [2]uint8
 	MsgId         uint64
 	PayloadLength uint32
-	InstanceName  string
-	MethodName    string
+	ServiceName   string
 	MetaData      *container2.SliceMap[string, string]
 	PayloadLayout container2.Slice[uint32]
 	Payloads      container2.Slice[byte]
@@ -27,8 +26,7 @@ type Graph struct {
 	Encoder       string
 	MsgId         uint64
 	DataLength    uint32
-	InstanceName  string
-	MethodName    string
+	ServiceName   string
 	MetaData      map[string]string
 	PayloadLayout []uint32
 	Payloads      []uint8
@@ -90,17 +88,16 @@ func NoMux(data []byte) *Graph {
 	if codecScheme := rawMsg.MetaData.Load(message.CodecScheme); codecScheme != "" {
 		g.Codec = codecScheme
 	} else {
-		g.Codec = "unknown"
+		g.Codec = message.DefaultCodec
 	}
 	if encoderScheme := rawMsg.MetaData.Load(message.CodecScheme); encoderScheme != "" {
 		g.Encoder = encoderScheme
 	} else {
-		g.Encoder = "unknown"
+		g.Encoder = message.DefaultPacker
 	}
 	g.MsgId = msg.MsgId
 	g.DataLength = msg.PayloadLength
-	g.InstanceName = msg.InstanceName
-	g.MethodName = msg.MethodName
+	g.ServiceName = msg.ServiceName
 	if msg.MetaData != nil {
 		msg.MetaData.Range(func(k, v string) bool {
 			g.MetaData[k] = v
