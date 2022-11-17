@@ -1,19 +1,32 @@
 package msgwriter
 
 import (
+	"github.com/nyan233/littlerpc/pkg/export"
+	"sync"
+
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/middle/packer"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"sync"
 )
 
+const DefaultWriter = "lrpc-trait"
+
+// Writer 写入器的实现必须是线程安全的
+// 写入器的抽象与解析器不一样, 解析器要处理multi data & half package
+// 写入器使用的Conn API都是同步的, 所以不用处理half package, 写入器的设计
+// 本身就不能处理多份数据
 type Writer interface {
-	// Header 每个byte代表一个Header, 一个Writer可以绑定多种Header
-	Header() []byte
-	Writer(arg Argument) perror.LErrorDesc
+	Write(arg Argument, header byte) perror.LErrorDesc
+	export.Reset
 }
+
+type header interface {
+	Header() []byte
+}
+
+type Factory func(writers ...Writer) Writer
 
 type Argument struct {
 	Message *message.Message
@@ -39,4 +52,26 @@ func encoder(arg Argument) perror.LErrorDesc {
 		arg.Message.ReWritePayload(bytes)
 	}
 	return nil
+}
+
+var (
+	factoryCollection map[string]Factory
+)
+
+func Register(scheme string, wf Factory) {
+	if wf == nil {
+		panic("Writer factory is nil")
+	}
+	if scheme == "" {
+		panic("Writer scheme is empty")
+	}
+	factoryCollection[scheme] = wf
+}
+
+func Get(scheme string) Factory {
+	return factoryCollection[scheme]
+}
+
+func init() {
+	Register(DefaultWriter, NewLRPCTrait)
 }

@@ -2,7 +2,6 @@ package msgwriter
 
 import (
 	"github.com/nyan233/littlerpc/pkg/common"
-	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/middle/packer"
 	"github.com/nyan233/littlerpc/protocol/message"
@@ -57,13 +56,13 @@ func (n2 *NilConn) SetWriteDeadline(t time.Time) error {
 
 func TestLRPCWriter(t *testing.T) {
 	t.Run("TestLRPCNoMuxWriter", func(t *testing.T) {
-		testWriter(t, Get(message.MagicNumber))
+		testWriter(t, NewLRPCNoMux())
 	})
 	t.Run("TestLRPCMuxWriter", func(t *testing.T) {
-		testWriter(t, Get(mux.Enabled))
+		testWriter(t, NewLRPCMux())
 	})
 	t.Run("TestJsonRPC2Writer", func(t *testing.T) {
-		testWriter(t, Get(jsonrpc2.Header))
+		testWriter(t, NewJsonRPC2())
 	})
 }
 
@@ -86,15 +85,15 @@ func testWriter(t *testing.T, writer Writer) {
 		OnDebug: nil,
 		EHandle: common.DefaultErrHandler,
 	}
-	assert.Equal(t, writer.Writer(arg), nil)
+	assert.Equal(t, writer.Write(arg, 0), nil)
 
 	arg.Message.SetMsgType(message.Return)
-	assert.Equal(t, writer.Writer(arg), nil)
+	assert.Equal(t, writer.Write(arg, 0), nil)
 
 	// test gzip
 	arg.Encoder = packer.Get("gzip")
-	assert.Equal(t, writer.Writer(arg), nil, "encoder encode failed")
+	assert.Equal(t, writer.Write(arg, 0), nil, "encoder encode failed")
 
 	arg.Conn = &NilConn{writeFailed: true}
-	assert.NotEqual(t, writer.Writer(arg), nil, "write return error but Writer no return")
+	assert.NotEqual(t, writer.Write(arg, 0), nil, "write return error but Write no return")
 }

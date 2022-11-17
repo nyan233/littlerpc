@@ -14,7 +14,11 @@ func (l *lRPCNoMux) Header() []byte {
 	return []byte{message.MagicNumber}
 }
 
-func (l *lRPCNoMux) Writer(arg Argument) (err perror.LErrorDesc) {
+func NewLRPCNoMux(writers ...Writer) Writer {
+	return &lRPCNoMux{}
+}
+
+func (l *lRPCNoMux) Write(arg Argument, header byte) (err perror.LErrorDesc) {
 	if err = encoder(arg); err != nil {
 		return
 	}
@@ -40,4 +44,8 @@ func (l *lRPCNoMux) Writer(arg Argument) (err perror.LErrorDesc) {
 		arg.OnDebug(*bp, false)
 	}
 	return nil
+}
+
+func (l *lRPCNoMux) Reset() {
+	return
 }

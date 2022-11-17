@@ -15,11 +15,15 @@ type JsonRPC2 struct {
 	Codec codec.Codec
 }
 
+func NewJsonRPC2(writers ...Writer) Writer {
+	return &JsonRPC2{Codec: codec.Get("json")}
+}
+
 func (j *JsonRPC2) Header() []byte {
 	return []byte{jsonrpc2.Header}
 }
 
-func (j *JsonRPC2) Writer(arg Argument) perror.LErrorDesc {
+func (j *JsonRPC2) Write(arg Argument, header byte) perror.LErrorDesc {
 	switch arg.Message.GetMsgType() {
 	case message.Call:
 		return j.requestWrite(arg)
@@ -31,6 +35,10 @@ func (j *JsonRPC2) Writer(arg Argument) perror.LErrorDesc {
 		return arg.EHandle.LNewErrorDesc(perror.UnsafeOption,
 			"jsonrpc2 not supported message type", arg.Message.GetMsgType())
 	}
+}
+
+func (j *JsonRPC2) Reset() {
+	return
 }
 
 func (j *JsonRPC2) requestWrite(arg Argument) perror.LErrorDesc {
@@ -46,7 +54,7 @@ func (j *JsonRPC2) responseWrite(arg Argument) perror.LErrorDesc {
 	if errCode != "" && errMessage != "" {
 		rep.Error = &jsonrpc2.Error{}
 		switch code, _ := strconv.Atoi(errCode); code {
-		case perror.MethodNoRegister, perror.InstanceNoRegister:
+		case perror.ServiceNotFound:
 			rep.Error.Code = jsonrpc2.MethodNotFound
 		case perror.Success:
 			goto handleResult

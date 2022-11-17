@@ -11,11 +11,15 @@ import (
 
 type lRPCMux struct{}
 
+func NewLRPCMux(writers ...Writer) Writer {
+	return &lRPCMux{}
+}
+
 func (l *lRPCMux) Header() []byte {
 	return []byte{mux.Enabled}
 }
 
-func (l *lRPCMux) Writer(arg Argument) perror.LErrorDesc {
+func (l *lRPCMux) Write(arg Argument, header byte) perror.LErrorDesc {
 	if err := encoder(arg); err != nil {
 		return err
 	}
@@ -63,4 +67,8 @@ func (l *lRPCMux) Writer(arg Argument) perror.LErrorDesc {
 		}
 	}
 	return nil
+}
+
+func (l *lRPCMux) Reset() {
+	return
 }
