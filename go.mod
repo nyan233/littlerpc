@@ -11,6 +11,8 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/lafikl/consistent v0.0.0-20220512074542-bdd3606bfc3e // indirect
+	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/crypto v0.0.0-20210513122933-cd7d49e622d5 // indirect
 	golang.org/x/sys v0.0.0-20210423082822-04245dca01da // indirect

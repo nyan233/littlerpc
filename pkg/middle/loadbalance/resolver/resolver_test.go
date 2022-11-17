@@ -53,7 +53,7 @@ func TestAllResolver(t *testing.T) {
 		t.Error("no equal")
 	}
 	tmp, _ = resolverCollection.LoadOk("file")
-	frb := tmp.(*fileResolverBuilder)
+	frb := tmp.(*fileResolver)
 	addrs, err = frb.Instance().Parse("file://./addrs.txt")
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestAllResolver(t *testing.T) {
 		t.Error("no equal")
 	}
 	tmp, _ = resolverCollection.LoadOk("http")
-	hrb := tmp.(*httpResolverBuilder)
+	hrb := tmp.(*httpResolver)
 	addrs, err = hrb.Instance().Parse("http://127.0.0.1:8080/addrs.txt")
 	if err != nil {
 		t.Fatal(err)
@@ -70,4 +70,8 @@ func TestAllResolver(t *testing.T) {
 	if !reflect.DeepEqual(addrs, eqData[:]) {
 		t.Error("no equal")
 	}
+}
+
+func testReslover(t *testing.T, resolver Resolver) {
+
 }
