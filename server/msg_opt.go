@@ -25,42 +25,45 @@ import (
 // 该类型拥有的方法都有很多的副作用, 请谨慎
 type messageOpt struct {
 	Server    *Server
+	Header    byte
 	ContextId uint64
 	Codec     codec.Codec
-	Encoder   packer.Packer
+	Packer    packer.Packer
 	Message   *message.Message
 	Conn      transport.ConnAdapter
-	Method    *metadata.Process
+	Service   *metadata.Process
 	Writer    msgwriter.Writer
 	CallArgs  []reflect.Value
 }
 
-func newConnDesc(s *Server, msg *message.Message, c transport.ConnAdapter) *messageOpt {
-	return &messageOpt{Server: s, Message: msg, Conn: c}
+func newConnDesc(s *Server, msg msgparser.ParserMessage, writer msgwriter.Writer, c transport.ConnAdapter) *messageOpt {
+	return &messageOpt{
+		Server:  s,
+		Message: msg.Message,
+		Header:  msg.Header,
+		Conn:    c,
+		Writer:  writer,
+	}
 }
 
 func (c *messageOpt) SelectCodecAndEncoder() {
 	// 根据读取的头信息初始化一些需要的Codec/Packer
 	cwp := codec.Get(c.Message.MetaData.Load(message.CodecScheme))
-	ewp := packer.Get(c.Message.MetaData.Load(message.EncoderScheme))
+	ewp := packer.Get(c.Message.MetaData.Load(message.PackerScheme))
 	if cwp == nil || ewp == nil {
-		c.Codec = codec.Get(message.CodecScheme)
-		c.Encoder = packer.Get(message.EncoderScheme)
+		c.Codec = codec.Get(message.DefaultCodec)
+		c.Packer = packer.Get(message.DefaultPacker)
 	} else {
 		c.Codec = cwp
-		c.Encoder = ewp
+		c.Packer = ewp
 	}
-}
-
-func (c *messageOpt) SelectWriter(header uint8) {
-	c.Writer = msgwriter.Get(header)
 }
 
 // RealPayload 获取真正的Payload, 如果有压缩则解压
 func (c *messageOpt) RealPayload() perror.LErrorDesc {
 	var err error
-	if c.Encoder.Scheme() != "text" {
-		bytes, err := c.Encoder.UnPacket(c.Message.Payloads())
+	if c.Packer.Scheme() != "text" {
+		bytes, err := c.Packer.UnPacket(c.Message.Payloads())
 		if err != nil {
 			return c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
 		}
@@ -75,12 +78,13 @@ func (c *messageOpt) RealPayload() perror.LErrorDesc {
 	return nil
 }
 
-func (c *messageOpt) FreeMessage(parser *msgparser.LMessageParser) {
+func (c *messageOpt) Free(parser msgparser.Parser) {
 	msg := c.Message
 	c.Message = nil
-	parser.FreeMessage(msg)
+	parser.Free(msg)
 }
 
+// UseMux TODO: 计划删除, 这样做并不能判断是否使用了Mux
 func (c *messageOpt) UseMux() bool {
 	return c.Message.First() == mux.Enabled
 }
@@ -88,19 +92,14 @@ func (c *messageOpt) UseMux() bool {
 func (c *messageOpt) Check() perror.LErrorDesc {
 	// 序列化完之后才确定调用名
 	// MethodName : Hello.Hello : receiver:methodName
-	elemData, ok := c.Server.elems.LoadOk(c.Message.GetInstanceName())
+	service, ok := c.Server.services.LoadOk(c.Message.GetServiceName())
 	if !ok {
 		return c.Server.eHandle.LWarpErrorDesc(
-			common.ErrElemTypeNoRegister, c.Message.GetInstanceName())
+			common.ServiceNotfound, c.Message.GetServiceName())
 	}
-	method, ok := elemData.Methods[c.Message.GetMethodName()]
-	if !ok {
-		return c.Server.eHandle.LWarpErrorDesc(
-			common.ErrMethodNoRegister, c.Message.GetMethodName())
-	}
-	c.Method = method
+	c.Service = service
 	// 从客户端校验并获得合法的调用参数
-	callArgs, lErr := c.checkCallArgs(elemData.Data)
+	callArgs, lErr := c.checkCallArgs()
 	// 参数校验为不合法
 	if lErr != nil {
 		if err := c.Server.pManager.OnCallBefore(c.Message, &callArgs, errors.New("arguments check failed")); err != nil {
@@ -116,19 +115,18 @@ func (c *messageOpt) Check() perror.LErrorDesc {
 	return nil
 }
 
-func (c *messageOpt) checkCallArgs(receiver reflect.Value) (values []reflect.Value, err perror.LErrorDesc) {
+func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorDesc) {
 	// 去除接收者之后的输入参数长度
 	// 校验客户端传递的参数和服务端是否一致
 	iter := c.Message.PayloadsIterator()
-	method := c.Method.Value
-	if nInput := method.Type().NumIn() - 1 - metaDataUtil.InputOffset(c.Method); nInput != iter.Tail() {
+	serviceType := c.Service.Value.Type()
+	if nInput := serviceType.NumIn() - metaDataUtil.InputOffset(c.Service); nInput != iter.Tail() {
 		return nil, c.Server.eHandle.LWarpErrorDesc(common.ErrServer,
 			"client input args number no equal server",
 			fmt.Sprintf("Client : %d", iter.Tail()), fmt.Sprintf("Server : %d", nInput))
 	}
 	// 哨兵条件, 过程不要求任何输入时即可以提前结束
-	if method.Type().NumIn() == 1 {
-		values = append(values, receiver)
+	if serviceType.NumIn() == 0 {
 		return values, nil
 	}
 	defer func() {
@@ -144,32 +142,25 @@ func (c *messageOpt) checkCallArgs(receiver reflect.Value) (values []reflect.Val
 	}()
 	var callArgs []reflect.Value
 	var inputStart int
-	if c.Method.Option.CompleteReUsage {
-		callArgs = *c.Method.Pool.Get().(*[]reflect.Value)
+	if c.Service.Option.CompleteReUsage {
+		callArgs = c.Service.Pool.Get().([]reflect.Value)
 		defer func() {
 			if err != nil {
-				c.Method.Pool.Put(&callArgs)
+				c.Service.Pool.Put(&callArgs)
 			}
 		}()
-		tmp := callArgs
-		if !c.Method.AnonymousFunc {
-			callArgs[0] = receiver
-			tmp = callArgs[:1]
-		}
-		inputStart, err = c.checkContextAndStream(&tmp)
+		inputStart, err = c.checkContextAndStream(callArgs)
 		if err != nil {
 			return
 		}
 	} else {
-		callArgs = []reflect.Value{
-			// receiver
-			receiver,
-		}
-		inputStart, err = c.checkContextAndStream(&callArgs)
+		callArgs = make([]reflect.Value, 0, 4)
+		inputStart, err = c.checkContextAndStream(callArgs)
 		if err != nil {
 			return
 		}
-		inputTypeList := reflect2.FuncInputTypeList(method, inputStart, true, func(i int) bool {
+		callArgs = callArgs[:inputStart]
+		inputTypeList := reflect2.FuncInputTypeList(c.Service.Value, inputStart, false, func(i int) bool {
 			if len(iter.Take()) == 0 {
 				return true
 			}
@@ -181,7 +172,7 @@ func (c *messageOpt) checkCallArgs(receiver reflect.Value) (values []reflect.Val
 
 	}
 	iter.Reset()
-	for i := 1 + inputStart; i < len(callArgs) && iter.Next(); i++ {
+	for i := inputStart; i < len(callArgs) && iter.Next(); i++ {
 		eface := callArgs[i]
 		argBytes := iter.Take()
 		if len(argBytes) == 0 {
@@ -198,7 +189,7 @@ func (c *messageOpt) checkCallArgs(receiver reflect.Value) (values []reflect.Val
 	return callArgs, nil
 }
 
-func (c *messageOpt) checkContextAndStream(callArgs *[]reflect.Value) (offset int, err perror.LErrorDesc) {
+func (c *messageOpt) checkContextAndStream(callArgs []reflect.Value) (offset int, err perror.LErrorDesc) {
 	// 存在contextId则注册context
 	ctx := context.Background()
 	ctxIdStr, ok := c.Message.MetaData.LoadOk(message.ContextId)
@@ -215,16 +206,17 @@ func (c *messageOpt) checkContextAndStream(callArgs *[]reflect.Value) (offset in
 			return 0, c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
 		}
 	}
+	callArgs = callArgs[0:]
 	switch {
-	case c.Method.SupportContext:
+	case c.Service.SupportContext:
 		offset = 1
-		*callArgs = append(*callArgs, reflect.ValueOf(ctx))
-	case c.Method.SupportContext && c.Method.SupportStream:
+		callArgs = append(callArgs, reflect.ValueOf(ctx))
+	case c.Service.SupportContext && c.Service.SupportStream:
 		offset = 2
-		*callArgs = append(*callArgs, reflect.ValueOf(ctx), reflect.ValueOf(*new(stream.LStream)))
-	case c.Method.SupportStream:
+		callArgs = append(callArgs, reflect.ValueOf(ctx), reflect.ValueOf(*new(stream.LStream)))
+	case c.Service.SupportStream:
 		offset = 1
-		*callArgs = append(*callArgs, reflect.ValueOf(*new(stream.LStream)))
+		callArgs = append(callArgs, reflect.ValueOf(*new(stream.LStream)))
 	default:
 		// 不支持context&stream
 		break

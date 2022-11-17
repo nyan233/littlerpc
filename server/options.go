@@ -5,6 +5,8 @@ import (
 	"github.com/nyan233/littlerpc/internal/pool"
 	common2 "github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/logger"
+	"github.com/nyan233/littlerpc/pkg/common/msgparser"
+	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	perror "github.com/nyan233/littlerpc/protocol/error"
@@ -24,7 +26,7 @@ func DirectConfig(uCfg Config) Option {
 	}
 }
 
-func WithCustomLogger(logger logger.LLogger) Option {
+func WithLogger(logger logger.LLogger) Option {
 	return func(config *Config) {
 		config.Logger = logger
 	}
@@ -32,16 +34,11 @@ func WithCustomLogger(logger logger.LLogger) Option {
 
 func WithDefaultServer() Option {
 	return func(config *Config) {
-		config.Logger = logger.DefaultLogger
-		config.TlsConfig = nil
-		config.KeepAlive = true
-		config.KeepAliveTimeout = 5 * time.Second
-		config.ServerTimeout = 90 * time.Second
-		config.NetWork = "nbio_tcp"
-		config.ErrHandler = common2.DefaultErrHandler
-		config.PoolBufferSize = 2048
-		config.PoolMinSize = int32(runtime.NumCPU() * 8)
-		config.PoolMaxSize = pool.MaxTaskPoolSize
+		WithLogger(logger.DefaultLogger)(config)
+		WithKeepAlive(false, time.Second*120)(config)
+		WithNetwork("nbio_tcp")(config)
+		WithErrHandler(common2.DefaultErrHandler)(config)
+		WithExecPoolArgument(int32(runtime.NumCPU()*8), pool.MaxTaskPoolSize, 2048)(config)
 	}
 }
 
@@ -57,7 +54,7 @@ func WithTlsServer(tlsC *tls.Config) Option {
 	}
 }
 
-func WithTransProtocol(scheme string) Option {
+func WithNetwork(scheme string) Option {
 	return func(config *Config) {
 		config.NetWork = scheme
 	}
@@ -77,19 +74,19 @@ func WithPlugin(plg plugin.ServerPlugin) Option {
 	}
 }
 
-func WithNewErrHandler(eh perror.LErrors) Option {
+func WithErrHandler(eh perror.LErrors) Option {
 	return func(config *Config) {
 		config.ErrHandler = eh
 	}
 }
 
-func WithCustomExecPool(builder export.TaskPoolBuilder) Option {
+func WithExecPool(builder export.TaskPoolBuilder) Option {
 	return func(config *Config) {
 		config.ExecPoolBuilder = builder
 	}
 }
 
-func WithExecPool(minSize, maxSize, bufSize int32) Option {
+func WithExecPoolArgument(minSize, maxSize, bufSize int32) Option {
 	return func(config *Config) {
 		config.PoolMinSize = minSize
 		config.PoolMaxSize = maxSize
@@ -100,5 +97,24 @@ func WithExecPool(minSize, maxSize, bufSize int32) Option {
 func WithDebug(debug bool) Option {
 	return func(config *Config) {
 		config.Debug = debug
+	}
+}
+
+func WithMessageParser(scheme string) Option {
+	return func(config *Config) {
+		config.ParserFactory = msgparser.Get(scheme)
+	}
+}
+
+func WithMessageWriter(scheme string) Option {
+	return func(config *Config) {
+		config.WriterFactory = msgwriter.Get(scheme)
+	}
+}
+
+func WithKeepAlive(open bool, timeOut time.Duration) Option {
+	return func(config *Config) {
+		config.KeepAlive = open
+		config.KeepAliveTimeout = timeOut
 	}
 }

@@ -3,6 +3,8 @@ package server
 import (
 	"github.com/lesismal/llib/std/crypto/tls"
 	"github.com/nyan233/littlerpc/pkg/common/logger"
+	"github.com/nyan233/littlerpc/pkg/common/msgparser"
+	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	perror "github.com/nyan233/littlerpc/protocol/error"
@@ -12,10 +14,9 @@ import (
 type Config struct {
 	TlsConfig *tls.Config
 	// 使用的传输协议，默认实现tcp&websocket
-	NetWork       string
-	Address       []string
-	ServerTimeout time.Duration
-	KeepAlive     bool
+	NetWork   string
+	Address   []string
+	KeepAlive bool
 	// ping-pong timeout
 	KeepAliveTimeout time.Duration
 	Logger           logger.LLogger
@@ -27,4 +28,6 @@ type Config struct {
 	PoolBufferSize  int32
 	ExecPoolBuilder export.TaskPoolBuilder
 	Debug           bool
+	ParserFactory   msgparser.Factory
+	WriterFactory   msgwriter.Factory
 }

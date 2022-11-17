@@ -3,13 +3,12 @@ package server
 import (
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/metadata"
-	"github.com/nyan233/littlerpc/pkg/container"
 	"reflect"
 )
 
 type MethodTable struct {
-	InstanceName string
-	Table        []string
+	SourceName string
+	Table      []string
 }
 
 type ArgumentType struct {
@@ -19,19 +18,19 @@ type ArgumentType struct {
 
 // LittleRpcReflection 反射服务
 type LittleRpcReflection struct {
-	elems *container.SyncMap118[string, metadata.ElemMeta]
+	rpcServer *Server
 }
 
-func (l *LittleRpcReflection) MethodTable(instanceName string) (*MethodTable, error) {
-	elem, ok := l.elems.LoadOk(instanceName)
+func (l *LittleRpcReflection) MethodTable(sourceName string) (*MethodTable, error) {
+	source, ok := l.rpcServer.sources.LoadOk(sourceName)
 	if !ok {
-		return nil, common.ErrMethodNoRegister
+		return nil, common.ServiceNotfound
 	}
 	mt := &MethodTable{
-		InstanceName: instanceName,
-		Table:        nil,
+		SourceName: sourceName,
+		Table:      nil,
 	}
-	for methodName := range elem.Methods {
+	for methodName := range source.ProcessSet {
 		mt.Table = append(mt.Table, methodName)
 	}
 	return mt, nil
@@ -39,24 +38,20 @@ func (l *LittleRpcReflection) MethodTable(instanceName string) (*MethodTable, er
 
 func (l *LittleRpcReflection) AllInstance() (map[string]string, error) {
 	mp := make(map[string]string, 4)
-	l.elems.Range(func(key string, value metadata.ElemMeta) bool {
-		mp[key] = value.Typ.String()
+	l.rpcServer.sources.Range(func(key string, value *metadata.Source) bool {
+		mp[key] = value.InstanceType.Name()
 		return true
 	})
 	return mp, nil
 }
 
-func (l *LittleRpcReflection) MethodArgumentType(instanceName, methodName string) ([]*ArgumentType, error) {
-	elem, ok := l.elems.LoadOk(instanceName)
+func (l *LittleRpcReflection) MethodArgumentType(serviceName string) ([]*ArgumentType, error) {
+	service, ok := l.rpcServer.services.LoadOk(serviceName)
 	if !ok {
-		return nil, common.ErrMethodNoRegister
-	}
-	method, ok := elem.Methods[methodName]
-	if !ok {
-		return nil, common.ErrMethodNoRegister
+		return nil, common.ServiceNotfound
 	}
 	argDesc := make([]*ArgumentType, 0, 4)
-	typ := method.Value.Type()
+	typ := service.Value.Type()
 	for i := 1; i < typ.NumIn(); i++ {
 		in := typ.In(i)
 		typDesc := &ArgumentType{}

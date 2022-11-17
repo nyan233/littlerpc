@@ -2,23 +2,25 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
+	"testing"
+
 	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/container"
-	"testing"
 )
 
 func TestReflection(t *testing.T) {
 	noneServer := &Server{
-		elems: container.SyncMap118[string, metadata.ElemMeta]{},
+		services: container.SyncMap118[string, *metadata.Process]{},
 	}
 	reflection := &LittleRpcReflection{
-		elems: &noneServer.elems,
+		rpcServer: noneServer,
 	}
-	err := noneServer.RegisterClass(reflection, nil)
+	err := noneServer.RegisterClass(ReflectionSource, reflection, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	table, err := reflection.MethodTable("LittleRpcReflection")
+	table, err := reflection.MethodTable(ReflectionSource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +30,7 @@ func TestReflection(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log(allInstance)
-	argumentType, err := reflection.MethodArgumentType("LittleRpcReflection", "MethodArgumentType")
+	argumentType, err := reflection.MethodArgumentType(fmt.Sprintf("%s.%s", ReflectionSource, "MethodArgumentType"))
 	if err != nil {
 		t.Fatal(err)
 	}
