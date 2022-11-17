@@ -3,29 +3,29 @@ package msgparser
 import (
 	"encoding/json"
 	"errors"
+
 	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"strings"
 )
 
-type JsonRpc2Handler struct {
+type jsonRpc2Handler struct {
 	Codec codec.Codec
 }
 
-func (j *JsonRpc2Handler) Header() []byte {
+func (j *jsonRpc2Handler) Header() []byte {
 	return []byte{jsonrpc2.Header}
 }
 
-func (j *JsonRpc2Handler) BaseLen() (BaseLenType, int) {
+func (j *jsonRpc2Handler) BaseLen() (BaseLenType, int) {
 	return SingleRequest, -1
 }
 
-func (j *JsonRpc2Handler) MessageLength(base []byte) int {
+func (j *jsonRpc2Handler) MessageLength(base []byte) int {
 	panic("implement me")
 }
 
-func (j *JsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, error) {
+func (j *jsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, error) {
 	var request jsonrpc2.Request
 	err := j.Codec.Unmarshal(data, &request)
 	if err != nil {
@@ -40,7 +40,7 @@ func (j *JsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, 
 		msg.MetaData.Store(message.CodecScheme, j.Codec.Scheme())
 	}
 	// jsonrpc2不支持压缩编码
-	msg.MetaData.Store(message.EncoderScheme, message.DefaultEncoder)
+	msg.MetaData.Store(message.PackerScheme, message.DefaultPacker)
 	msg.SetMsgId(uint64(request.Id))
 	if request.MetaData != nil {
 		for k, v := range request.MetaData {
@@ -50,12 +50,7 @@ func (j *JsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, 
 	if request.Method == "" {
 		return -1, errors.New("hash")
 	}
-	methodSplit := strings.Split(request.Method, ".")
-	if len(methodSplit) != 2 {
-		return -1, errors.New("hash")
-	}
-	msg.SetInstanceName(methodSplit[0])
-	msg.SetMethodName(methodSplit[1])
+	msg.SetServiceName(request.Method)
 	if request.Params == nil || len(request.Params) == 0 {
 		return UnmarshalComplete, nil
 	}

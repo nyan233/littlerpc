@@ -7,12 +7,12 @@ import (
 )
 
 func BenchmarkParser(b *testing.B) {
-	parser := New(NewDefaultSimpleAllocTor(), 128)
+	parser := Get(DefaultParser)(NewDefaultSimpleAllocTor(), MaxBufferSize)
 	for i := 1; i <= (1 << 10); i *= 4 {
 		b.Run(fmt.Sprintf("LRPCProtocol-OneParse-%dMessage", i), func(b *testing.B) {
 			b.StopTimer()
 			var runCount int
-			parser.ResetScan()
+			parser.Reset()
 			messages := make([]byte, 0, i*64)
 			for j := 0; j < i; j++ {
 				messages = append(messages, gen.NoMuxToBytes(gen.Big)...)
@@ -20,14 +20,14 @@ func BenchmarkParser(b *testing.B) {
 			b.StartTimer()
 			b.ReportAllocs()
 			for j := 0; j < b.N; j++ {
-				parseMsgs, err := parser.ParseMsg(messages)
+				parseMsgs, err := parser.Parse(messages)
 				if err != nil {
-					_, err = parser.ParseMsg(messages)
+					_, err = parser.Parse(messages)
 					b.Fatal(err)
 				}
 				b.StopTimer()
 				for _, v := range parseMsgs {
-					parser.FreeMessage(v.Message)
+					parser.Free(v.Message)
 				}
 				b.StartTimer()
 				b.SetBytes(int64(len(messages)))

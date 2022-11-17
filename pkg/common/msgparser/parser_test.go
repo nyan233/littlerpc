@@ -15,11 +15,10 @@ import (
 )
 
 func TestParser(t *testing.T) {
-	parser := New(NewDefaultSimpleAllocTor(), 4096)
+	parser := Get(DefaultParser)(NewDefaultSimpleAllocTor(), 4096)
 	msg := message.New()
 	msg.SetMsgId(uint64(random.FastRand()))
-	msg.SetMethodName("TestParser")
-	msg.SetInstanceName("LocalTest")
+	msg.SetServiceName("TestParser/LocalTest")
 	msg.MetaData.Store("Key", "Value")
 	msg.MetaData.Store("Key2", "Value2")
 	msg.MetaData.Store("Key3", "Value3")
@@ -27,7 +26,10 @@ func TestParser(t *testing.T) {
 	msg.AppendPayloads([]byte("65536"))
 	msg.Length()
 	var marshalBytes []byte
-	message.Marshal(msg, (*container.Slice[byte])(&marshalBytes))
+	err := message.Marshal(msg, (*container.Slice[byte])(&marshalBytes))
+	if err != nil {
+		return
+	}
 	muxBlock := mux.Block{
 		Flags:    mux.Enabled,
 		StreamId: random.FastRand(),
@@ -37,11 +39,11 @@ func TestParser(t *testing.T) {
 	var muxMarshalBytes []byte
 	mux.Marshal(&muxBlock, (*container.Slice[byte])(&muxMarshalBytes))
 	marshalBytes = append(marshalBytes, muxMarshalBytes...)
-	_, err := parser.ParseMsg(marshalBytes[:11])
+	_, err = parser.Parse(marshalBytes[:11])
 	if err != nil {
 		t.Fatal(err)
 	}
-	allMasg, err := parser.ParseMsg(marshalBytes[11:])
+	allMasg, err := parser.Parse(marshalBytes[11:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +73,8 @@ func TestJsonRPC2Parser(t *testing.T) {
 			},
 		},
 	}
-	parser := New(allocTor, 4096)
-	msg, err := parser.ParseMsg(bytes)
+	parser := Get(DefaultParser)(allocTor, 4096)
+	msg, err := parser.Parse(bytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,8 +93,7 @@ func TestJsonRPC2Parser(t *testing.T) {
 			assert.Equal(t, string(iter.Take()), "3563")
 		}
 	}
-	assert.Equal(t, msg[0].Message.GetInstanceName(), "Test")
-	assert.Equal(t, msg[0].Message.GetMethodName(), "JsonRPC2Case1")
+	assert.Equal(t, msg[0].Message.GetServiceName(), "Test.JsonRPC2Case1")
 }
 
 func parserOnBytes(s string) []byte {

@@ -1,9 +1,10 @@
 package msgparser
 
 import (
+	"math"
+
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"math"
 )
 
 var handlerCollect [math.MaxUint8]MessageHandler
@@ -30,12 +31,12 @@ type MessageHandler interface {
 	Unmarshal(data []byte, msg *message.Message) (Action, error)
 }
 
-func Register(handler MessageHandler) {
+func RegisterHandler(handler MessageHandler) {
 	if handler == nil {
 		panic("handler is empty")
 	}
 	headers := handler.Header()
-	if headers == nil || len(headers) == 0 {
+	if len(headers) == 0 {
 		panic("header not found")
 	}
 	for _, header := range headers {
@@ -43,12 +44,12 @@ func Register(handler MessageHandler) {
 	}
 }
 
-func Get(magicNumber uint8) MessageHandler {
+func GetHandler(magicNumber uint8) MessageHandler {
 	return handlerCollect[magicNumber]
 }
 
 func init() {
-	Register(&noMuxHandler{})
-	Register(&muxHandler{})
-	Register(&JsonRpc2Handler{Codec: codec.Get("json")})
+	RegisterHandler(&noMuxHandler{})
+	RegisterHandler(&muxHandler{})
+	RegisterHandler(&jsonRpc2Handler{Codec: codec.Get("json")})
 }
