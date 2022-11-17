@@ -41,12 +41,8 @@ func (m *SliceMap[K, V]) Store(key K, value V) {
 }
 
 func (m *SliceMap[K, V]) Load(key K) V {
-	for k, v := range m.keys {
-		if v == key {
-			return m.values[k]
-		}
-	}
-	return *new(V)
+	v, _ := m.LoadOk(key)
+	return v
 }
 
 func (m *SliceMap[K, V]) LoadOk(key K) (V, bool) {

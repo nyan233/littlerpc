@@ -1,6 +1,7 @@
 package container
 
 import (
+	"github.com/nyan233/littlerpc/pkg/utils/random"
 	"strconv"
 	"testing"
 	"time"
@@ -50,6 +51,18 @@ func TestAllMap(t *testing.T) {
 				Value: j + 1,
 			}
 			iMap.Store(genData[j].Key, genData[j].Value)
+		}
+		// 插入一个已经存在的键, 检查长度是否计算正确
+		oldLen := iMap.Len()
+		iMap.Store(genData[KeyNum/2].Key, genData[KeyNum/2].Value)
+		if oldLen != iMap.Len() {
+			printTestMap(t.Fatal, iMap, "store after length not equal")
+		}
+		// 删除一个不存在的键, 检查长度计算是否正确
+		oldLen = iMap.Len()
+		iMap.Delete(random.GenStringOnAscii(100))
+		if oldLen != iMap.Len() {
+			printTestMap(t.Fatal, iMap, "delete after length not equal")
 		}
 		for k, v := range genData {
 			genV, ok := iMap.LoadOk(v.Key)

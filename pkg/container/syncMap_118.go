@@ -21,13 +21,17 @@ func (s *SyncMap118[Key, Value]) LoadOk(k Key) (Value, bool) {
 }
 
 func (s *SyncMap118[Key, Value]) Store(k Key, v Value) {
-	s.SMap.Store(k, v)
-	atomic.AddInt64(&s.length, 1)
+	_, loaded := s.SMap.LoadOrStore(k, v)
+	if !loaded {
+		atomic.AddInt64(&s.length, 1)
+	}
 }
 
 func (s *SyncMap118[Key, Value]) Delete(k Key) {
-	s.SMap.Delete(k)
-	atomic.AddInt64(&s.length, -1)
+	_, loaded := s.SMap.LoadAndDelete(k)
+	if loaded {
+		atomic.AddInt64(&s.length, -1)
+	}
 }
 
 func (s *SyncMap118[Key, Value]) Len() int {

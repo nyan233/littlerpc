@@ -20,12 +20,8 @@ func (m *MutexMap[Key, Value]) LoadOk(k Key) (Value, bool) {
 }
 
 func (m *MutexMap[Key, Value]) Load(k Key) Value {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.mp == nil {
-		return *new(Value)
-	}
-	return m.mp[k]
+	v, _ := m.LoadOk(k)
+	return v
 }
 
 func (m *MutexMap[Key, Value]) Store(k Key, v Value) {
