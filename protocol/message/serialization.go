@@ -13,6 +13,7 @@ func MarshaToMux(msg *Message, payloads *container.Slice[byte]) error {
 	if payloads.Cap() < msg.MinMux() {
 		*payloads = make([]byte, 0, msg.MinMux())
 	}
+	msg.GetAndSetLength()
 	*payloads = append(*payloads, msg.scope[:]...)
 	*payloads = (*payloads)[:msg.MinMux()]
 	binary.BigEndian.PutUint64((*payloads)[2:10], msg.msgId)
