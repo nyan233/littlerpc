@@ -16,7 +16,7 @@ type selectorImpl struct {
 }
 
 func New(poolSize int, newConn ConnFactory, csf csFactory) Selector {
-	return &selectorImpl{newConn: newConn, csFactory: csf}
+	return &selectorImpl{newConn: newConn, csFactory: csf, poolSize: poolSize}
 }
 
 func (a *selectorImpl) Select(node loadbalance.RpcNode) (transport.ConnAdapter, error) {
