@@ -5,13 +5,9 @@ import (
 	"sync"
 )
 
-type ElemMeta struct {
-	// instance type
-	Typ reflect.Type
-	// instance pointer
-	Data reflect.Value
-	// instance method collection
-	Methods map[string]*Process
+type Source struct {
+	InstanceType reflect.Type
+	ProcessSet   map[string]*Process
 }
 
 // Process v0.40从Method更名到Process
@@ -21,7 +17,8 @@ type Process struct {
 	// 用于复用输入参数的内存池
 	Pool sync.Pool
 	// 是否为匿名函数, 匿名函数不带接收器
-	AnonymousFunc bool
+	// TODO: v0.4.0按照Service&Source为维度管理每个API, 这个字段被废弃
+	// AnonymousFunc bool
 	// 和Stream一起在注册时被识别
 	// 是否支持context的传入
 	SupportContext bool

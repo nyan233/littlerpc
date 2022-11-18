@@ -41,7 +41,7 @@ func BenchmarkClientAlloc(b *testing.B) {
 	// 关闭服务器烦人的日志
 	logger.SetOpenLogger(false)
 	s1 := server.New(server.WithAddressServer(":1234"), server.WithOpenLogger(false))
-	err := s1.RegisterClass(new(BenchAlloc), nil)
+	err := s1.RegisterClass("", new(BenchAlloc), nil)
 	if err != nil {
 		b.Fatal(err)
 	}

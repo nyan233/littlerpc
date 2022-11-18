@@ -6,8 +6,7 @@ import (
 
 var (
 	Success                = error.LNewStdError(error.Success, "OK")
-	ErrMethodNoRegister    = error.LNewStdError(error.MethodNoRegister, "method no register")
-	ErrElemTypeNoRegister  = error.LNewStdError(error.InstanceNoRegister, "elem type no register")
+	ServiceNotfound        = error.LNewStdError(error.ServiceNotFound, "service no register")
 	ErrMessageDecoding     = error.LNewStdError(error.MessageDecodingFailed, "message decoding invalid")
 	ErrMessageEncoding     = error.LNewStdError(error.MessageEncodingFailed, "message encoding invalid")
 	ErrServer              = error.LNewStdError(error.ServerError, "server error")

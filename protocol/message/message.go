@@ -129,8 +129,8 @@ func (m *Message) BaseLength() int {
 	return ml + _PayloadLayout + _ServiceName + _Metadata
 }
 
-// Length 根据结构计算序列化之后的数据长度
-// 会设置m.payloadLength
+// Length 根据结构计算序列化之后的数据长度, 长度存在时直接返回结果
+// 不会设置m.payloadLength
 func (m *Message) Length() uint32 {
 	if m.payloadLength > 0 {
 		return m.payloadLength

@@ -30,9 +30,9 @@ func (h *Hello) SayHelloToJson(jn *Student) (*Student, error) {
 
 func main() {
 	logger.SetOpenLogger(false)
-	codec.RegisterCodec(new(ProtoBufCodec))
+	codec.Register(new(ProtoBufCodec))
 	server := server.New(server.WithAddressServer(":1234"))
-	err := server.RegisterClass(new(Hello), nil)
+	err := server.RegisterClass("", new(Hello), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -40,8 +40,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	client1, err := client.New(client.WithAddressClient(":1234"),
-		client.WithClientCodec("protobuf"), client.WithClientEncoder("text"))
+	client1, err := client.New(client.WithAddress(":1234"),
+		client.WithCodec("protobuf"), client.WithPacker("text"))
 	if err != nil {
 		panic(err)
 	}
@@ -56,7 +56,7 @@ func main() {
 		panic(err)
 	}
 	fmt.Println(s)
-	client2, err := client.New(client.WithAddressClient(":1234"))
+	client2, err := client.New(client.WithAddress(":1234"))
 	if err != nil {
 		panic(err)
 	}

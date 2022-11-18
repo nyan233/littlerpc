@@ -22,7 +22,7 @@ func (h *Hello) Hello(name string, id int64) (*UserJson, error) {
 
 func Server() {
 	server := server.New(server.WithAddressServer(":1234"))
-	err := server.RegisterClass(&Hello{}, nil)
+	err := server.RegisterClass("", &Hello{}, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -33,7 +33,7 @@ func Server() {
 }
 
 func Client() {
-	c, err := client.New(client.WithAddressClient(":1234"))
+	c, err := client.New(client.WithAddress(":1234"))
 	if err != nil {
 		panic(err)
 	}

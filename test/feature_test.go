@@ -83,19 +83,18 @@ func TestServerAndClient(t *testing.T) {
 	}
 	clientOpts := []lclient.Option{
 		lclient.WithAddress(":1234"),
-		lclient.WithClientCodec("json"),
 		lclient.WithMuxConnectionNumber(16),
 		lclient.WithPlugin(&metrics.ClientMetricsPlugin{}),
 	}
 	t.Run("TestLRPCNoMuxProtocolNonTls", func(t *testing.T) {
 		cOpts := clientOpts
-		cOpts = append(cOpts, lclient.WithUseMux(false))
+		cOpts = append(cOpts, lclient.WithMuxWriter())
 		testServerAndClient(t, serverOpts, cOpts)
 	})
 	//t.Run("TestLRPCProtocolGzipNonTls", func(t *testing.T) {
 	//	cOpts := clientOpts
 	//	cOpts = append(cOpts, lclient.WithUseMux(false))
-	//	cOpts = append(cOpts, lclient.WithClientEncoder("gzip"))
+	//	cOpts = append(cOpts, lclient.WithPacker("gzip"))
 	//	testServerAndClient(t, serverOpts, clientOpts)
 	//})
 	//t.Run("TestLRPCMuxProtocolNonTls", func(t *testing.T) {
@@ -109,7 +108,7 @@ func TestServerAndClient(t *testing.T) {
 	//	cOpts = append(cOpts, lclient.WithWriter(msgwriter.Manager.Get(jsonrpc2.Header)))
 	//	cOpts = append(cOpts, lclient.WithProtocol("nbio_ws"))
 	//	sOpts := serverOpts
-	//	sOpts = append(sOpts, lserver.WithTransProtocol("nbio_ws"))
+	//	sOpts = append(sOpts, lserver.WithNetwork("nbio_ws"))
 	//	testServerAndClient(t, sOpts, cOpts)
 	//})
 }
@@ -117,7 +116,7 @@ func TestServerAndClient(t *testing.T) {
 func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts []lclient.Option) {
 	server := lserver.New(serverOpts...)
 	h := &HelloTest{}
-	err := server.RegisterClass(h, map[string]metadata.ProcessOption{
+	err := server.RegisterClass("", h, map[string]metadata.ProcessOption{
 		"SelectUser": {
 			SyncCall:        true,
 			CompleteReUsage: true,
@@ -191,7 +190,7 @@ func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts [
 				// 构造一次取消的请求
 				ctx, _ := context.WithTimeout(context.Background(), time.Millisecond*10)
 				var rep User
-				err = pp.SingleCall("HelloTest.WaitSelectUser", ctx, j+100, &rep)
+				err = pp.Request("HelloTest.WaitSelectUser", ctx, j+100, &rep)
 				if err != nil {
 					t.Log(err)
 				}
@@ -222,7 +221,7 @@ func TestBalance(t *testing.T) {
 	logger.SetOpenLogger(false)
 	server := lserver.New(lserver.WithAddressServer("127.0.0.1:9090", "127.0.0.1:8080"),
 		lserver.WithOpenLogger(false))
-	err := server.RegisterClass(new(HelloTest), nil)
+	err := server.RegisterClass("", new(HelloTest), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -32,9 +32,9 @@ func TestRpcurl(t *testing.T) {
 	server := server2.New(
 		server2.WithAddressServer("127.0.0.1:9093"),
 		server2.WithOpenLogger(false),
-		server2.WithTransProtocol("nbio_tcp"),
+		server2.WithNetwork("nbio_tcp"),
 	)
-	err := server.RegisterClass(new(TestInstance), nil)
+	err := server.RegisterClass("", new(TestInstance), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
