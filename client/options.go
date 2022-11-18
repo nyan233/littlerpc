@@ -2,18 +2,19 @@ package client
 
 import (
 	"crypto/tls"
+	"time"
+
 	common2 "github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/logger"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
-	"github.com/nyan233/littlerpc/pkg/middle/balance"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
-	"github.com/nyan233/littlerpc/pkg/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/middle/loadbalance/balancer"
+	"github.com/nyan233/littlerpc/pkg/middle/loadbalance/resolver"
+	"github.com/nyan233/littlerpc/pkg/middle/loadbalance/selector"
+	"github.com/nyan233/littlerpc/pkg/middle/packer"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
-	"github.com/nyan233/littlerpc/pkg/middle/resolver"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/zbh255/bilog"
-	"time"
 )
 
 type Option func(config *Config)
@@ -22,40 +23,67 @@ func (opt Option) apply(config *Config) {
 	opt(config)
 }
 
-func DirectConfig(uCfg *Config) Option {
+func DirectConfig(uCfg Config) Option {
 	return func(config *Config) {
-		*config = *uCfg
+		*config = uCfg
 	}
 }
 
-func WithDefaultClient() Option {
+func WithDefault() Option {
 	return func(config *Config) {
-		config.TlsConfig = nil
+		WithCustomLogger(logger.DefaultLogger)(config)
+		WithPacker(message.DefaultPacker)(config)
+		WithCodec(message.DefaultCodec)(config)
+		WithNetWork("nbio_tcp")(config)
+		WithMuxConnectionNumber(8)(config)
+		WithErrHandler(common2.DefaultErrHandler)(config)
+		WithPoolSize(0)(config)
+		WithNoMuxWriter()(config)
+	}
+}
+
+func WithNetWork(network string) Option {
+	return func(config *Config) {
+		config.NetWork = network
+	}
+}
+
+func WithDefaultKeepAlive() Option {
+	return func(config *Config) {
+		config.KeepAlive = true
+		config.KeepAliveTimeout = time.Second * 120
+	}
+}
+
+func WithKeepAlive(timeOut time.Duration) Option {
+	return func(config *Config) {
 		config.KeepAlive = false
-		config.ClientConnTimeout = 90 * time.Second
-		config.ClientPPTimeout = 5 * time.Second
-		config.Logger = logger.Logger
-		config.Encoder = packet.GetEncoderFromIndex(int(message.DefaultEncodingType))
-		config.Codec = codec.GetCodecFromIndex(int(message.DefaultCodecType))
-		config.NetWork = "nbio_tcp"
-		config.MuxConnection = 8
-		config.ErrHandler = common2.DefaultErrHandler
-		// 小于等于0表示不能使用Async模式
-		config.PoolSize = -1
-		config.Writer = msgwriter.Manager.GetWriter(message.MagicNumber)
+		config.KeepAliveTimeout = timeOut
 	}
 }
 
 func WithResolver(bScheme, url string) Option {
 	return func(config *Config) {
-		config.Resolver = resolver.GetResolver(bScheme)
+		config.ResolverFactory = resolver.Get(bScheme)
 		config.ResolverParseUrl = url
 	}
 }
 
+func WithHttpResolver(url string) Option {
+	return WithResolver("http", url)
+}
+
+func WithLiveResolver(url string) Option {
+	return WithResolver("live", url)
+}
+
+func WithFileResolver(url string) Option {
+	return WithResolver("file", url)
+}
+
 func WithBalance(scheme string) Option {
 	return func(config *Config) {
-		config.Balancer = balance.GetBalancer(scheme)
+		config.BalancerFactory = balancer.Get(scheme)
 	}
 }
 
@@ -65,27 +93,27 @@ func WithTlsClient(tlsC *tls.Config) Option {
 	}
 }
 
-func WithAddressClient(addr string) Option {
+func WithAddress(addr string) Option {
 	return func(config *Config) {
 		config.ServerAddr = addr
 	}
 }
 
-func WithCustomLoggerClient(logger bilog.Logger) Option {
+func WithCustomLogger(logger logger.LLogger) Option {
 	return func(config *Config) {
 		config.Logger = logger
 	}
 }
 
-func WithClientEncoder(scheme string) Option {
+func WithPacker(scheme string) Option {
 	return func(config *Config) {
-		config.Encoder = packet.GetEncoderFromScheme(scheme)
+		config.Packer = packer.Get(scheme)
 	}
 }
 
-func WithClientCodec(scheme string) Option {
+func WithCodec(scheme string) Option {
 	return func(config *Config) {
-		config.Codec = codec.GetCodecFromScheme(scheme)
+		config.Codec = codec.Get(scheme)
 	}
 }
 
@@ -129,14 +157,62 @@ func WithErrHandler(eh perror.LErrors) Option {
 	}
 }
 
-func WithUseMux(use bool) Option {
-	return func(config *Config) {
-		config.UseMux = use
-	}
-}
-
 func WithWriter(writer msgwriter.Writer) Option {
 	return func(config *Config) {
 		config.Writer = writer
+	}
+}
+
+func WithNoMuxWriter() Option {
+	return func(config *Config) {
+		config.Writer = msgwriter.NewLRPCNoMux()
+	}
+}
+
+func WithMuxWriter() Option {
+	return func(config *Config) {
+		config.Writer = msgwriter.NewLRPCMux()
+	}
+}
+
+func WithJsonRpc2Writer() Option {
+	return func(config *Config) {
+		config.Writer = msgwriter.NewJsonRPC2()
+	}
+}
+
+func WithHashLoadBalance() Option {
+	return func(config *Config) {
+		config.BalancerFactory = balancer.Get("hash")
+	}
+}
+
+func WithRoundRobinBalance() Option {
+	return func(config *Config) {
+		config.BalancerFactory = balancer.Get("roundRobin")
+	}
+}
+
+func WithRandomBalance() Option {
+	return func(config *Config) {
+		config.BalancerFactory = balancer.Get("random")
+	}
+}
+
+func WithConsistentHashBalance() Option {
+	return func(config *Config) {
+		config.BalancerFactory = balancer.Get("consistentHash")
+	}
+}
+
+func WithRandomSelector() Option {
+	return func(config *Config) {
+		config.SelectorFactory = selector.Get("random")
+	}
+}
+
+func WithOrderSelector() Option {
+	return func(config *Config) {
+		config.SelectorFactory = selector.Get("order")
 	}
 }

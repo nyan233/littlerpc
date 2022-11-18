@@ -2,15 +2,17 @@ package client
 
 import (
 	"crypto/tls"
+	"github.com/nyan233/littlerpc/pkg/common/logger"
+	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/export"
-	"github.com/nyan233/littlerpc/pkg/middle/balance"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
-	"github.com/nyan233/littlerpc/pkg/middle/packet"
+	"github.com/nyan233/littlerpc/pkg/middle/loadbalance/balancer"
+	"github.com/nyan233/littlerpc/pkg/middle/loadbalance/resolver"
+	"github.com/nyan233/littlerpc/pkg/middle/loadbalance/selector"
+	"github.com/nyan233/littlerpc/pkg/middle/packer"
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
-	"github.com/nyan233/littlerpc/pkg/middle/resolver"
 	perror "github.com/nyan233/littlerpc/protocol/error"
-	"github.com/zbh255/bilog"
 	"time"
 )
 
@@ -20,26 +22,30 @@ type Config struct {
 	// 服务器的地址
 	// 当配置了地址解析器和负载均衡器的时候，此项将被忽略
 	ServerAddr string
+	// 使用的日志器
+	Logger logger.LLogger
 	// 连接池中的连接是否使用KeepAlive
 	KeepAlive bool
-	// 使用的日志器
-	Logger            bilog.Logger
-	ClientPPTimeout   time.Duration
-	ClientConnTimeout time.Duration
+	// 发送ping消息的间隔
+	KeepAliveTimeout time.Duration
 	// 底层使用的Goroutine池的大小
 	PoolSize int32
 	// 客户端使用的传输协议
 	NetWork string
 	// 字节流编码器
-	Encoder packet.Wrapper
+	Packer packer.Packer
 	// 结构化数据编码器
-	Codec codec.Wrapper
+	Codec codec.Codec
 	// 用于连接复用的连接数量
 	MuxConnection int
+	// 是否开启负载均衡
+	OpenLoadBalance bool
 	// 使用的负载均衡器
-	Balancer balance.Balancer
+	BalancerFactory balancer.Factory
 	// 使用的地址解析器
-	Resolver resolver.Builder
+	ResolverFactory resolver.Factory
+	// 负责维护节点连接的选择器
+	SelectorFactory selector.Factory
 	// 地址解析器解析地址时需要用到的Url
 	ResolverParseUrl string
 	// 安装的插件
@@ -49,8 +55,8 @@ type Config struct {
 	// 自定义Goroutine Pool的建造器, 在客户端不推荐使用
 	// 在不需要使用异步回调模式时可以关闭
 	ExecPoolBuilder export.TaskPoolBuilder
-	// 是否使用Mux模式的消息
-	UseMux bool
-	// 写入器
-	Writer msgwriter.Writer
+	Writer          msgwriter.Writer
+	ParserFactory   msgparser.Factory
+	// 是否启用调试模式
+	Debug bool
 }

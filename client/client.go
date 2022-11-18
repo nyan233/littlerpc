@@ -4,23 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"sync"
+	"time"
+
 	"github.com/nyan233/littlerpc/internal/pool"
 	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/logger"
 	"github.com/nyan233/littlerpc/pkg/common/metadata"
-	"github.com/nyan233/littlerpc/pkg/common/msgparser"
-	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	metaDataUtil "github.com/nyan233/littlerpc/pkg/common/utils/metadata"
 	container2 "github.com/nyan233/littlerpc/pkg/container"
-	"github.com/nyan233/littlerpc/pkg/middle/codec"
-	"github.com/nyan233/littlerpc/pkg/middle/packet"
-	"github.com/nyan233/littlerpc/pkg/utils/random"
+	"github.com/nyan233/littlerpc/pkg/middle/loadbalance"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
-	"github.com/zbh255/bilog"
-	"reflect"
-	"sync"
-	"sync/atomic"
 )
 
 type Complete struct {
@@ -28,90 +25,41 @@ type Complete struct {
 	Error   error
 }
 
-type lockConn struct {
-	conn transport.ConnAdapter
-	// message ID的起始, 开始时随机分配
-	initSeq uint64
-	// context id的起始, 开始时随机分配
-	initCtxId uint64
-	// 负责消息的解析
-	parser *msgparser.LMessageParser
-	// 用于事件循环读取完毕的通知
-	notify container2.MutexMap[uint64, chan Complete]
-}
-
-func (lc *lockConn) GetMsgId() uint64 {
-	return atomic.AddUint64(&lc.initSeq, 1)
-}
-
-func (lc *lockConn) GetContextId() uint64 {
-	return atomic.AddUint64(&lc.initCtxId, 1)
-}
-
 // Client 在Client中同时使用同步调用和异步调用将导致同步调用阻塞某一连接上的所有异步调用
 // 请求的发送
 type Client struct {
+	cfg *Config
+	// 用于连接管理
+	cm *connManager
 	// 客户端的事件驱动引擎
 	engine transport.ClientBuilder
-	// 连接通道轮询的计数器
-	concurrentConnCount int64
-	// 连接通道的数量
-	concurrentConnect []*lockConn
 	// 为每个连接分配的资源
-	connDesc *container2.RWMutexMap[transport.ConnAdapter, *lockConn]
-	// elems 可以支持不同实例的调用
+	connSourceSet *container2.RWMutexMap[transport.ConnAdapter, *connSource]
+	// services 可以支持不同实例的调用
 	// 所有的操作都是线程安全的
-	elems  container2.SyncMap118[string, metadata.ElemMeta]
-	logger bilog.Logger
-	writer msgwriter.Writer
-	// 是否开启调试模式
-	debug bool
-	// 在发送消息时是否默认使用Mux
-	useMux bool
-	// 默认的字节流编码器包装器
-	encoderWp packet.Wrapper
-	// 默认的结构化数据编码器包装器
-	codecWp codec.Wrapper
+	services container2.SyncMap118[string, *metadata.Process]
+	// 用于keepalive
+	logger logger.LLogger
 	// 注册的所有异步调用的回调函数
 	// processName:func(rep []interface{},err error)
 	callBacks container2.SyncMap118[string, func(rep []interface{}, err error)]
-	// MessageId : message
-	// 使用到的操作均是线程安全的
-	readyBuffer container2.RWMutexMap[uint64, []byte]
-	// 用于取消后台正在监听消息的goroutine
-	listenReady context.CancelFunc
 	// 用于超时管理和异步调用模拟的goroutine池
 	gp pool.TaskPool
 	// 用于客户端的插件
 	pluginManager *pluginManager
-	// 地址管理器
-	addrManager AddrManager
 	// 错误处理接口
 	eHandle lerror.LErrors
 }
 
 func New(opts ...Option) (*Client, error) {
 	config := &Config{}
-	WithDefaultClient()(config)
+	WithDefault()(config)
 	for _, v := range opts {
 		v(config)
 	}
 	client := &Client{}
 	client.logger = config.Logger
-	client.writer = config.Writer
 	client.eHandle = config.ErrHandler
-	// 配置解析器和负载均衡器
-	var manager AddrManager
-	if config.ServerAddr != "" {
-		manager, _ = newimmutabAddrManager(config.ServerAddr)
-	} else {
-		tmp, err := newAddrManager(config.Balancer, config.Resolver, config.ResolverParseUrl)
-		if err != nil {
-			return nil, err
-		}
-		manager = tmp
-	}
-	client.addrManager = manager
 	// init engine
 	client.engine = transport.Manager.GetClientEngine(config.NetWork)()
 	eventD := client.engine.EventDriveInter()
@@ -122,29 +70,21 @@ func New(opts ...Option) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	// 使用负载均衡器选出一个地址
-	config.ServerAddr = client.addrManager.Target()
-	// init multi connection
-	client.concurrentConnect = make([]*lockConn, config.MuxConnection)
-	client.connDesc = &container2.RWMutexMap[transport.ConnAdapter, *lockConn]{}
-	for k := range client.concurrentConnect {
-		conn, err := client.engine.Client().NewConn(transport.NetworkClientConfig{
-			ServerAddr: config.ServerAddr,
-			KeepAlive:  config.KeepAlive,
-			Dialer:     nil,
-		})
-		if err != nil {
-			return nil, err
-		}
-		desc := &lockConn{
-			conn:      conn,
-			parser:    msgparser.New(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()}),
-			initSeq:   uint64(random.FastRand()),
-			initCtxId: uint64(random.FastRand()),
-		}
-		client.concurrentConnect[k] = desc
-		client.connDesc.Store(conn, desc)
-	}
+	// 初始化负载均衡功能
+	client.connSourceSet = &container2.RWMutexMap[transport.ConnAdapter, *connSource]{}
+	client.cm = new(connManager)
+	client.cm.balancer = config.BalancerFactory()
+	client.cm.selector = config.SelectorFactory(
+		config.MuxConnection,
+		func(node loadbalance.RpcNode) (transport.ConnAdapter, error) {
+			return client.engine.Client().NewConn(transport.NetworkClientConfig{
+				ServerAddr: node.Address,
+				KeepAlive:  config.KeepAlive,
+				Dialer:     nil,
+			})
+		},
+	)
+	client.cm.resolver = config.ResolverFactory(config.ResolverParseUrl, client.cm.balancer, time.Second)
 	// init goroutine pool
 	if config.PoolSize <= 0 {
 		// 关闭Async模式
@@ -152,187 +92,151 @@ func New(opts ...Option) (*Client, error) {
 	} else if config.ExecPoolBuilder != nil {
 		client.gp = config.ExecPoolBuilder.Builder(
 			pool.MaxTaskPoolSize/4, config.PoolSize, config.PoolSize*2, func(poolId int, err interface{}) {
-				client.logger.ErrorFromString(fmt.Sprintf("poolId : %d -> Panic : %v", poolId, err))
+				client.logger.Error(fmt.Sprintf("poolId : %d -> Panic : %v", poolId, err))
 			})
 	} else {
 		client.gp = pool.NewTaskPool(
 			pool.MaxTaskPoolSize/4, config.PoolSize, config.PoolSize*2, func(poolId int, err interface{}) {
-				client.logger.ErrorFromString(fmt.Sprintf("poolId : %d -> Panic : %v", poolId, err))
+				client.logger.Error(fmt.Sprintf("poolId : %d -> Panic : %v", poolId, err))
 			})
 	}
 	// plugins
 	client.pluginManager = &pluginManager{plugins: config.Plugins}
-	// encoderWp
-	client.encoderWp = config.Encoder
-	// codec
-	client.codecWp = config.Codec
 	// init callBacks register map
 	client.callBacks = container2.SyncMap118[string, func(rep []interface{}, err error)]{
 		SMap: sync.Map{},
 	}
 	// init ErrHandler
 	client.eHandle = config.ErrHandler
-	client.useMux = config.UseMux
 	return client, nil
 }
 
-func (c *Client) BindFunc(instanceName string, i interface{}) error {
+func (c *Client) BindFunc(sourceName string, i interface{}) error {
 	if i == nil {
 		return errors.New("register elem is nil")
 	}
-	if instanceName == "" {
+	if sourceName == "" {
 		return errors.New("the typ name is not defined")
 	}
-	elemD := metadata.ElemMeta{}
-	elemD.Typ = reflect.TypeOf(i)
-	elemD.Data = reflect.ValueOf(i)
+	source := new(metadata.Source)
+	source.InstanceType = reflect.TypeOf(i)
+	value := reflect.ValueOf(i)
 	// init map
-	elemD.Methods = make(map[string]*metadata.Process, elemD.Typ.NumMethod())
+	source.ProcessSet = make(map[string]*metadata.Process, value.NumMethod())
 	// NOTE: 这里的判断不能依靠map的len/cap来确定实例用于多少的绑定方法
 	// 因为len/cap都不能提供准确的信息,调用make()时指定的cap只是给真正创建map的函数一个提示
 	// 并不代表真实大小，对没有插入过数据的map调用len()永远为0
-	if elemD.Typ.NumMethod() == 0 {
+	if value.NumMethod() == 0 {
 		return errors.New("instance no method")
 	}
-	for i := 0; i < elemD.Typ.NumMethod(); i++ {
-		method := elemD.Typ.Method(i)
+	for i := 0; i < value.NumMethod(); i++ {
+		method := source.InstanceType.Method(i)
 		if method.IsExported() {
 			opt := &metadata.Process{
-				Value: method.Func,
+				Value: value.Method(i),
 			}
 			metaDataUtil.IFContextOrStream(opt, method.Type)
-			elemD.Methods[method.Name] = opt
+			source.ProcessSet[method.Name] = opt
 		}
 	}
-	c.elems.Store(instanceName, elemD)
+	for k, v := range source.ProcessSet {
+		serviceName := fmt.Sprintf("%s.%s", sourceName, k)
+		_, ok := c.services.LoadOk(serviceName)
+		if !ok {
+			return errors.New("service name already usage")
+		}
+		c.services.Store(serviceName, v)
+	}
 	return nil
 }
 
 // RawCall 该调用和Client.Call不同, 这个调用不会识别Method和对应的in/out list
 // 只会对args/reps直接序列化, 所以不可能携带正确的类型信息
-func (c *Client) RawCall(processName string, args ...interface{}) ([]interface{}, error) {
-	conn := getConnFromMux(c)
-	mp := sharedPool.TakeMessagePool()
-	wMsg := mp.Get().(*message.Message)
-	wMsg.Reset()
-	defer mp.Put(wMsg)
-	_, ctx, err := c.identArgAndEncode(processName, wMsg, conn, args, true)
-	if err != nil {
-		return nil, err
-	}
-	if err := c.sendCallMsg(ctx, wMsg, conn, false); err != nil {
-		return nil, err
-	}
-	rMsg, err := c.readMsg(ctx, wMsg.GetMsgId(), conn)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.parser.FreeMessage(rMsg)
-	resultSet := make([]interface{}, 0, 4)
-	iter := rMsg.PayloadsIterator()
-	for iter.Next() {
-		bytes := iter.Take()
-		if len(bytes) == 0 {
-			resultSet = append(resultSet, nil)
-			continue
-		}
-		var result interface{}
-		err := c.codecWp.Instance().Unmarshal(bytes, &result)
-		if err != nil {
-			return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, err)
-		}
-		resultSet = append(resultSet, result)
-	}
-	return resultSet, c.handleProcessRetErr(rMsg)
+func (c *Client) RawCall(service string, args ...interface{}) ([]interface{}, error) {
+	return c.call(service, nil, args, nil, false)
 }
 
-// SingleCall req/rep风格的RPC调用, 这要求rep必须是指针类型, 否则会panic
-func (c *Client) SingleCall(processName string, ctx context.Context, req interface{}, rep interface{}) error {
-	conn := getConnFromMux(c)
-	mp := sharedPool.TakeMessagePool()
-	wMsg := mp.Get().(*message.Message)
-	wMsg.Reset()
-	defer mp.Put(wMsg)
-	_, iCtx, err := c.identArgAndEncode(processName, wMsg, conn, []interface{}{ctx, req}, true)
-	if err != nil {
-		return err
+// Request req/rep风格的RPC调用, 这要求rep必须是指针类型, 否则会返回ErrCallArgsType
+func (c *Client) Request(service string, ctx context.Context, req interface{}, rep interface{}) error {
+	if req == nil {
+		return c.eHandle.LWarpErrorDesc(common.ErrCallArgsType, "response pointer equal nil")
 	}
-	if err := c.sendCallMsg(iCtx, wMsg, conn, false); err != nil {
-		return err
-	}
-	rMsg, err := c.readMsg(iCtx, wMsg.GetMsgId(), conn)
-	if err != nil {
-		return err
-	}
-	defer conn.parser.FreeMessage(rMsg)
-	iter := rMsg.PayloadsIterator()
-	switch {
-	case iter.Tail() == 0:
-		return c.handleProcessRetErr(rMsg)
-	default:
-		err := c.codecWp.Instance().Unmarshal(iter.Take(), rep)
-		if err != nil {
-			return c.eHandle.LWarpErrorDesc(common.ErrClient, err)
-		}
-		return c.handleProcessRetErr(rMsg)
-	}
+	_, err := c.call(service, nil, []interface{}{ctx, req}, []interface{}{rep}, false)
+	return err
 }
 
 // Call 远程过程返回的所有值都在rep中,sErr是调用过程中的错误，不是远程过程返回的错误
 // 现在的onErr回调函数将不起作用，sErr表示Client.Call()在调用一些函数返回的错误或者调用远程过程时返回的错误
 // 用户定义的远程过程返回的错误应该被安排在rep的最后一个槽位中
 // 生成器应该将优先将sErr错误返回
-func (c *Client) Call(processName string, args ...interface{}) ([]interface{}, error) {
-	conn := getConnFromMux(c)
+func (c *Client) Call(service string, args ...interface{}) ([]interface{}, error) {
+	return c.call(service, nil, args, nil, true)
+}
+
+func (c *Client) call(service string, opts []CallOption,
+	args []interface{}, reps []interface{}, check bool) ([]interface{}, lerror.LErrorDesc) {
+	cs, err := c.takeConnSource(service)
+	if err != nil {
+		return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, err)
+	}
 	mp := sharedPool.TakeMessagePool()
 	wMsg := mp.Get().(*message.Message)
 	defer mp.Put(wMsg)
 	wMsg.Reset()
-	method, ctx, err := c.identArgAndEncode(processName, wMsg, conn, args, false)
+	method, ctx, identErr := c.identArgAndEncode(service, wMsg, cs, args, !check)
 	if err != nil {
-		return nil, err
+		return nil, identErr
 	}
 	// 插件的OnCall阶段
 	if err := c.pluginManager.OnCall(wMsg, &args); err != nil {
-		c.logger.ErrorFromErr(err)
+		c.logger.Error("LRPC: client plugin OnCall failed: %v", err)
 	}
-	err = c.sendCallMsg(ctx, wMsg, conn, false)
+	sendErr := c.sendCallMsg(ctx, wMsg, cs, false)
 	if err != nil {
-		return nil, err
+		return nil, sendErr
 	}
-	rep := make([]interface{}, method.Type().NumOut()-1)
-	err = c.readMsgAndDecodeReply(ctx, wMsg.GetMsgId(), conn, method, rep)
-	c.pluginManager.OnResult(wMsg, &rep, err)
+	if reps == nil || len(reps) == 0 {
+		if check {
+			reps = make([]interface{}, method.Type().NumOut()-1)
+		}
+	}
+	var readErr lerror.LErrorDesc
+	reps, readErr = c.readMsgAndDecodeReply(ctx, wMsg.GetMsgId(), cs, method, reps)
+	c.pluginManager.OnResult(wMsg, &reps, err)
 	if err != nil {
-		return rep, err
+		return reps, readErr
 	}
-	return rep, nil
+	return reps, nil
 }
 
 // AsyncCall 该函数返回时至少数据已经经过Codec的序列化，调用者有责任检查error
 // 该函数可能会传递来自Codec和内部组件的错误，因为它在发送消息之前完成
-func (c *Client) AsyncCall(processName string, args ...interface{}) error {
+func (c *Client) AsyncCall(service string, args ...interface{}) error {
 	msg := message.New()
-	method, ctx, err := c.identArgAndEncode(processName, msg, nil, args, false)
+	method, ctx, err := c.identArgAndEncode(service, msg, nil, args, false)
 	if err != nil {
 		return err
 	}
 	return c.gp.Push(func() {
 		// 查找对应的回调函数
 		var callBackIsOk bool
-		cbFn, ok := c.callBacks.LoadOk(processName)
+		cbFn, ok := c.callBacks.LoadOk(service)
 		callBackIsOk = ok
 		// 在池中获取一个底层传输的连接
-		conn := getConnFromMux(c)
-		err := c.sendCallMsg(ctx, msg, conn, false)
+		conn, err := c.takeConnSource(service)
+		if err != nil {
+			cbFn(nil, err)
+			return
+		}
+		err = c.sendCallMsg(ctx, msg, conn, false)
 		if err != nil && callBackIsOk {
 			cbFn(nil, err)
 			return
 		} else if err != nil && !callBackIsOk {
 			return
 		}
-		rep := make([]interface{}, method.Type().NumOut()-1)
-		err = c.readMsgAndDecodeReply(ctx, msg.GetMsgId(), conn, method, rep)
+		reps := make([]interface{}, method.Type().NumOut()-1)
+		reps, err = c.readMsgAndDecodeReply(ctx, msg.GetMsgId(), conn, method, reps)
 		if err != nil && callBackIsOk {
 			cbFn(nil, err)
 			return
@@ -340,13 +244,25 @@ func (c *Client) AsyncCall(processName string, args ...interface{}) error {
 			return
 		}
 		if callBackIsOk {
-			cbFn(rep, nil)
+			cbFn(reps, nil)
 		}
 	})
 }
 
-func (c *Client) RegisterCallBack(processName string, fn func(rep []interface{}, err error)) {
-	c.callBacks.Store(processName, fn)
+func (c *Client) takeConnSource(service string) (*connSource, error) {
+	conn, err := c.cm.TakeConn(service)
+	if err != nil {
+		return nil, err
+	}
+	cs, ok := c.connSourceSet.LoadOk(conn)
+	if !ok {
+		return nil, errors.New("connection source not found")
+	}
+	return cs, nil
+}
+
+func (c *Client) RegisterCallBack(service string, fn func(rep []interface{}, err error)) {
+	c.callBacks.Store(service, fn)
 }
 
 func (c *Client) Close() error {
@@ -355,15 +271,9 @@ func (c *Client) Close() error {
 			return err
 		}
 	}
-	for _, v := range c.concurrentConnect {
-		err := v.conn.Close()
-		if err != nil {
-			return err
-		}
-	}
 	err := c.engine.Client().Stop()
 	if err != nil {
 		return err
 	}
-	return nil
+	return c.cm.resolver.Close()
 }
