@@ -178,7 +178,7 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 		if len(argBytes) == 0 {
 			continue
 		}
-		callArg, err := check.CoderType(c.Codec, argBytes, eface.Interface())
+		callArg, err := check.MarshalFromUnsafe(c.Codec, argBytes, eface.Interface())
 		if err != nil {
 			return nil, c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
 		}

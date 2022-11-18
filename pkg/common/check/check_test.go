@@ -7,9 +7,13 @@ import (
 )
 
 func TestCheckCoderType(t *testing.T) {
-	_, err := CoderType(&codec.Json{}, nil, nil)
-	if err == nil {
-		t.Fatal("error equal nil")
+	_, err := MarshalFromUnsafe(&codec.Json{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = MarshalFromUnsafe(&codec.Json{}, nil, map[string]string{})
+	if err != nil {
+		t.Fatal(err)
 	}
 	bytes := []byte("{\"hello\":\"123\",\"dd\":\"456\"}")
 	var testData map[string]string
@@ -17,14 +21,18 @@ func TestCheckCoderType(t *testing.T) {
 		"hello": "123",
 		"dd":    "456",
 	}
-	uTestData, err := CoderType(&codec.Json{}, bytes, testData)
+	uTestData, err := MarshalFromUnsafe(&codec.Json{}, bytes, testData)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assert.Equal(t, uTestData, comparaData)
-	uTestData, err = CoderType(&codec.Json{}, bytes, &testData)
+	uTestData, err = MarshalFromUnsafe(&codec.Json{}, bytes, &testData)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assert.Equal(t, uTestData, &comparaData)
+	uTestData, err = MarshalFromUnsafe(&codec.Json{}, bytes, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 }

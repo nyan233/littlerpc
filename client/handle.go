@@ -106,9 +106,9 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *co
 			reps = append(reps, nil)
 		}
 		for iter.Next() && marshalCount < len(reps) {
-			rep, err := check.CoderType(c.cfg.Codec, iter.Take(), reps[marshalCount])
+			rep, err := check.MarshalFromUnsafe(c.cfg.Codec, iter.Take(), reps[marshalCount])
 			if err != nil {
-				return reps, c.eHandle.LWarpErrorDesc(common.ErrCodecUnMarshalError, "CoderType failed", err)
+				return reps, c.eHandle.LWarpErrorDesc(common.ErrCodecUnMarshalError, "MarshalFromUnsafe failed", err)
 			}
 			reps[marshalCount] = rep
 		}
@@ -132,9 +132,9 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *co
 		})
 		iter.Reset()
 		for k, v := range outputList[:len(outputList)-1] {
-			returnV, err2 := check.CoderType(c.cfg.Codec, iter.Take(), v)
+			returnV, err2 := check.MarshalFromUnsafe(c.cfg.Codec, iter.Take(), v)
 			if err2 != nil {
-				return reps, c.eHandle.LWarpErrorDesc(common.ErrCodecUnMarshalError, "CoderType failed", err2.Error())
+				return reps, c.eHandle.LWarpErrorDesc(common.ErrCodecUnMarshalError, "MarshalFromUnsafe failed", err2.Error())
 			}
 			reps[k] = returnV
 		}
