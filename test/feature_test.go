@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"fmt"
 	lclient "github.com/nyan233/littlerpc/client"
 	"github.com/nyan233/littlerpc/pkg/common/logger"
 	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/plugins/metrics"
 	lserver "github.com/nyan233/littlerpc/server"
+	"github.com/zbh255/bilog"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -76,41 +79,61 @@ func TestServerAndClient(t *testing.T) {
 	}()
 	// 关闭服务器烦人的日志
 	logger.SetOpenLogger(false)
-	serverOpts := []lserver.Option{
+	baseServerOpts := []lserver.Option{
 		lserver.WithAddressServer(":1234"),
-		lserver.WithOpenLogger(false),
-		//lserver.WithDebug(true),
+		lserver.WithOpenLogger(true),
+		lserver.WithLogger(logger.New(bilog.NewLogger(os.Stdout, bilog.PANIC))),
+		lserver.WithPlugin(new(metrics.ServerMetricsPlugin)),
+		lserver.WithDebug(true),
 	}
-	clientOpts := []lclient.Option{
+	baseClientOpts := []lclient.Option{
 		lclient.WithAddress(":1234"),
 		lclient.WithMuxConnectionNumber(16),
-		lclient.WithPlugin(&metrics.ClientMetricsPlugin{}),
+		lclient.WithPlugin(new(metrics.ClientMetricsPlugin)),
 	}
-	t.Run("TestLRPCNoMuxProtocolNonTls", func(t *testing.T) {
-		cOpts := clientOpts
-		cOpts = append(cOpts, lclient.WithMuxWriter())
-		testServerAndClient(t, serverOpts, cOpts)
-	})
-	//t.Run("TestLRPCProtocolGzipNonTls", func(t *testing.T) {
-	//	cOpts := clientOpts
-	//	cOpts = append(cOpts, lclient.WithUseMux(false))
-	//	cOpts = append(cOpts, lclient.WithPacker("gzip"))
-	//	testServerAndClient(t, serverOpts, clientOpts)
-	//})
-	//t.Run("TestLRPCMuxProtocolNonTls", func(t *testing.T) {
-	//	cOpts := clientOpts
-	//	cOpts = append(cOpts, lclient.WithUseMux(true))
-	//	testServerAndClient(t, serverOpts, clientOpts)
-	//})
-	//t.Run("TestJsonRPC2SingleProtocolNonTls", func(t *testing.T) {
-	//	cOpts := clientOpts
-	//	cOpts = append(cOpts, lclient.WithUseMux(false))
-	//	cOpts = append(cOpts, lclient.WithWriter(msgwriter.Manager.Get(jsonrpc2.Header)))
-	//	cOpts = append(cOpts, lclient.WithProtocol("nbio_ws"))
-	//	sOpts := serverOpts
-	//	sOpts = append(sOpts, lserver.WithNetwork("nbio_ws"))
-	//	testServerAndClient(t, sOpts, cOpts)
-	//})
+	testRunConfigs := []struct {
+		TestName                         string
+		NoAbleUsageNoTransactionProtocol bool
+		ServerOptions                    []lserver.Option
+		ClientOptions                    []lclient.Option
+	}{
+		{
+			TestName:      "TestLRPCProtocol-%s-NoMux-NonTls",
+			ServerOptions: append(baseServerOpts),
+			ClientOptions: append(baseClientOpts, lclient.WithNoMuxWriter()),
+		},
+		{
+			TestName:      "TestLRPCProtocol-%s-Mux-NonTls",
+			ServerOptions: append(baseServerOpts),
+			ClientOptions: append(baseClientOpts, lclient.WithMuxWriter()),
+		},
+		{
+			TestName:      "TestLRPCProtocol-%s-NoMux-Gzip-NonTls",
+			ServerOptions: append(baseServerOpts),
+			ClientOptions: append(baseClientOpts, lclient.WithNoMuxWriter(), lclient.WithPacker("gzip")),
+		},
+		{
+			TestName:      "TestLRPCProtocol-%s-Mux-Gzip-NonTls",
+			ServerOptions: append(baseServerOpts),
+			ClientOptions: append(baseClientOpts, lclient.WithMuxWriter(), lclient.WithPacker("gzip")),
+		},
+		{
+			TestName:                         "TestJsonRPC2-%s-SingleProtocol-NonTls",
+			ServerOptions:                    append(baseServerOpts, lserver.WithNetwork("nbio_ws")),
+			ClientOptions:                    append(baseClientOpts, lclient.WithJsonRpc2Writer(), lclient.WithNetWork("nbio_ws")),
+			NoAbleUsageNoTransactionProtocol: true,
+		},
+	}
+	networks := []string{"nbio_ws", "nbio_tcp", "std_tcp"}
+	for _, network := range networks {
+		for _, runConfig := range testRunConfigs {
+			t.Run(fmt.Sprintf(runConfig.TestName, network), func(t *testing.T) {
+				testServerAndClient(t,
+					append(runConfig.ServerOptions, lserver.WithNetwork(network)),
+					append(runConfig.ClientOptions, lclient.WithNetWork(network)))
+			})
+		}
+	}
 }
 
 func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts []lclient.Option) {
@@ -146,7 +169,7 @@ func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts [
 
 	var wg sync.WaitGroup
 	// 启动多少的客户端
-	nGoroutine := 1000
+	nGoroutine := 1
 	// 一个客户端连续发送多少次消息
 	sendN := 50
 	addV := 65536
@@ -160,11 +183,17 @@ func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts [
 		j := i
 		go func() {
 			for i := 0; i < sendN; i++ {
-				_ = proxy.Add(int64(addV))
-				_ = proxy.CreateUser(context.Background(), &User{
+				err := proxy.Add(int64(addV))
+				if err != nil {
+					panic(err)
+				}
+				err = proxy.CreateUser(context.Background(), &User{
 					Id:   j + 100,
 					Name: "Jeni",
 				})
+				if err != nil {
+					panic(err)
+				}
 				user, _, err := proxy.SelectUser(context.Background(), j+100)
 				if err != nil {
 					panic(err)
@@ -203,7 +232,7 @@ func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts [
 			time.Sleep(time.Second * 10)
 			t.Log(metrics.ServerCallMetrics.LoadCount())
 			t.Log(metrics.ClientCallMetrics.LoadCount())
-			t.Log(proxy.GetCount())
+			//t.Log(proxy.GetCount())
 			t.Log(atomic.LoadInt64(&h.count))
 		}
 	}()
