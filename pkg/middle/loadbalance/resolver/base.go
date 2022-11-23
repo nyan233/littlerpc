@@ -8,6 +8,7 @@ import (
 
 // 解析器的各种实现的基本属性
 type resolverBase struct {
+	parseUrl     string
 	scanInterval time.Duration
 	updateInter  Update
 	closed       atomic.Value

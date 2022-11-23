@@ -2,7 +2,7 @@ package resolver
 
 import (
 	"github.com/nyan233/littlerpc/pkg/middle/loadbalance"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -21,40 +21,45 @@ type httpResolver struct {
 	resolverBase
 }
 
-func NewHttp(initUrl string, u Update, scanInterval time.Duration) Resolver {
-	hr := &httpResolver{}
+func NewHttp(initUrl string, u Update, scanInterval time.Duration) (Resolver, error) {
+	hr := new(httpResolver)
+	hr.parseUrl = initUrl
 	hr.scanInterval = scanInterval
 	hr.InjectUpdate(u)
+	nodes, err := hr.Parse()
+	if err != nil {
+		return nil, err
+	}
+	hr.updateInter.FullNotify(nodes)
 	go func() {
 		for {
 			time.Sleep(hr.scanInterval)
-			addrs, err := hr.Parse(initUrl)
+			nodes, err := hr.Parse()
 			if err != nil {
 				continue
-			}
-			nodes := make([]loadbalance.RpcNode, 0, len(addrs))
-			for _, v := range addrs {
-				nodes = append(nodes, loadbalance.RpcNode{
-					Address: v,
-					Weight:  1,
-				})
 			}
 			hr.updateInter.FullNotify(nodes)
 		}
 	}()
-	return hr
+	return hr, nil
 }
 
-func (h *httpResolver) Parse(addr string) ([]string, error) {
-	response, err := http.Get(addr)
+func (h *httpResolver) Parse() ([]loadbalance.RpcNode, error) {
+	response, err := http.Get(h.parseUrl)
 	if err != nil {
 		return nil, err
 	}
-	bytes, err := ioutil.ReadAll(response.Body)
+	defer response.Body.Close()
+	bytes, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, err
 	}
-	return strings.Split(string(bytes), "\n"), nil
+	nodeAddrs := strings.Split(string(bytes), "\n")
+	nodes := make([]loadbalance.RpcNode, 0, len(nodeAddrs))
+	for _, nodeAddr := range nodeAddrs {
+		nodes = append(nodes, loadbalance.RpcNode{Address: nodeAddr})
+	}
+	return nodes, nil
 }
 
 func (h *httpResolver) Scheme() string {

@@ -10,14 +10,15 @@ const (
 )
 
 var (
-	resolverCollection map[string]Factory
+	resolverCollection = make(map[string]Factory, 16)
 )
 
-type Factory func(initUrl string, u Update, scanInterval time.Duration) Resolver
+type Factory func(initUrl string, u Update, scanInterval time.Duration) (Resolver, error)
 
 // Resolver 解析器，负责从一个url中解析出需要负载均衡的地址
 type Resolver interface {
 	InjectUpdate(u Update)
+	Parse() (nodes []loadbalance.RpcNode, err error)
 	Scheme() string
 	Close() error
 }
