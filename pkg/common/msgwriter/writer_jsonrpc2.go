@@ -1,6 +1,7 @@
 package msgwriter
 
 import (
+	"encoding/base64"
 	"fmt"
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
@@ -25,12 +26,10 @@ func (j *JsonRPC2) Header() []byte {
 
 func (j *JsonRPC2) Write(arg Argument, header byte) perror.LErrorDesc {
 	switch arg.Message.GetMsgType() {
-	case message.Call:
+	case message.Call, message.ContextCancel:
 		return j.requestWrite(arg)
 	case message.Return:
 		return j.responseWrite(arg)
-	case message.ContextCancel:
-		return nil
 	default:
 		return arg.EHandle.LNewErrorDesc(perror.UnsafeOption,
 			"jsonrpc2 not supported message type", arg.Message.GetMsgType())
@@ -42,12 +41,59 @@ func (j *JsonRPC2) Reset() {
 }
 
 func (j *JsonRPC2) requestWrite(arg Argument) perror.LErrorDesc {
-	return arg.EHandle.LNewErrorDesc(perror.UnsafeOption, "jsonrpc2 not supported request message type")
+	request := jsonrpc2.Request{
+		BaseMessage: jsonrpc2.BaseMessage{
+			MetaData: make(map[string]string, 16),
+		},
+	}
+	request.MessageType = int(arg.Message.GetMsgType())
+	request.Id = arg.Message.GetMsgId()
+	request.Version = jsonrpc2.Version
+	arg.Message.MetaData.Range(func(key, val string) bool {
+		request.MetaData[key] = val
+		return true
+	})
+	request.Method = arg.Message.GetServiceName()
+	iter := arg.Message.PayloadsIterator()
+	request.Params = append(request.Params, '[')
+	for iter.Next() {
+		var bytes []byte
+		var err error
+		if arg.Encoder.Scheme() != message.DefaultPacker {
+			bytes, err = arg.Encoder.EnPacket(iter.Take())
+			if err != nil {
+				return arg.EHandle.LWarpErrorDesc(common.ErrMessageEncoding,
+					fmt.Sprintf("jsonrpc2 Packer UnPacket failed: %v", err))
+			}
+		} else {
+			bytes = iter.Take()
+		}
+		request.Params = append(request.Params, '"')
+		request.Params = append(request.Params, base64.StdEncoding.EncodeToString(bytes)...)
+		request.Params = append(request.Params, '"')
+		if iter.Next() {
+			request.Params = append(request.Params, ',')
+		}
+	}
+	request.Params = append(request.Params, ']')
+	bytes, err := j.Codec.Marshal(&request)
+	if err != nil {
+		return arg.EHandle.LWarpErrorDesc(common.ErrMessageEncoding,
+			fmt.Sprintf("jsonrpc2 Marshal LRPCMessage failed: %v", err))
+	}
+	writeN, err := arg.Conn.Write(bytes)
+	if err != nil {
+		return arg.EHandle.LWarpErrorDesc(common.ErrConnection, fmt.Sprintf("jsonrpc2 write failed: %v", err))
+	}
+	if writeN != len(bytes) {
+		return arg.EHandle.LWarpErrorDesc(common.ErrConnection, fmt.Sprintf("jsonrpc2 write no complete: (%d:%d)", writeN, len(bytes)))
+	}
+	return nil
 }
 
 func (j *JsonRPC2) responseWrite(arg Argument) perror.LErrorDesc {
 	var rep jsonrpc2.Response
-	rep.MessageType = jsonrpc2.ResponseType
+	rep.MessageType = int(arg.Message.GetMsgType())
 	errCode := arg.Message.MetaData.Load(message.ErrorCode)
 	errMessage := arg.Message.MetaData.Load(message.ErrorMessage)
 	errMore := arg.Message.MetaData.Load(message.ErrorMore)
@@ -57,6 +103,7 @@ func (j *JsonRPC2) responseWrite(arg Argument) perror.LErrorDesc {
 		case perror.ServiceNotFound:
 			rep.Error.Code = jsonrpc2.MethodNotFound
 		case perror.Success:
+			rep.Error = nil
 			goto handleResult
 		case perror.MessageDecodingFailed:
 			rep.Error.Code = jsonrpc2.ErrorParser
@@ -75,11 +122,12 @@ handleResult:
 	for iter.Next() {
 		rep.Result = append(rep.Result, iter.Take())
 	}
-	rep.Id = int64(arg.Message.GetMsgId())
+	rep.Id = arg.Message.GetMsgId()
 	rep.Version = jsonrpc2.Version
 	bytes, err := j.Codec.Marshal(rep)
 	if err != nil {
-		return arg.EHandle.LWarpErrorDesc(common.ErrCodecMarshalError, j.Codec.Scheme(), err.Error())
+		return arg.EHandle.LWarpErrorDesc(common.ErrMessageEncoding,
+			fmt.Sprintf("jsonrpc2 Marshal LRPCMessage failed: %v", err))
 	}
 	writeN, err := arg.Conn.Write(bytes)
 	if err != nil {

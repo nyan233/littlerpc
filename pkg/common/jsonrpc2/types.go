@@ -26,19 +26,28 @@ type Error struct {
 }
 
 type Response struct {
-	MessageType string   `json:"rpc_message_type"`
-	Version     string   `json:"jsonrpc"`
-	Result      [][]byte `json:"result"`
-	Error       *Error   `json:"error,omitempty"`
-	Id          int64    `json:"id"`
+	BaseMessage
+	ResponseTrait
+}
+
+type ResponseTrait struct {
+	Result [][]byte `json:"result"`
+	Error  *Error   `json:"error,omitempty"`
 }
 
 type Request struct {
-	MessageType string            `json:"rpc_message_type"`
+	BaseMessage
+	RequestTrait
+}
+
+type RequestTrait struct {
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
+}
+
+type BaseMessage struct {
+	MessageType int               `json:"rpc_message_type"`
 	Version     string            `json:"jsonrpc"`
-	Method      string            `json:"method"`
-	Codec       string            `json:"rpc_codec"`
+	Id          uint64            `json:"id"`
 	MetaData    map[string]string `json:"rpc_metadata"`
-	Id          int64             `json:"id"`
-	Params      []byte            `json:"params"`
 }

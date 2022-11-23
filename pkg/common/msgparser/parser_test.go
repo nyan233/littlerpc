@@ -51,18 +51,18 @@ func TestParser(t *testing.T) {
 }
 
 func TestJsonRPC2Parser(t *testing.T) {
-	desc1 := &jsonrpc2.Request{
-		Version: jsonrpc2.Version,
-		Method:  "Test.JsonRPC2Case1",
-		Codec:   "json",
-		MetaData: map[string]string{
-			"context-id": strconv.FormatInt(int64(random.FastRand()), 10),
-			"streamId":   strconv.FormatInt(int64(random.FastRand()), 10),
-		},
-		Id:     int64(random.FastRand()),
-		Params: []byte("[1203,\"hello world\",3563]"),
+	request := new(jsonrpc2.Request)
+	request.Version = jsonrpc2.Version
+	request.Method = "Test.JsonRPC2Case1"
+	request.MetaData = map[string]string{
+		"context-id": strconv.FormatInt(int64(random.FastRand()), 10),
+		"streamId":   strconv.FormatInt(int64(random.FastRand()), 10),
+		"codec":      "json",
+		"packer":     "text",
 	}
-	bytes, err := json.Marshal(desc1)
+	request.Id = uint64(random.FastRand())
+	request.Params = []byte("[1203,\"hello world\",3563]")
+	bytes, err := json.Marshal(request)
 	if err != nil {
 		t.Fatal(err)
 	}
