@@ -10,6 +10,10 @@ type pluginManager struct {
 	plugins []plugin.ServerPlugin
 }
 
+func newPluginManager(plugins []plugin.ServerPlugin) *pluginManager {
+	return &pluginManager{plugins: plugins}
+}
+
 func (m *pluginManager) AddPlugin(p plugin.ServerPlugin) {
 	m.plugins = append(m.plugins, p)
 }
