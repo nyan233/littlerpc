@@ -28,7 +28,7 @@ func (s *Server) messageKeepAlive(msgOpt *messageOpt, parser msgparser.Parser) {
 			return
 		}
 	}
-	s.encodeAndSendMsg(*msgOpt, msgOpt.Message)
+	s.encodeAndSendMsg(msgOpt, msgOpt.Message)
 }
 
 // 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
@@ -64,28 +64,29 @@ func (s *Server) messageCall(msgOpt *messageOpt, parser msgparser.Parser) {
 	if lErr != nil {
 		msgOpt.Free(parser)
 		s.handleError(msgOpt.Conn, msgOpt.Writer, msgId, lErr)
+		return
 	}
-	// 将使用完的Message归还给Parser
 	msgOpt.Free(parser)
-	if msgOpt.Service.Option.SyncCall {
-		s.callHandleUnit(*msgOpt, msgId)
-	}
-	if msgOpt.Service.Option.UseRawGoroutine {
+	switch {
+	case msgOpt.Service.Option.SyncCall:
+		s.callHandleUnit(msgOpt, msgId)
+	case msgOpt.Service.Option.UseRawGoroutine:
 		go func() {
-			s.callHandleUnit(*msgOpt, msgId)
+			s.callHandleUnit(msgOpt, msgId)
 		}()
-	}
-	err := s.taskPool.Push(func() {
-		s.callHandleUnit(*msgOpt, msgId)
-	})
-	if err != nil {
-		s.handleError(msgOpt.Conn, msgOpt.Writer, msgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
+	default:
+		err := s.taskPool.Push(func() {
+			s.callHandleUnit(msgOpt, msgId)
+		})
+		if err != nil {
+			s.handleError(msgOpt.Conn, msgOpt.Writer, msgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
+		}
 	}
 }
 
 // 提供用于任务池的处理调用用户过程的单元
 // 因为用户过程可能会有阻塞操作
-func (s *Server) callHandleUnit(msgOpt messageOpt, msgId uint64) {
+func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64) {
 	messageBuffer := sharedPool.TakeMessagePool()
 	msg := messageBuffer.Get().(*message.Message)
 	msg.Reset()
@@ -99,6 +100,7 @@ func (s *Server) callHandleUnit(msgOpt messageOpt, msgId uint64) {
 		msgOpt.CallArgs[0].Interface().(context.Context).Err() == nil && msgOpt.ContextId != 0 {
 		_ = s.ctxManager.CancelContext(msgOpt.Conn, msgOpt.ContextId)
 	}
+	// TODO v0.4.x计划删除
 	// 函数在没有返回error则填充nil
 	if len(callResult) == 0 {
 		callResult = append(callResult, reflect.ValueOf(nil))
@@ -124,18 +126,20 @@ func (s *Server) callHandleUnit(msgOpt messageOpt, msgId uint64) {
 	}
 	s.handleResult(msgOpt, msg, callResult)
 	if msgOpt.Service.Option.CompleteReUsage {
-		reUsageOffset := metaDataUtil.InputOffset(msgOpt.Service)
-		for i := reUsageOffset; i < len(msgOpt.CallArgs); i++ {
+		for i := metaDataUtil.InputOffset(msgOpt.Service); i < len(msgOpt.CallArgs); i++ {
 			msgOpt.CallArgs[i].Interface().(export.Reset).Reset()
 		}
 		msgOpt.Service.Pool.Put(msgOpt.CallArgs)
+		// 置空, 防止放回池中时被其它goroutine重新引用而导致数据竞争, 导致难以排查
+		// 置空则会导致data race时使用到它的其它goroutine Panic
+		msgOpt.CallArgs = nil
 	}
 	// 处理结果发送
 	s.encodeAndSendMsg(msgOpt, msg)
 }
 
 // 将用户过程的返回结果集序列化为可传输的json数据
-func (s *Server) handleResult(msgOpt messageOpt, msg *message.Message, callResult []reflect.Value) {
+func (s *Server) handleResult(msgOpt *messageOpt, msg *message.Message, callResult []reflect.Value) {
 	for _, v := range callResult[:len(callResult)-1] {
 		// NOTE : 对于指针类型或者隐含指针的类型, 他检查用户过程是否返回nil
 		// NOTE : 对于非指针的值传递类型, 它检查该类型是否是零值

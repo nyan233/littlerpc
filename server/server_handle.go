@@ -11,7 +11,7 @@ import (
 	"strconv"
 )
 
-func (s *Server) encodeAndSendMsg(msgOpt messageOpt, msg *message.Message) {
+func (s *Server) encodeAndSendMsg(msgOpt *messageOpt, msg *message.Message) {
 	err := msgOpt.Writer.Write(msgwriter.Argument{
 		Message: msg,
 		Conn:    msgOpt.Conn,

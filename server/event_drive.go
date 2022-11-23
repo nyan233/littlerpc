@@ -7,12 +7,13 @@ import (
 	lerror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/nyan233/littlerpc/protocol/message/analysis"
+	"math"
 	"time"
 )
 
 func (s *Server) onClose(conn transport.ConnAdapter, err error) {
 	if err != nil {
-		s.logger.Error("LRPC: Close Connection: %s:%s err: %v", conn.LocalAddr(), conn.RemoteAddr(), err)
+		s.logger.Warn("LRPC: Close Connection: %s:%s err: %v", conn.LocalAddr(), conn.RemoteAddr(), err)
 	} else {
 		s.logger.Info("LRPC: Close Connection: %s:%s", conn.LocalAddr(), conn.RemoteAddr())
 	}
@@ -33,9 +34,11 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 	}
 	traitMsgs, err := desc.Parser.Parse(data)
 	if err != nil {
-		// 错误处理过程会在严重错误时关闭连接, 所以msgId == 0也没有关系
+		// 错误处理过程会在严重错误时关闭连接, 所以msgId == math.MaxUint64也没有关系
+		// 设为0有可能和客户端生成的MessageId冲突
 		// 在解码消息失败时也不可能拿到正确的msgId
-		s.handleError(c, desc.Writer, 0, s.eHandle.LWarpErrorDesc(common.ErrMessageDecoding, err.Error()))
+		s.handleError(c, desc.Writer, math.MaxUint64, s.eHandle.LWarpErrorDesc(common.ErrMessageDecoding, err.Error()))
+		s.logger.Warn("LRPC: parse failed %v", err)
 		return
 	}
 	for _, traitMsg := range traitMsgs {

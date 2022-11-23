@@ -48,14 +48,13 @@ func newConnDesc(s *Server, msg msgparser.ParserMessage, writer msgwriter.Writer
 
 func (c *messageOpt) SelectCodecAndEncoder() {
 	// 根据读取的头信息初始化一些需要的Codec/Packer
-	cwp := codec.Get(c.Message.MetaData.Load(message.CodecScheme))
-	ewp := packer.Get(c.Message.MetaData.Load(message.PackerScheme))
-	if cwp == nil || ewp == nil {
+	c.Codec = codec.Get(c.Message.MetaData.Load(message.CodecScheme))
+	c.Packer = packer.Get(c.Message.MetaData.Load(message.PackerScheme))
+	if c.Codec == nil {
 		c.Codec = codec.Get(message.DefaultCodec)
+	}
+	if c.Packer == nil {
 		c.Packer = packer.Get(message.DefaultPacker)
-	} else {
-		c.Codec = cwp
-		c.Packer = ewp
 	}
 }
 
@@ -127,7 +126,7 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 	}
 	// 哨兵条件, 过程不要求任何输入时即可以提前结束
 	if serviceType.NumIn() == 0 {
-		return values, nil
+		return
 	}
 	defer func() {
 		if err == nil {
@@ -173,12 +172,7 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 	}
 	iter.Reset()
 	for i := inputStart; i < len(callArgs) && iter.Next(); i++ {
-		eface := callArgs[i]
-		argBytes := iter.Take()
-		if len(argBytes) == 0 {
-			continue
-		}
-		callArg, err := check.MarshalFromUnsafe(c.Codec, argBytes, eface.Interface())
+		callArg, err := check.MarshalFromUnsafe(c.Codec, iter.Take(), callArgs[i].Interface())
 		if err != nil {
 			return nil, c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
 		}
@@ -206,7 +200,7 @@ func (c *messageOpt) checkContextAndStream(callArgs []reflect.Value) (offset int
 			return 0, c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
 		}
 	}
-	callArgs = callArgs[0:]
+	callArgs = callArgs[:0]
 	switch {
 	case c.Service.SupportContext:
 		offset = 1

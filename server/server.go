@@ -14,8 +14,6 @@ import (
 	metaDataUtil "github.com/nyan233/littlerpc/pkg/common/utils/metadata"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/export"
-	"github.com/nyan233/littlerpc/pkg/middle/plugin"
-	"github.com/nyan233/littlerpc/plugins/metrics"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
 	"reflect"
 	"sync"
@@ -74,11 +72,7 @@ func New(opts ...Option) *Server {
 	// server engine
 	server.server = builder.Server()
 	// init plugin manager
-	server.pManager = &pluginManager{
-		plugins: append([]plugin.ServerPlugin{
-			&metrics.ServerMetricsPlugin{},
-		}, sc.Plugins...),
-	}
+	server.pManager = newPluginManager(sc.Plugins)
 	// init ErrorHandler
 	server.eHandle = sc.ErrHandler
 	// New TaskPool
@@ -161,8 +155,8 @@ func (s *Server) registerProcess(src *metadata.Source, process string, processVa
 	}
 	processDesc.Pool = sync.Pool{
 		New: func() interface{} {
-			tmp := make([]reflect.Value, 0, 8)
-			inputs := reflect2.FuncInputTypeList(processDesc.Value, 0, false, func(i int) bool {
+			tmp := make([]reflect.Value, jOffset, 8)
+			inputs := reflect2.FuncInputTypeList(processDesc.Value, jOffset, false, func(i int) bool {
 				return false
 			})
 			for _, v := range inputs {
@@ -173,7 +167,7 @@ func (s *Server) registerProcess(src *metadata.Source, process string, processVa
 	}
 asyncCheck:
 	if processDesc.Option.SyncCall {
-		// TODO
+		// TODO nop
 	}
 	return
 }
@@ -208,4 +202,9 @@ func (s *Server) Stop() error {
 		return err
 	}
 	return s.server.Stop()
+}
+
+// Restart TODO: 实现重启Server
+func (s *Server) Restart(opts ...Option) error {
+	return errors.New("restart not implemented")
 }

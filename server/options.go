@@ -39,6 +39,8 @@ func WithDefaultServer() Option {
 		WithNetwork("nbio_tcp")(config)
 		WithErrHandler(common2.DefaultErrHandler)(config)
 		WithExecPoolArgument(int32(runtime.NumCPU()*8), pool.MaxTaskPoolSize, 2048)(config)
+		WithTraitMessageParser()(config)
+		WithTraitMessageWriter()(config)
 	}
 }
 
@@ -106,10 +108,18 @@ func WithMessageParser(scheme string) Option {
 	}
 }
 
+func WithTraitMessageParser() Option {
+	return WithMessageParser(msgparser.DefaultParser)
+}
+
 func WithMessageWriter(scheme string) Option {
 	return func(config *Config) {
 		config.WriterFactory = msgwriter.Get(scheme)
 	}
+}
+
+func WithTraitMessageWriter() Option {
+	return WithMessageWriter(msgwriter.DefaultWriter)
 }
 
 func WithKeepAlive(open bool, timeOut time.Duration) Option {
