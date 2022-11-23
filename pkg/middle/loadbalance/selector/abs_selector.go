@@ -16,7 +16,10 @@ type selectorImpl struct {
 }
 
 func New(poolSize int, newConn ConnFactory, csf csFactory) Selector {
-	return &selectorImpl{newConn: newConn, csFactory: csf, poolSize: poolSize}
+	return &selectorImpl{
+		newConn: newConn, csFactory: csf, poolSize: poolSize,
+		nodes: make(map[string]ConnSelector, 128),
+	}
 }
 
 func (a *selectorImpl) Select(node loadbalance.RpcNode) (transport.ConnAdapter, error) {
@@ -24,7 +27,10 @@ func (a *selectorImpl) Select(node loadbalance.RpcNode) (transport.ConnAdapter, 
 	defer a.mu.Unlock()
 	cs, ok := a.nodes[node.Address]
 	if !ok {
-		return nil, errors.New("connection selector not found")
+		cs = a.csFactory(a.poolSize, func() (transport.ConnAdapter, error) {
+			return a.newConn(node)
+		})
+		a.nodes[node.Address] = cs
 	}
 	return cs.Take()
 }
@@ -36,6 +42,7 @@ func (a *selectorImpl) ReleaseNode(node loadbalance.RpcNode) int {
 	if !ok {
 		return -1
 	}
+	delete(a.nodes, node.Address)
 	return cs.Close()
 }
 

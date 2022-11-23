@@ -6,11 +6,13 @@ import (
 )
 
 type randomConnSelector struct {
-	arrayBaseConnSelector
+	*arrayBaseConnSelector
 }
 
 func newRandomConnSelector(poolSize int, newConn func() (transport.ConnAdapter, error)) ConnSelector {
-	return newArrayBaseConnSelector(poolSize, newConn)
+	return &randomConnSelector{
+		newArrayBaseConnSelector(poolSize, newConn),
+	}
 }
 
 func (r *randomConnSelector) Take() (transport.ConnAdapter, error) {

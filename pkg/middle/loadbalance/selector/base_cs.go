@@ -1,6 +1,7 @@
 package selector
 
 import (
+	"errors"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 )
 
@@ -10,7 +11,7 @@ type arrayBaseConnSelector struct {
 	conns        []transport.ConnAdapter
 }
 
-func newArrayBaseConnSelector(poolSize int, newConn func() (transport.ConnAdapter, error)) ConnSelector {
+func newArrayBaseConnSelector(poolSize int, newConn func() (transport.ConnAdapter, error)) *arrayBaseConnSelector {
 	return &arrayBaseConnSelector{
 		newConn:      newConn,
 		connPoolSize: poolSize,
@@ -18,7 +19,7 @@ func newArrayBaseConnSelector(poolSize int, newConn func() (transport.ConnAdapte
 }
 
 func (r *arrayBaseConnSelector) Take() (transport.ConnAdapter, error) {
-	return nil, nil
+	return nil, errors.New("base selector not implement Take()")
 }
 
 func (r *arrayBaseConnSelector) Acquire(conn transport.ConnAdapter) {

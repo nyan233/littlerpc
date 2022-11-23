@@ -5,12 +5,15 @@ import (
 )
 
 type orderConnSelector struct {
-	arrayBaseConnSelector
+	*arrayBaseConnSelector
 	count int
 }
 
 func newOrderConnSelector(poolSize int, newConn func() (transport.ConnAdapter, error)) ConnSelector {
-	return newArrayBaseConnSelector(poolSize, newConn)
+	return &orderConnSelector{
+		newArrayBaseConnSelector(poolSize, newConn),
+		0,
+	}
 }
 
 func (o *orderConnSelector) Take() (transport.ConnAdapter, error) {
