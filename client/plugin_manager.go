@@ -9,6 +9,10 @@ type pluginManager struct {
 	plugins []plugin.ClientPlugin
 }
 
+func newPluginManager(plugins []plugin.ClientPlugin) *pluginManager {
+	return &pluginManager{plugins: plugins}
+}
+
 func (p *pluginManager) OnCall(msg *message.Message, args *[]interface{}) error {
 	for _, plg := range p.plugins {
 		if err := plg.OnCall(msg, args); err != nil {

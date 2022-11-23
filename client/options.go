@@ -2,6 +2,7 @@ package client
 
 import (
 	"crypto/tls"
+	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	"time"
 
 	common2 "github.com/nyan233/littlerpc/pkg/common"
@@ -23,6 +24,8 @@ func (opt Option) apply(config *Config) {
 	opt(config)
 }
 
+// DirectConfig 这个接口不保证兼容性, 应该谨慎使用
+// Config中的内容可能会变动, 或者被修改了语义
 func DirectConfig(uCfg Config) Option {
 	return func(config *Config) {
 		*config = uCfg
@@ -39,6 +42,16 @@ func WithDefault() Option {
 		WithErrHandler(common2.DefaultErrHandler)(config)
 		WithPoolSize(0)(config)
 		WithNoMuxWriter()(config)
+		WithTraitMessageParser()(config)
+		WithOrderSelector()(config)
+	}
+}
+
+func WithJsonRpc2() Option {
+	return func(config *Config) {
+		WithJsonRpc2Writer()(config)
+		WithCodec(message.DefaultCodec)
+		WithPacker(message.DefaultPacker)
 	}
 }
 
@@ -157,28 +170,32 @@ func WithErrHandler(eh perror.LErrors) Option {
 	}
 }
 
-func WithWriter(writer msgwriter.Writer) Option {
+func WithTraitMessageParser() Option {
+	return WithMessageParser(msgparser.DefaultParser)
+}
+
+func WithMessageParser(scheme string) Option {
+	return func(config *Config) {
+		config.ParserFactory = msgparser.Get(scheme)
+	}
+}
+
+func WithMessageWriter(writer msgwriter.Writer) Option {
 	return func(config *Config) {
 		config.Writer = writer
 	}
 }
 
 func WithNoMuxWriter() Option {
-	return func(config *Config) {
-		config.Writer = msgwriter.NewLRPCNoMux()
-	}
+	return WithMessageWriter(msgwriter.NewLRPCNoMux())
 }
 
 func WithMuxWriter() Option {
-	return func(config *Config) {
-		config.Writer = msgwriter.NewLRPCMux()
-	}
+	return WithMessageWriter(msgwriter.NewLRPCMux())
 }
 
 func WithJsonRpc2Writer() Option {
-	return func(config *Config) {
-		config.Writer = msgwriter.NewJsonRPC2()
-	}
+	return WithMessageWriter(msgwriter.NewJsonRPC2())
 }
 
 func WithHashLoadBalance() Option {
