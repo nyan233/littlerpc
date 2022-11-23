@@ -37,29 +37,31 @@ func Unmarshal(data container.Slice[byte], msg *Block) error {
 
 // MarshalIteratorFromMessage buf1在返回时可以回收, buf2需要迭代器完成工作时才可回收
 // base Block中需要有除Payloads&PayloadLength之外的所有信息
-func MarshalIteratorFromMessage(msg *message.Message, buf1, buf2 *container.Slice[byte], base Block) *container.Iterator[[]byte] {
-	buf1.Reset()
-	buf2.Reset()
+func MarshalIteratorFromMessage(msg *message.Message, noMuxBuf, muxBuf *container.Slice[byte], base Block) (*container.Iterator[[]byte], error) {
+	noMuxBuf.Reset()
+	muxBuf.Reset()
 	var nBlock int
-	message.Marshal(msg, buf1)
-	for buf1.Len() > 0 {
+	if err := message.Marshal(msg, noMuxBuf); err != nil {
+		return nil, err
+	}
+	for noMuxBuf.Len() > 0 {
 		nBlock++
 		var copyLength int
-		if buf1.Len() > MaxPayloadSizeOnMux {
+		if noMuxBuf.Len() > MaxPayloadSizeOnMux {
 			copyLength = MaxPayloadSizeOnMux
 		} else {
-			copyLength = buf1.Len()
+			copyLength = noMuxBuf.Len()
 		}
-		base.SetPayloads((*buf1)[:copyLength])
-		*buf1 = (*buf1)[copyLength:]
-		Marshal(&base, buf2)
+		base.SetPayloads((*noMuxBuf)[:copyLength])
+		*noMuxBuf = (*noMuxBuf)[copyLength:]
+		Marshal(&base, muxBuf)
 	}
 	iter := container.NewIterator[[]byte](nBlock, true, func(current int) []byte {
 		start := current * MaxBlockSize
-		payloadLength := binary.BigEndian.Uint16((*buf2)[start+13 : start+15])
-		return (*buf2)[start : start+15+int(payloadLength)]
+		payloadLength := binary.BigEndian.Uint16((*muxBuf)[start+13 : start+15])
+		return (*muxBuf)[start : start+15+int(payloadLength)]
 	}, func() {
 		return
 	})
-	return iter
+	return iter, nil
 }

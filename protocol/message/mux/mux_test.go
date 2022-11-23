@@ -49,7 +49,7 @@ func FuzzMuxMessage(f *testing.F) {
 func TestMuxIterator(t *testing.T) {
 	msg := GenProtocolMessage()
 	buf1, buf2 := make([]byte, 100), make([]byte, 100)
-	iter := MarshalIteratorFromMessage(msg,
+	iter, err := MarshalIteratorFromMessage(msg,
 		(*container.Slice[byte])(&buf1), (*container.Slice[byte])(&buf2), Block{
 			Flags:         uint8(random.FastRand()),
 			StreamId:      random.FastRand(),
@@ -57,6 +57,9 @@ func TestMuxIterator(t *testing.T) {
 			PayloadLength: 0,
 			Payloads:      nil,
 		})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for iter.Next() {
 		t.Log(len(iter.Take()))
 	}
