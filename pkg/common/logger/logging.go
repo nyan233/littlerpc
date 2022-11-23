@@ -22,57 +22,64 @@ type LLogger interface {
 
 var DefaultLogger LLogger
 
-var loggerOpen int64
-
 type LLoggerImpl struct {
-	logging *bilog.SimpleLogger
+	loggerOpen int64
+	logging    bilog.Logger
+}
+
+func New(l bilog.Logger) LLogger {
+	return &LLoggerImpl{logging: l, loggerOpen: OpenLogger}
 }
 
 func (c *LLoggerImpl) Debug(format string, v ...interface{}) {
-	if !ReadLoggerStatus() {
+	if !c.ReadLoggerStatus() {
 		return
 	}
 	c.logging.Debug(fmt.Sprintf(format, v...))
 }
 
 func (c *LLoggerImpl) Info(format string, v ...interface{}) {
-	if !ReadLoggerStatus() {
+	if !c.ReadLoggerStatus() {
 		return
 	}
 	c.logging.Info(fmt.Sprintf(format, v...))
 }
 
 func (c *LLoggerImpl) Warn(format string, v ...interface{}) {
-	if !ReadLoggerStatus() {
+	if !c.ReadLoggerStatus() {
 		return
 	}
 	c.logging.Trace(fmt.Sprintf(format, v...))
 }
 
 func (c *LLoggerImpl) Error(format string, v ...interface{}) {
-	if !ReadLoggerStatus() {
+	if !c.ReadLoggerStatus() {
 		return
 	}
 	c.logging.ErrorFromString(fmt.Sprintf(format, v...))
 }
 
 func (c *LLoggerImpl) Panic(format string, v ...interface{}) {
-	if !ReadLoggerStatus() {
+	if !c.ReadLoggerStatus() {
 		return
 	}
 	c.logging.PanicFromString(fmt.Sprintf(format, v...))
 }
 
-func SetOpenLogger(ok bool) {
-	if ok {
-		atomic.StoreInt64(&loggerOpen, OpenLogger)
-	} else {
-		atomic.StoreInt64(&loggerOpen, CloseLogger)
-	}
+func (c *LLoggerImpl) ReadLoggerStatus() bool {
+	return atomic.LoadInt64(&c.loggerOpen) == OpenLogger
 }
 
-func ReadLoggerStatus() bool {
-	return atomic.LoadInt64(&loggerOpen) == OpenLogger
+func SetOpenLogger(ok bool) {
+	logger, typeOk := DefaultLogger.(*LLoggerImpl)
+	if !typeOk {
+		return
+	}
+	if ok {
+		atomic.StoreInt64(&logger.loggerOpen, OpenLogger)
+	} else {
+		atomic.StoreInt64(&logger.loggerOpen, CloseLogger)
+	}
 }
 
 func init() {
