@@ -16,7 +16,7 @@ func NewLRPCTrait(writers ...Writer) Writer {
 	handlers = append(handlers, writers...)
 	for _, handler := range handlers {
 		headerI, ok := handler.(header)
-		if !ok {
+		if ok {
 			for _, v := range headerI.Header() {
 				trait.handlers[v] = handler
 			}

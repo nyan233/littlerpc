@@ -55,7 +55,7 @@ func encoder(arg Argument) perror.LErrorDesc {
 }
 
 var (
-	factoryCollection map[string]Factory
+	factoryCollection = make(map[string]Factory, 16)
 )
 
 func Register(scheme string, wf Factory) {

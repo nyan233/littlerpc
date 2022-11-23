@@ -28,7 +28,7 @@ func (l *lRPCMux) Write(arg Argument, header byte) perror.LErrorDesc {
 	// 大于一个MuxBlock时则分片发送
 	buf1 := arg.Pool.Get().(*container.Slice[byte])
 	buf2 := arg.Pool.Get().(*container.Slice[byte])
-	iter := mux.MarshalIteratorFromMessage(msg, buf1, buf2, mux.Block{
+	iter, err := mux.MarshalIteratorFromMessage(msg, buf1, buf2, mux.Block{
 		Flags:    mux.Enabled,
 		StreamId: random.FastRand(),
 		MsgId:    msg.GetMsgId(),
@@ -44,11 +44,14 @@ func (l *lRPCMux) Write(arg Argument, header byte) perror.LErrorDesc {
 		arg.Pool.Put(buf2)
 	}()
 	arg.Pool.Put(buf1)
+	if err != nil {
+		return arg.EHandle.LWarpErrorDesc(common.ErrMessageEncoding, fmt.Sprintf("Encoding Iterator failed %v", err))
+	}
 	for iter.Next() {
 		bytes := iter.Take()
 		if bytes == nil {
 			return arg.EHandle.LWarpErrorDesc(common.ErrMessageDecoding,
-				fmt.Sprintf("NoMuxMessage Decoding failed, bytes len : %v", len(bytes)))
+				fmt.Sprintf("NoMuxMessage Encoding failed, bytes len : %v", len(bytes)))
 		}
 		writeN, err := arg.Conn.Write(bytes)
 		if err != nil {
