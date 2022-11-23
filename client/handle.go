@@ -19,11 +19,20 @@ import (
 )
 
 func (c *Client) handleProcessRetErr(msg *message.Message) perror.LErrorDesc {
-	errCode, err := strconv.Atoi(msg.MetaData.Load(message.ErrorCode))
-	if err != nil {
-		return perror.LWarpStdError(common.ErrClient, err.Error())
+	var errCode int
+	var err error
+	if errCodeStr := msg.MetaData.Load(message.ErrorCode); errCodeStr == "" {
+		errCode = common.Success.Code()
+	} else {
+		errCode, err = strconv.Atoi(msg.MetaData.Load(message.ErrorCode))
+		if err != nil {
+			return perror.LWarpStdError(common.ErrClient, err.Error())
+		}
 	}
-	errMessage := msg.MetaData.Load(message.ErrorMessage)
+	var errMessage string
+	if errMessage = msg.MetaData.Load(message.ErrorMessage); errCode == common.Success.Code() && errMessage == "" {
+		errMessage = common.Success.Message()
+	}
 	// Success表示无错误
 	if errCode == common.Success.Code() && errMessage == common.Success.Message() {
 		return nil
@@ -41,12 +50,16 @@ func (c *Client) handleProcessRetErr(msg *message.Message) perror.LErrorDesc {
 
 // NOTE: 使用完的Message一定要放回给Parser的分配器中
 func (c *Client) readMsg(ctx context.Context, msgId uint64, lc *connSource) (*message.Message, perror.LErrorDesc) {
+	notify := lc.LoadNotify()
+	if notify == nil {
+		return nil, c.eHandle.LWarpErrorDesc(common.ErrConnection, "notify channel already release")
+	}
 	// 接收服务器返回的调用结果并将header反序列化
-	done, ok := lc.notify.LoadOk(msgId)
+	done, ok := notify.LoadOk(msgId)
 	if !ok {
 		return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, "readMessage Lookup done channel failed")
 	}
-	defer lc.notify.Delete(msgId)
+	defer notify.Delete(msgId)
 readStart:
 	select {
 	case <-ctx.Done():
@@ -66,7 +79,7 @@ readStart:
 		goto readStart
 	case pMsg := <-done:
 		if pMsg.Error != nil {
-			return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, pMsg.Error.Error())
+			return nil, c.eHandle.LWarpErrorDesc(common.ErrConnection, pMsg.Error.Error())
 		}
 		msg := pMsg.Message
 		// TODO : Client Handle Ping&Pong
@@ -100,7 +113,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *co
 	// 主要针对没有绑定到Client的Service, 没有途径知道Service的input/output argument type
 	// 用于查找type的reflect.Value为nil证明客户端使用了RawCall, 因为没法知道参数的类型和参数的
 	// 个数, 只能用保守的方法估算, 有多少算多少
-	if method.IsNil() {
+	if !method.IsValid() {
 		var marshalCount int
 		if len(reps) <= marshalCount {
 			reps = append(reps, nil)
@@ -149,6 +162,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *co
 }
 
 // return method
+// raw == true 时 value.IsNil() == true, 这个方法保证这样的语义
 func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *connSource, args []interface{}, raw bool) (
 	value reflect.Value, ctx context.Context, err perror.LErrorDesc) {
 
@@ -168,7 +182,7 @@ func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *con
 		switch {
 		case serviceSource.SupportContext:
 			rCtx := args[0].(context.Context)
-			if rCtx == context.Background() {
+			if rCtx == context.Background() || rCtx == context.TODO() {
 				break
 			}
 			ctxIdStr := strconv.FormatUint(cs.GetContextId(), 10)
@@ -177,7 +191,7 @@ func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *con
 			break
 		case serviceSource.SupportStream && serviceSource.SupportContext:
 			rCtx := args[0].(context.Context)
-			if rCtx == context.Background() {
+			if rCtx == context.Background() || rCtx == context.TODO() {
 				break
 			}
 			ctxIdStr := strconv.FormatUint(cs.GetContextId(), 10)
@@ -185,6 +199,7 @@ func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *con
 		}
 		args = args[metadata.InputOffset(serviceSource):]
 	} else {
+		value = reflect.ValueOf(nil)
 		var inputStart int
 		for i := 0; i < 2; i++ {
 			if i == len(args) {
@@ -194,7 +209,7 @@ func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *con
 			case context.Context:
 				inputStart++
 				iCtx := args[i].(context.Context)
-				if iCtx == context.Background() {
+				if iCtx == context.Background() || iCtx == context.TODO() {
 					break
 				}
 				ctxIdStr := strconv.FormatUint(cs.GetContextId(), 10)
@@ -219,7 +234,7 @@ func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *con
 }
 
 // direct == true表示直接发送消息, false表示sendMsg自己会将Message的类型修改为Call
-// context中保存ContextId则不够true or false都会被写入
+// context中保存ContextId则不管true or false都会被写入
 func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *connSource, direct bool) perror.LErrorDesc {
 	// init header
 	if !direct {
@@ -232,13 +247,21 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *conn
 			msg.MetaData.Store(message.PackerScheme, c.cfg.Packer.Scheme())
 		}
 		// 注册用于通知的Channel
-		lc.notify.Store(msg.GetMsgId(), make(chan Complete, 1))
+		notify := lc.LoadNotify()
+		if notify == nil {
+			return c.eHandle.LWarpErrorDesc(common.ErrConnection, "notify channel already release")
+		}
+		notify.Store(msg.GetMsgId(), make(chan Complete, 1))
 	}
-	if ctx != context.Background() {
-		msg.MetaData.Store(message.ContextId, ctx.Value(message.ContextId).(string))
+	if ctx != context.Background() && ctx != context.TODO() {
+		ctxIdStr, ok := ctx.Value(message.ContextId).(string)
+		if !ok {
+			return c.eHandle.LWarpErrorDesc(common.ErrClient, "register context but context id not found")
+		}
+		msg.MetaData.Store(message.ContextId, ctxIdStr)
 	}
 	// 具体写入器已经提前被选定好, 客户端不需要泛写入器, 所以Header可以忽略
-	stdErr := c.cfg.Writer.Write(msgwriter.Argument{
+	writeErr := c.cfg.Writer.Write(msgwriter.Argument{
 		Message: msg,
 		Conn:    lc.conn,
 		Encoder: c.cfg.Packer,
@@ -252,8 +275,14 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *conn
 		},
 		EHandle: c.eHandle,
 	}, math.MaxUint8)
-	if stdErr != nil {
-		return c.eHandle.LWarpErrorDesc(common.ErrClient, stdErr.Error(), lc.conn.Close())
+	if writeErr != nil {
+		switch writeErr.Code() {
+		case perror.UnsafeOption, perror.MessageEncodingFailed:
+			_ = lc.conn.Close()
+		default:
+			c.logger.Warn("LRPC: sendCallMsg Writer.Write return error: %v", writeErr)
+		}
+		return c.eHandle.LWarpErrorDesc(writeErr, "sendCallMsg usage Writer.Write failed")
 	}
-	return nil
+	return common.Success
 }

@@ -29,7 +29,7 @@ type connSource struct {
 	// 负责消息的解析
 	parser msgparser.Parser
 	// 用于事件循环读取完毕的通知
-	notify container2.MutexMap[uint64, chan Complete]
+	notify atomic.Value
 }
 
 func (lc *connSource) GetMsgId() uint64 {
@@ -38,6 +38,15 @@ func (lc *connSource) GetMsgId() uint64 {
 
 func (lc *connSource) GetContextId() uint64 {
 	return atomic.AddUint64(&lc.initCtxId, 1)
+}
+
+func (lc *connSource) SwapNotify(notify *container2.MutexMap[uint64, chan Complete]) *container2.MutexMap[uint64, chan Complete] {
+	return lc.notify.Swap(notify).(*container2.MutexMap[uint64, chan Complete])
+}
+
+func (lc *connSource) LoadNotify() (notify *container2.MutexMap[uint64, chan Complete]) {
+	notify, _ = lc.notify.Load().(*container2.MutexMap[uint64, chan Complete])
+	return
 }
 
 type connManager struct {
