@@ -4,10 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
-	"sync"
-	"time"
-
 	"github.com/nyan233/littlerpc/internal/pool"
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/logger"
@@ -18,6 +14,9 @@ import (
 	"github.com/nyan233/littlerpc/pkg/middle/loadbalance"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
+	"reflect"
+	"sync"
+	"time"
 )
 
 type Complete struct {
@@ -57,7 +56,9 @@ func New(opts ...Option) (*Client, error) {
 	for _, v := range opts {
 		v(config)
 	}
-	client := &Client{}
+	client := &Client{
+		cfg: config,
+	}
 	client.logger = config.Logger
 	client.eHandle = config.ErrHandler
 	// init engine
@@ -73,7 +74,10 @@ func New(opts ...Option) (*Client, error) {
 	// 初始化负载均衡功能
 	client.connSourceSet = &container2.RWMutexMap[transport.ConnAdapter, *connSource]{}
 	client.cm = new(connManager)
-	client.cm.balancer = config.BalancerFactory()
+	client.cm.cfg = config
+	if config.BalancerFactory != nil {
+		client.cm.balancer = config.BalancerFactory()
+	}
 	client.cm.selector = config.SelectorFactory(
 		config.MuxConnection,
 		func(node loadbalance.RpcNode) (transport.ConnAdapter, error) {
@@ -84,7 +88,12 @@ func New(opts ...Option) (*Client, error) {
 			})
 		},
 	)
-	client.cm.resolver = config.ResolverFactory(config.ResolverParseUrl, client.cm.balancer, time.Second)
+	if config.ResolverFactory != nil {
+		client.cm.resolver, err = config.ResolverFactory(config.ResolverParseUrl, client.cm.balancer, time.Second)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// init goroutine pool
 	if config.PoolSize <= 0 {
 		// 关闭Async模式
@@ -101,7 +110,7 @@ func New(opts ...Option) (*Client, error) {
 			})
 	}
 	// plugins
-	client.pluginManager = &pluginManager{plugins: config.Plugins}
+	client.pluginManager = newPluginManager(config.Plugins)
 	// init callBacks register map
 	client.callBacks = container2.SyncMap118[string, func(rep []interface{}, err error)]{
 		SMap: sync.Map{},
@@ -142,7 +151,7 @@ func (c *Client) BindFunc(sourceName string, i interface{}) error {
 	for k, v := range source.ProcessSet {
 		serviceName := fmt.Sprintf("%s.%s", sourceName, k)
 		_, ok := c.services.LoadOk(serviceName)
-		if !ok {
+		if ok {
 			return errors.New("service name already usage")
 		}
 		c.services.Store(serviceName, v)
@@ -151,48 +160,77 @@ func (c *Client) BindFunc(sourceName string, i interface{}) error {
 }
 
 // RawCall 该调用和Client.Call不同, 这个调用不会识别Method和对应的in/out list
-// 只会对args/reps直接序列化, 所以不可能携带正确的类型信息
+// 只会对除context.Context/stream.LStream外的args/reps直接序列化
 func (c *Client) RawCall(service string, args ...interface{}) ([]interface{}, error) {
 	return c.call(service, nil, args, nil, false)
 }
 
 // Request req/rep风格的RPC调用, 这要求rep必须是指针类型, 否则会返回ErrCallArgsType
-func (c *Client) Request(service string, ctx context.Context, req interface{}, rep interface{}) error {
-	if req == nil {
+func (c *Client) Request(service string, ctx context.Context, request interface{}, response interface{}) error {
+	if response == nil {
 		return c.eHandle.LWarpErrorDesc(common.ErrCallArgsType, "response pointer equal nil")
 	}
-	_, err := c.call(service, nil, []interface{}{ctx, req}, []interface{}{rep}, false)
+	_, err := c.call(service, nil, []interface{}{ctx, request}, []interface{}{response}, false)
 	return err
 }
 
-// Call 远程过程返回的所有值都在rep中,sErr是调用过程中的错误，不是远程过程返回的错误
-// 现在的onErr回调函数将不起作用，sErr表示Client.Call()在调用一些函数返回的错误或者调用远程过程时返回的错误
-// 用户定义的远程过程返回的错误应该被安排在rep的最后一个槽位中
-// 生成器应该将优先将sErr错误返回
+// Requests multi request and response
+func (c *Client) Requests(service string, requests []interface{}, responses []interface{}) error {
+	if responses == nil || len(responses) > 0 {
+		return c.eHandle.LWarpErrorDesc(common.ErrCallArgsType, "responses length equal zero")
+	}
+	for _, response := range responses {
+		if response == nil {
+			return c.eHandle.LWarpErrorDesc(common.ErrCallArgsType, "response pointer equal nil")
+		}
+	}
+	_, err := c.call(service, nil, requests, responses, false)
+	return err
+}
+
+// Call 返回的error可能是由Server/Client本身产生的, 也有可能是调用用户过程返回的, 这些都会被Call
+// 视为错误, args为用户参数, 即context.Context & stream.LStream都会被放置在此, 如果存在的话.
+// Call实现context.Context传播的语义, 即传递的Context cancel时, client会同时将server端的
+// Context cancel, 但不会影响到自身的调用过程, 如果cancel之后, remote process不返回, 那么这次调用将会阻塞
+// 注册了元信息的过程返回的result数量始终等于自身结果数量-1, 因为error不包括在reps中, 不管发生了什么错误, 除非
+// 找不到注册的元信息
 func (c *Client) Call(service string, args ...interface{}) ([]interface{}, error) {
 	return c.call(service, nil, args, nil, true)
 }
 
 func (c *Client) call(service string, opts []CallOption,
-	args []interface{}, reps []interface{}, check bool) ([]interface{}, lerror.LErrorDesc) {
+	args []interface{}, reps []interface{}, check bool) (completeReps []interface{}, completeErr lerror.LErrorDesc) {
+	defer func() {
+		if completeErr != nil && check && (completeReps == nil || len(completeReps) == 0) {
+			if serviceInstance, ok := c.services.LoadOk(service); ok {
+				completeReps = make([]interface{}, serviceInstance.Value.Type().NumOut()-1)
+			}
+		}
+	}()
 	cs, err := c.takeConnSource(service)
-	if err != nil {
+	if err != nil && check {
 		return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, err)
 	}
 	mp := sharedPool.TakeMessagePool()
-	wMsg := mp.Get().(*message.Message)
-	defer mp.Put(wMsg)
-	wMsg.Reset()
-	method, ctx, identErr := c.identArgAndEncode(service, wMsg, cs, args, !check)
+	writeMsg := mp.Get().(*message.Message)
+	defer mp.Put(writeMsg)
+	writeMsg.Reset()
+	method, ctx, identErr := c.identArgAndEncode(service, writeMsg, cs, args, !check)
 	if err != nil {
 		return nil, identErr
 	}
 	// 插件的OnCall阶段
-	if err := c.pluginManager.OnCall(wMsg, &args); err != nil {
+	if err = c.pluginManager.OnCall(writeMsg, &args); err != nil {
 		c.logger.Error("LRPC: client plugin OnCall failed: %v", err)
 	}
-	sendErr := c.sendCallMsg(ctx, wMsg, cs, false)
-	if err != nil {
+	sendErr := c.sendCallMsg(ctx, writeMsg, cs, false)
+	switch sendErr.Code() {
+	case lerror.ConnectionErr:
+		// TODO 连接错误启动重试
+		return nil, sendErr
+	case lerror.Success:
+		break
+	default:
 		return nil, sendErr
 	}
 	if reps == nil || len(reps) == 0 {
@@ -201,14 +239,20 @@ func (c *Client) call(service string, opts []CallOption,
 		}
 	}
 	var readErr lerror.LErrorDesc
-	reps, readErr = c.readMsgAndDecodeReply(ctx, wMsg.GetMsgId(), cs, method, reps)
-	c.pluginManager.OnResult(wMsg, &reps, err)
-	if err != nil {
+	reps, readErr = c.readMsgAndDecodeReply(ctx, writeMsg.GetMsgId(), cs, method, reps)
+	c.pluginManager.OnResult(writeMsg, &reps, readErr)
+	switch readErr.Code() {
+	case lerror.ConnectionErr:
+		// TODO 连接错误启动重试
+		return reps, readErr
+	case lerror.Success:
+		return reps, nil
+	default:
 		return reps, readErr
 	}
-	return reps, nil
 }
 
+// AsyncCall TODO 改进这个不合时宜的API
 // AsyncCall 该函数返回时至少数据已经经过Codec的序列化，调用者有责任检查error
 // 该函数可能会传递来自Codec和内部组件的错误，因为它在发送消息之前完成
 func (c *Client) AsyncCall(service string, args ...interface{}) error {
