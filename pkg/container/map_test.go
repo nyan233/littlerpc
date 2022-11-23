@@ -8,13 +8,13 @@ import (
 )
 
 func TestAllMap(t *testing.T) {
-	type Map interface {
-		LoadOk(string) (int, bool)
-		Store(string, int)
-		Delete(string)
+	type Map[Key any, Value any] interface {
+		LoadOk(Key) (Value, bool)
+		Store(Key, Value)
+		Delete(Key)
 		Len() int
 	}
-	printTestMap := func(printFn func(args ...any), iMap Map, errStr string) {
+	printTestMap := func(printFn func(args ...any), iMap Map[string, int], errStr string) {
 		switch iMap.(type) {
 		case *MutexMap[string, int]:
 			printFn("MutexMap    : ", errStr)
@@ -32,7 +32,7 @@ func TestAllMap(t *testing.T) {
 	}
 	const KeyNum int = 16384
 	for i := 0; i < 4; i++ {
-		var iMap Map
+		var iMap Map[string, int]
 		switch i {
 		case 0:
 			iMap = &MutexMap[string, int]{}

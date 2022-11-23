@@ -68,7 +68,7 @@ func (m *SliceMap[K, V]) Delete(key K) {
 	return
 }
 
-func (m *SliceMap[K, V]) Range(fn func(K, V) bool) {
+func (m *SliceMap[K, V]) Range(fn func(K, V) (next bool)) {
 	initK := *new(K)
 	for k, v := range m.keys {
 		if initK == v {

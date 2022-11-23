@@ -60,3 +60,11 @@ func (m *MutexMap[Key, Value]) Len() int {
 	defer m.mu.Unlock()
 	return len(m.mp)
 }
+
+func (m *MutexMap[Key, Value]) Clean() map[Key]Value {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	old := m.mp
+	m.mp = make(map[Key]Value, 16)
+	return old
+}
