@@ -5,7 +5,6 @@ import (
 	"fmt"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	"github.com/nyan233/littlerpc/pkg/common"
-	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	metaDataUtil "github.com/nyan233/littlerpc/pkg/common/utils/metadata"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
@@ -17,8 +16,8 @@ import (
 )
 
 // 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
-func (s *Server) messageKeepAlive(msgOpt *messageOpt, parser msgparser.Parser) {
-	defer msgOpt.Free(parser)
+func (s *Server) messageKeepAlive(msgOpt *messageOpt) {
+	defer msgOpt.Free()
 	msgOpt.Message.SetMsgType(message.Pong)
 	if s.config.KeepAlive {
 		err := msgOpt.Conn.SetDeadline(time.Now().Add(s.config.KeepAliveTimeout))
@@ -32,8 +31,8 @@ func (s *Server) messageKeepAlive(msgOpt *messageOpt, parser msgparser.Parser) {
 }
 
 // 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
-func (s *Server) messageContextCancel(msgOpt *messageOpt, parser msgparser.Parser) {
-	defer msgOpt.Free(parser)
+func (s *Server) messageContextCancel(msgOpt *messageOpt) {
+	defer msgOpt.Free()
 	ctxIdStr, ok := msgOpt.Message.MetaData.LoadOk(message.ContextId)
 	if !ok {
 		s.handleError(msgOpt.Conn, msgOpt.Writer, msgOpt.Message.GetMsgId(), perror.LWarpStdError(
@@ -52,31 +51,31 @@ func (s *Server) messageContextCancel(msgOpt *messageOpt, parser msgparser.Parse
 }
 
 // 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
-func (s *Server) messageCall(msgOpt *messageOpt, parser msgparser.Parser) {
+func (s *Server) messageCall(msgOpt *messageOpt) {
 	msgId := msgOpt.Message.GetMsgId()
 	lErr := msgOpt.RealPayload()
 	if lErr != nil {
-		msgOpt.Free(parser)
+		msgOpt.Free()
 		s.handleError(msgOpt.Conn, msgOpt.Writer, msgId, lErr)
 		return
 	}
 	lErr = msgOpt.Check()
 	if lErr != nil {
-		msgOpt.Free(parser)
+		msgOpt.Free()
 		s.handleError(msgOpt.Conn, msgOpt.Writer, msgId, lErr)
 		return
 	}
-	msgOpt.Free(parser)
 	switch {
 	case msgOpt.Service.Option.SyncCall:
-		s.callHandleUnit(msgOpt, msgId)
+		s.callHandleUnit(msgOpt)
 	case msgOpt.Service.Option.UseRawGoroutine:
 		go func() {
-			s.callHandleUnit(msgOpt, msgId)
+			s.callHandleUnit(msgOpt)
 		}()
 	default:
-		err := s.taskPool.Push(func() {
-			s.callHandleUnit(msgOpt, msgId)
+		defer msgOpt.Free()
+		err := s.taskPool.Push(msgOpt.Message.GetServiceName(), func() {
+			s.callHandleUnit(msgOpt)
 		})
 		if err != nil {
 			s.handleError(msgOpt.Conn, msgOpt.Writer, msgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
@@ -86,7 +85,10 @@ func (s *Server) messageCall(msgOpt *messageOpt, parser msgparser.Parser) {
 
 // 提供用于任务池的处理调用用户过程的单元
 // 因为用户过程可能会有阻塞操作
-func (s *Server) callHandleUnit(msgOpt *messageOpt, msgId uint64) {
+func (s *Server) callHandleUnit(msgOpt *messageOpt) {
+	msgId := msgOpt.Message.GetMsgId()
+	msgOpt.Free()
+
 	messageBuffer := sharedPool.TakeMessagePool()
 	msg := messageBuffer.Get().(*message.Message)
 	msg.Reset()

@@ -41,6 +41,7 @@ func WithDefaultServer() Option {
 		WithExecPoolArgument(int32(runtime.NumCPU()*8), pool.MaxTaskPoolSize, 2048)(config)
 		WithTraitMessageParser()(config)
 		WithTraitMessageWriter()(config)
+		WithTaskPool()(config)
 	}
 }
 
@@ -82,10 +83,18 @@ func WithErrHandler(eh perror.LErrors) Option {
 	}
 }
 
-func WithExecPool(builder export.TaskPoolBuilder) Option {
+func WithExecPool(builder export.TaskPoolBuilder[string]) Option {
 	return func(config *Config) {
 		config.ExecPoolBuilder = builder
 	}
+}
+
+func WithFixedPool() Option {
+	return WithExecPool(poolBuilder[string](pool.NewFixedPool[string]))
+}
+
+func WithTaskPool() Option {
+	return WithExecPool(poolBuilder[string](pool.NewTaskPool[string]))
 }
 
 func WithExecPoolArgument(minSize, maxSize, bufSize int32) Option {

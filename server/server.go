@@ -35,7 +35,7 @@ type Server struct {
 	// Server Engine
 	server transport.ServerEngine
 	// 任务池
-	taskPool pool.TaskPool
+	taskPool pool.TaskPool[string]
 	// 管理的连接与其拥有的资源
 	connsSourceDesc container.RWMutexMap[transport.ConnAdapter, *connSourceDesc]
 	// logger
@@ -80,7 +80,7 @@ func New(opts ...Option) *Server {
 		server.taskPool = sc.ExecPoolBuilder.Builder(
 			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, debug.ServerRecover(server.logger))
 	} else {
-		server.taskPool = pool.NewTaskPool(
+		server.taskPool = pool.NewTaskPool[string](
 			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, debug.ServerRecover(server.logger))
 	}
 	// init reflection service

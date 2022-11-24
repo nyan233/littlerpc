@@ -30,6 +30,7 @@ type messageOpt struct {
 	Codec     codec.Codec
 	Packer    packer.Packer
 	Message   *message.Message
+	freeFunc  func(msg *message.Message)
 	Conn      transport.ConnAdapter
 	Service   *metadata.Process
 	Writer    msgwriter.Writer
@@ -77,10 +78,13 @@ func (c *messageOpt) RealPayload() perror.LErrorDesc {
 	return nil
 }
 
-func (c *messageOpt) Free(parser msgparser.Parser) {
-	msg := c.Message
+func (c *messageOpt) Free() {
+	c.freeFunc(c.Message)
 	c.Message = nil
-	parser.Free(msg)
+}
+
+func (c *messageOpt) setFreeFunc(f func(msg *message.Message)) {
+	c.freeFunc = f
 }
 
 // UseMux TODO: 计划删除, 这样做并不能判断是否使用了Mux

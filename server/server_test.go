@@ -55,7 +55,7 @@ func newTestServer(nilConn transport.ConnAdapter) (*Server, error) {
 	sc := &Config{}
 	WithDefaultServer()(sc)
 	server.eHandle = sc.ErrHandler
-	server.taskPool = pool.NewTaskPool(sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, nil)
+	server.taskPool = pool.NewTaskPool[string](sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, nil)
 	server.logger = &testLogger{logger: sc.Logger}
 	server.pManager = &pluginManager{plugins: sc.Plugins}
 	server.config = sc

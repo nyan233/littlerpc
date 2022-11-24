@@ -26,7 +26,7 @@ type Config struct {
 	PoolMinSize     int32
 	PoolMaxSize     int32
 	PoolBufferSize  int32
-	ExecPoolBuilder export.TaskPoolBuilder
+	ExecPoolBuilder export.TaskPoolBuilder[string]
 	Debug           bool
 	ParserFactory   msgparser.Factory
 	WriterFactory   msgwriter.Factory

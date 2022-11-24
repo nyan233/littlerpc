@@ -45,16 +45,19 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		// init message option
 		msgOpt := newConnDesc(s, traitMsg, desc.Writer, c)
 		msgOpt.SelectCodecAndEncoder()
+		msgOpt.setFreeFunc(func(msg *message.Message) {
+			desc.Parser.Free(msg)
+		})
 		switch traitMsg.Message.GetMsgType() {
 		case message.Ping:
-			s.messageKeepAlive(msgOpt, desc.Parser)
+			s.messageKeepAlive(msgOpt)
 		case message.ContextCancel:
-			s.messageContextCancel(msgOpt, desc.Parser)
+			s.messageContextCancel(msgOpt)
 		case message.Call:
-			s.messageCall(msgOpt, desc.Parser)
+			s.messageCall(msgOpt)
 		default:
 			// 释放消息, 这一步所有分支内都不可少
-			msgOpt.Free(desc.Parser)
+			msgOpt.Free()
 			s.handleError(c, msgOpt.Writer, traitMsg.Message.GetMsgId(), lerror.LWarpStdError(common.ErrServer,
 				"Unknown Message Call Type", traitMsg.Message.GetMsgType()))
 			continue
