@@ -36,4 +36,16 @@ func TestReflection(t *testing.T) {
 	}
 	bytes, _ := json.Marshal(argumentType)
 	t.Log(string(bytes))
+	allCodec, err := reflection.AllCodec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytes, _ = json.Marshal(allCodec)
+	t.Log(string(bytes))
+	allPacker, err := reflection.AllPacker()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytes, _ = json.Marshal(allPacker)
+	t.Log(string(bytes))
 }

@@ -3,7 +3,17 @@ package server
 import (
 	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/metadata"
+	"github.com/nyan233/littlerpc/pkg/middle/codec"
+	"github.com/nyan233/littlerpc/pkg/middle/packer"
 	"reflect"
+	_ "unsafe"
+)
+
+var (
+	//go:linkname codecViewer github.com/nyan233/littlerpc/pkg/middle/codec.codecCollection
+	codecViewer map[string]codec.Codec
+	//go:linkname packerViewer github.com/nyan233/littlerpc/pkg/middle/packer.packerCollection
+	packerViewer map[string]packer.Packer
 )
 
 type MethodTable struct {
@@ -43,6 +53,22 @@ func (l *LittleRpcReflection) AllInstance() (map[string]string, error) {
 		return true
 	})
 	return mp, nil
+}
+
+func (l *LittleRpcReflection) AllCodec() ([]string, error) {
+	codecSchemeSet := make([]string, 0, len(codecViewer))
+	for k := range codecViewer {
+		codecSchemeSet = append(codecSchemeSet, k)
+	}
+	return codecSchemeSet, nil
+}
+
+func (l *LittleRpcReflection) AllPacker() ([]string, error) {
+	packerSchemeSet := make([]string, 0, len(packerViewer))
+	for k := range packerViewer {
+		packerSchemeSet = append(packerSchemeSet, k)
+	}
+	return packerSchemeSet, nil
 }
 
 func (l *LittleRpcReflection) MethodArgumentType(serviceName string) ([]*ArgumentType, error) {
