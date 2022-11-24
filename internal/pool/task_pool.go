@@ -17,7 +17,7 @@ type RecoverFunc func(poolId int, err interface{})
 // DynamicTaskPool
 // v0.10 -> v0.36 实现了简单的任务池
 // v0.38 -> now 实现了可自动扩容的Goroutine池和可拓展的接口
-type DynamicTaskPool struct {
+type DynamicTaskPool[Key Hash] struct {
 	// buf chan
 	tasks     chan func()
 	recoverFn RecoverFunc
@@ -43,8 +43,8 @@ type DynamicTaskPool struct {
 	execFailed uint64
 }
 
-func NewTaskPool(bufSize, minSize, maxSize int32, rf RecoverFunc) *DynamicTaskPool {
-	pool := &DynamicTaskPool{}
+func NewTaskPool[Key Hash](bufSize, minSize, maxSize int32, rf RecoverFunc) TaskPool[Key] {
+	pool := new(DynamicTaskPool[Key])
 	if bufSize > MaxTaskPoolSize {
 		bufSize = MaxTaskPoolSize
 	}
@@ -60,16 +60,16 @@ func NewTaskPool(bufSize, minSize, maxSize int32, rf RecoverFunc) *DynamicTaskPo
 	return pool
 }
 
-func (p *DynamicTaskPool) start() {
+func (p *DynamicTaskPool[Key]) start() {
 	for i := 0; i < int(p.minSize); i++ {
 		gIndex := atomic.AddInt32(&p.liveSize, 1)
 		go func() {
-			exec[struct{}, any](p, gIndex, p.ctx.Done(), nil)
+			exec[struct{}, any, Key](p, gIndex, p.ctx.Done(), nil)
 		}()
 	}
 }
 
-func exec[T any, T2 any](p *DynamicTaskPool, gIndex int32, done <-chan T, done2 <-chan T2) {
+func exec[T any, T2 any, Key Hash](p *DynamicTaskPool[Key], gIndex int32, done <-chan T, done2 <-chan T2) {
 	defer p.wg.Done()
 	defer atomic.AddInt32(&p.liveSize, -1)
 	iFunc := func(fn func()) {
@@ -96,7 +96,7 @@ func exec[T any, T2 any](p *DynamicTaskPool, gIndex int32, done <-chan T, done2 
 	}
 }
 
-func (p *DynamicTaskPool) Push(fn func()) error {
+func (p *DynamicTaskPool[Key]) Push(key Key, fn func()) error {
 	if atomic.LoadInt32(&p.closed) == 1 {
 		return errors.New("pool already closed")
 	}
@@ -129,7 +129,7 @@ func (p *DynamicTaskPool) Push(fn func()) error {
 	return nil
 }
 
-func (p *DynamicTaskPool) Stop() error {
+func (p *DynamicTaskPool[Key]) Stop() error {
 	if !atomic.CompareAndSwapInt32(&p.closed, 0, 1) {
 		return errors.New("pool already closed")
 	}
@@ -138,18 +138,18 @@ func (p *DynamicTaskPool) Stop() error {
 	return nil
 }
 
-func (p *DynamicTaskPool) LiveSize() int {
+func (p *DynamicTaskPool[Key]) LiveSize() int {
 	return int(atomic.LoadInt32(&p.liveSize))
 }
 
-func (p *DynamicTaskPool) BufSize() int {
+func (p *DynamicTaskPool[Key]) BufSize() int {
 	return len(p.tasks)
 }
 
-func (p *DynamicTaskPool) ExecuteSuccess() int {
+func (p *DynamicTaskPool[Key]) ExecuteSuccess() int {
 	return int(atomic.LoadUint64(&p.execSuccess))
 }
 
-func (p *DynamicTaskPool) ExecuteError() int {
+func (p *DynamicTaskPool[Key]) ExecuteError() int {
 	return int(atomic.LoadUint64(&p.execFailed))
 }

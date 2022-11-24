@@ -1,22 +1,31 @@
 package pool
 
 import (
-	"runtime"
 	"sync"
 	"testing"
 	"time"
 )
 
 const (
-	BenchmarkNTask = 10000000
+	BenchmarkNTask = 100000
 	UnitNTask      = 1000
-	SleepTime      = time.Microsecond * 100
+	SleepTime      = time.Millisecond * 10
 )
 
 func TestTaskPool(t *testing.T) {
-	var pool TaskPool = NewTaskPool(32, int32(runtime.NumCPU()*4), 1024, func(poolId int, err interface{}) {
-		return
+	t.Run("TestTaskPool", func(t *testing.T) {
+		testPool(t, NewTaskPool[int64](256, 256, 1024, func(poolId int, err interface{}) {
+			t.Fatal(poolId, err)
+		}))
 	})
+	t.Run("TestFixedPool", func(t *testing.T) {
+		testPool(t, NewFixedPool[int64](2048, 256, 1024, func(poolId int, err interface{}) {
+			t.Fatal(poolId, err)
+		}))
+	})
+}
+
+func testPool(t *testing.T, pool TaskPool[int64]) {
 	defer pool.Stop()
 	go func() {
 		for {
@@ -28,32 +37,46 @@ func TestTaskPool(t *testing.T) {
 		}
 	}()
 	for i := 0; i < UnitNTask; i++ {
-		_ = pool.Push(func() {
-			time.Sleep(5 * time.Second)
+		_ = pool.Push(int64(i), func() {
+			time.Sleep(time.Second)
 		})
 	}
 	_ = pool.Stop()
 }
 
 func BenchmarkTaskPool(b *testing.B) {
-	pool := NewTaskPool(2048, 32, MaxTaskPoolSize, func(poolId int, err interface{}) {
-		return
-	})
-	go func() {
-		for {
-			time.Sleep(time.Second)
-			b.Log(pool.LiveSize())
-		}
-	}()
-	defer pool.Stop()
 	b.Run("DynamicTaskPool", func(b *testing.B) {
+		pool := NewTaskPool[int64](2048, 256, MaxTaskPoolSize, func(poolId int, err interface{}) {
+			return
+		})
 		b.ReportAllocs()
 		var wg sync.WaitGroup
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			wg.Add(BenchmarkNTask)
 			b.StartTimer()
 			for j := 0; j < BenchmarkNTask; j++ {
-				_ = pool.Push(func() {
+				_ = pool.Push(int64(j), func() {
+					time.Sleep(SleepTime)
+					wg.Done()
+				})
+			}
+			wg.Wait()
+			b.StopTimer()
+		}
+	})
+	b.Run("FixedPool", func(b *testing.B) {
+		pool := NewFixedPool[int64](1024*1024, 1024, MaxTaskPoolSize, func(poolId int, err interface{}) {
+			return
+		})
+		b.ReportAllocs()
+		var wg sync.WaitGroup
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			wg.Add(BenchmarkNTask)
+			b.StartTimer()
+			for j := 0; j < BenchmarkNTask; j++ {
+				_ = pool.Push(int64(j), func() {
 					time.Sleep(SleepTime)
 					wg.Done()
 				})
@@ -65,6 +88,7 @@ func BenchmarkTaskPool(b *testing.B) {
 	b.Run("NoTaskPool", func(b *testing.B) {
 		b.ReportAllocs()
 		var wg sync.WaitGroup
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			wg.Add(BenchmarkNTask)
 			b.StartTimer()

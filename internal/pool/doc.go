@@ -1,8 +1,12 @@
 // Package pool littlerpc自带的goroutine池
 package pool
 
-type TaskPool interface {
-	Push(func()) error
+type Hash interface {
+	string | []byte | int64 | uint64
+}
+
+type TaskPool[Key Hash] interface {
+	Push(Key, func()) error
 	Stop() error
 	// LiveSize 存活的goroutine数量
 	LiveSize() int
@@ -14,6 +18,6 @@ type TaskPool interface {
 	ExecuteError() int
 }
 
-type TaskPoolBuilder interface {
-	Builder(bufSize, minSize, maxSize int32, rf RecoverFunc) TaskPool
+type TaskPoolBuilder[Key Hash] interface {
+	Builder(bufSize, minSize, maxSize int32, rf RecoverFunc) TaskPool[Key]
 }
