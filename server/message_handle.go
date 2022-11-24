@@ -73,11 +73,11 @@ func (s *Server) messageCall(msgOpt *messageOpt) {
 			s.callHandleUnit(msgOpt)
 		}()
 	default:
-		defer msgOpt.Free()
 		err := s.taskPool.Push(msgOpt.Message.GetServiceName(), func() {
 			s.callHandleUnit(msgOpt)
 		})
 		if err != nil {
+			msgOpt.Free()
 			s.handleError(msgOpt.Conn, msgOpt.Writer, msgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
 		}
 	}

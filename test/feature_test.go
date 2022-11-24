@@ -8,11 +8,9 @@ import (
 	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/plugins/metrics"
 	lserver "github.com/nyan233/littlerpc/server"
-	"github.com/zbh255/bilog"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -81,10 +79,10 @@ func TestServerAndClient(t *testing.T) {
 	logger.SetOpenLogger(false)
 	baseServerOpts := []lserver.Option{
 		lserver.WithAddressServer(":1234"),
-		lserver.WithOpenLogger(true),
-		lserver.WithLogger(logger.New(bilog.NewLogger(os.Stdout, bilog.PANIC))),
+		lserver.WithOpenLogger(false),
+		//lserver.WithLogger(logger.New(bilog.NewLogger(os.Stdout, bilog.PANIC))),
 		lserver.WithPlugin(new(metrics.ServerMetricsPlugin)),
-		lserver.WithDebug(true),
+		//lserver.WithDebug(true),
 	}
 	baseClientOpts := []lclient.Option{
 		lclient.WithAddress(":1234"),
@@ -124,13 +122,13 @@ func TestServerAndClient(t *testing.T) {
 			NoAbleUsageNoTransactionProtocol: true,
 		},
 	}
-	networks := []string{"nbio_ws", "nbio_tcp", "std_tcp"}
+	networks := []string{"nbio_tcp", "std_tcp", "nbio_ws"}
 	for _, network := range networks {
 		for _, runConfig := range testRunConfigs {
 			t.Run(fmt.Sprintf(runConfig.TestName, network), func(t *testing.T) {
 				testServerAndClient(t,
-					append(runConfig.ServerOptions, lserver.WithNetwork(network)),
-					append(runConfig.ClientOptions, lclient.WithNetWork(network)))
+					append([]lserver.Option{lserver.WithNetwork(network)}, runConfig.ServerOptions...),
+					append([]lclient.Option{lclient.WithNetWork(network)}, runConfig.ClientOptions...))
 			})
 		}
 	}
@@ -232,7 +230,7 @@ func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts [
 			time.Sleep(time.Second * 10)
 			t.Log(metrics.ServerCallMetrics.LoadCount())
 			t.Log(metrics.ClientCallMetrics.LoadCount())
-			//t.Log(proxy.GetCount())
+			// t.Log(proxy.GetCount())
 			t.Log(atomic.LoadInt64(&h.count))
 		}
 	}()

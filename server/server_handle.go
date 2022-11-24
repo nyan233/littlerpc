@@ -39,47 +39,42 @@ func (s *Server) handleError(conn transport.ConnAdapter, writer msgwriter.Writer
 	if writer == nil {
 		writer = s.config.WriterFactory()
 	}
+	// 普通错误打印警告, 严重错误打印error
 	switch errNo.Code() {
-	case perror.ConnectionErr:
-		// 连接错误默认已经被关闭连接, 所以打印日志即可
-		s.logger.Error("LRPC: trigger connection error: %v", errNo)
-	case perror.UnsafeOption, perror.MessageDecodingFailed, perror.MessageEncodingFailed:
+	case perror.UnsafeOption, perror.MessageDecodingFailed,
+		perror.MessageEncodingFailed, perror.ConnectionErr:
 		// 严重影响到后续运行的错误需要关闭连接
 		s.logger.Error("LRPC: trigger must close connection error: %v", errNo)
-		err := conn.Close()
-		if err != nil {
-			s.logger.Error("LRPC: close connection error: %v", err)
-		}
 	default:
-		// 普通一些的错误可以不关闭连接
-		msg := message.New()
-		msg.SetMsgType(message.Return)
-		msg.SetMsgId(msgId)
-		msg.MetaData.Store(message.ErrorCode, strconv.Itoa(errNo.Code()))
-		msg.MetaData.Store(message.ErrorMessage, errNo.Message())
-		// 为空则不序列化Mores, 否则会造成空间浪费
-		mores := errNo.Mores()
-		if mores != nil && len(mores) > 0 {
-			bytes, err := errNo.MarshalMores()
-			if err != nil {
-				s.logger.Error("LRPC: handleError marshal error mores failed: %v", err)
-				_ = conn.Close()
-				return
-			} else {
-				msg.MetaData.Store(message.ErrorMore, convert.BytesToString(bytes))
-			}
-		}
-		err := writer.Write(msgwriter.Argument{
-			Message:    msg,
-			Conn:       conn,
-			Encoder:    packer.Get("text"),
-			Pool:       bytesBuffer,
-			OnDebug:    debug.MessageDebug(s.logger, s.config.Debug),
-			OnComplete: nil, // TODO: 将某个合适的插件注入
-			EHandle:    s.eHandle,
-		}, message.MagicNumber)
+		s.logger.Warn("LRPC: trigger connection error: %v", errNo)
+	}
+	msg := message.New()
+	msg.SetMsgType(message.Return)
+	msg.SetMsgId(msgId)
+	msg.MetaData.Store(message.ErrorCode, strconv.Itoa(errNo.Code()))
+	msg.MetaData.Store(message.ErrorMessage, errNo.Message())
+	// 为空则不序列化Mores, 否则会造成空间浪费
+	mores := errNo.Mores()
+	if mores != nil && len(mores) > 0 {
+		bytes, err := errNo.MarshalMores()
 		if err != nil {
-			s.logger.Error("LRPC: handleError write bytes error: %v", err)
+			s.logger.Error("LRPC: handleError marshal error mores failed: %v", err)
+			_ = conn.Close()
+			return
+		} else {
+			msg.MetaData.Store(message.ErrorMore, convert.BytesToString(bytes))
 		}
+	}
+	err := writer.Write(msgwriter.Argument{
+		Message:    msg,
+		Conn:       conn,
+		Encoder:    packer.Get("text"),
+		Pool:       bytesBuffer,
+		OnDebug:    debug.MessageDebug(s.logger, s.config.Debug),
+		OnComplete: nil, // TODO: 将某个合适的插件注入
+		EHandle:    s.eHandle,
+	}, message.MagicNumber)
+	if err != nil {
+		s.logger.Error("LRPC: handleError write bytes error: %v", err)
 	}
 }
