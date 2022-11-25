@@ -46,7 +46,11 @@ func (j *jsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, 
 			msg.MetaData.Store(k, v)
 		}
 	}
-	if base.MetaData != nil && base.MetaData[message.PackerScheme] != message.DefaultPacker {
+	var packerScheme string
+	if base.MetaData != nil {
+		packerScheme = base.MetaData[message.PackerScheme]
+	}
+	if !(packerScheme == "" || packerScheme == message.DefaultPacker) {
 		return -1, errors.New("jsonrpc2 not supported only text packer")
 	}
 	switch uint8(base.MessageType) {
