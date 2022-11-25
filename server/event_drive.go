@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	lerror "github.com/nyan233/littlerpc/protocol/error"
@@ -37,7 +37,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		// 错误处理过程会在严重错误时关闭连接, 所以msgId == math.MaxUint64也没有关系
 		// 设为0有可能和客户端生成的MessageId冲突
 		// 在解码消息失败时也不可能拿到正确的msgId
-		s.handleError(c, desc.Writer, math.MaxUint64, s.eHandle.LWarpErrorDesc(common.ErrMessageDecoding, err.Error()))
+		s.handleError(c, desc.Writer, math.MaxUint64, s.eHandle.LWarpErrorDesc(errorhandler.ErrMessageDecoding, err.Error()))
 		s.logger.Warn("LRPC: parse failed %v", err)
 		return
 	}
@@ -58,7 +58,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		default:
 			// 释放消息, 这一步所有分支内都不可少
 			msgOpt.Free()
-			s.handleError(c, msgOpt.Writer, traitMsg.Message.GetMsgId(), lerror.LWarpStdError(common.ErrServer,
+			s.handleError(c, msgOpt.Writer, traitMsg.Message.GetMsgId(), lerror.LWarpStdError(errorhandler.ErrServer,
 				"Unknown Message Call Type", traitMsg.Message.GetMsgType()))
 			continue
 		}

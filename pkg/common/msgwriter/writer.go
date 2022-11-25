@@ -1,10 +1,10 @@
 package msgwriter
 
 import (
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"sync"
 
-	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/middle/packer"
 	perror "github.com/nyan233/littlerpc/protocol/error"
@@ -47,7 +47,7 @@ func encoder(arg Argument) perror.LErrorDesc {
 	if arg.Encoder.Scheme() != "text" {
 		bytes, err := arg.Encoder.EnPacket(arg.Message.Payloads())
 		if err != nil {
-			return arg.EHandle.LWarpErrorDesc(common.ErrServer, err.Error())
+			return arg.EHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
 		}
 		arg.Message.ReWritePayload(bytes)
 	}

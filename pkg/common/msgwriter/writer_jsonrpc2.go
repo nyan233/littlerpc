@@ -3,7 +3,7 @@ package msgwriter
 import (
 	"encoding/base64"
 	"fmt"
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	"github.com/nyan233/littlerpc/pkg/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
@@ -62,7 +62,7 @@ func (j *JsonRPC2) requestWrite(arg Argument) perror.LErrorDesc {
 		if arg.Encoder.Scheme() != message.DefaultPacker {
 			bytes, err = arg.Encoder.EnPacket(iter.Take())
 			if err != nil {
-				return arg.EHandle.LWarpErrorDesc(common.ErrMessageEncoding,
+				return arg.EHandle.LWarpErrorDesc(errorhandler.ErrMessageEncoding,
 					fmt.Sprintf("jsonrpc2 Packer UnPacket failed: %v", err))
 			}
 		} else {
@@ -78,15 +78,15 @@ func (j *JsonRPC2) requestWrite(arg Argument) perror.LErrorDesc {
 	request.Params = append(request.Params, ']')
 	bytes, err := j.Codec.Marshal(&request)
 	if err != nil {
-		return arg.EHandle.LWarpErrorDesc(common.ErrMessageEncoding,
+		return arg.EHandle.LWarpErrorDesc(errorhandler.ErrMessageEncoding,
 			fmt.Sprintf("jsonrpc2 Marshal LRPCMessage failed: %v", err))
 	}
 	writeN, err := arg.Conn.Write(bytes)
 	if err != nil {
-		return arg.EHandle.LWarpErrorDesc(common.ErrConnection, fmt.Sprintf("jsonrpc2 write failed: %v", err))
+		return arg.EHandle.LWarpErrorDesc(errorhandler.ErrConnection, fmt.Sprintf("jsonrpc2 write failed: %v", err))
 	}
 	if writeN != len(bytes) {
-		return arg.EHandle.LWarpErrorDesc(common.ErrConnection, fmt.Sprintf("jsonrpc2 write no complete: (%d:%d)", writeN, len(bytes)))
+		return arg.EHandle.LWarpErrorDesc(errorhandler.ErrConnection, fmt.Sprintf("jsonrpc2 write no complete: (%d:%d)", writeN, len(bytes)))
 	}
 	return nil
 }
@@ -126,16 +126,16 @@ handleResult:
 	rep.Version = jsonrpc2.Version
 	bytes, err := j.Codec.Marshal(rep)
 	if err != nil {
-		return arg.EHandle.LWarpErrorDesc(common.ErrMessageEncoding,
+		return arg.EHandle.LWarpErrorDesc(errorhandler.ErrMessageEncoding,
 			fmt.Sprintf("jsonrpc2 Marshal LRPCMessage failed: %v", err))
 	}
 	writeN, err := arg.Conn.Write(bytes)
 	if err != nil {
-		return arg.EHandle.LWarpErrorDesc(common.ErrConnection,
+		return arg.EHandle.LWarpErrorDesc(errorhandler.ErrConnection,
 			fmt.Sprintf("JsonRpc2 NoMux write error: %v", err))
 	}
 	if writeN != len(bytes) {
-		return arg.EHandle.LWarpErrorDesc(common.ErrConnection,
+		return arg.EHandle.LWarpErrorDesc(errorhandler.ErrConnection,
 			fmt.Sprintf("JsonRpc2 NoMux write bytes not equal : w(%d) != b(%d)", writeN, len(bytes)))
 	}
 	return nil

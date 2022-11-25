@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
-	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/check"
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
@@ -65,7 +65,7 @@ func (c *messageOpt) RealPayload() perror.LErrorDesc {
 	if c.Packer.Scheme() != "text" {
 		bytes, err := c.Packer.UnPacket(c.Message.Payloads())
 		if err != nil {
-			return c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
+			return c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
 		}
 		c.Message.SetPayloads(bytes)
 	}
@@ -78,7 +78,11 @@ func (c *messageOpt) RealPayload() perror.LErrorDesc {
 	return nil
 }
 
+// Free 不允许释放nil message, 或者重复释放, 否则panic
 func (c *messageOpt) Free() {
+	if c.Message == nil {
+		panic("release not found message or retry release")
+	}
 	c.freeFunc(c.Message)
 	c.Message = nil
 }
@@ -98,7 +102,7 @@ func (c *messageOpt) Check() perror.LErrorDesc {
 	service, ok := c.Server.services.LoadOk(c.Message.GetServiceName())
 	if !ok {
 		return c.Server.eHandle.LWarpErrorDesc(
-			common.ServiceNotfound, c.Message.GetServiceName())
+			errorhandler.ServiceNotfound, c.Message.GetServiceName())
 	}
 	c.Service = service
 	// 从客户端校验并获得合法的调用参数
@@ -124,7 +128,7 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 	iter := c.Message.PayloadsIterator()
 	serviceType := c.Service.Value.Type()
 	if nInput := serviceType.NumIn() - metaDataUtil.InputOffset(c.Service); nInput != iter.Tail() {
-		return nil, c.Server.eHandle.LWarpErrorDesc(common.ErrServer,
+		return nil, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer,
 			"client input args number no equal server",
 			fmt.Sprintf("Client : %d", iter.Tail()), fmt.Sprintf("Server : %d", nInput))
 	}
@@ -178,7 +182,7 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 	for i := inputStart; i < len(callArgs) && iter.Next(); i++ {
 		callArg, err := check.MarshalFromUnsafe(c.Codec, iter.Take(), callArgs[i].Interface())
 		if err != nil {
-			return nil, c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
+			return nil, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
 		}
 		// 可以根据获取的参数类别的每一个参数的类型信息得到
 		// 所需的精确类型，所以不用再对变长的类型做处理
@@ -194,14 +198,14 @@ func (c *messageOpt) checkContextAndStream(callArgs []reflect.Value) (offset int
 	if ok {
 		ctxId, err := strconv.ParseUint(ctxIdStr, 10, 64)
 		if err != nil {
-			return 0, c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
+			return 0, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
 		}
 		c.ContextId = ctxId
 		iCtx, cancel := context.WithCancel(ctx)
 		ctx = iCtx
 		err = c.Server.ctxManager.RegisterContextCancel(c.Conn, ctxId, cancel)
 		if err != nil {
-			return 0, c.Server.eHandle.LWarpErrorDesc(common.ErrServer, err.Error())
+			return 0, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
 		}
 	}
 	callArgs = callArgs[:0]

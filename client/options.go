@@ -2,11 +2,9 @@ package client
 
 import (
 	"crypto/tls"
-	"github.com/nyan233/littlerpc/pkg/common/msgparser"
-	"time"
-
-	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	"github.com/nyan233/littlerpc/pkg/common/logger"
+	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/loadbalance/balancer"
@@ -16,6 +14,7 @@ import (
 	"github.com/nyan233/littlerpc/pkg/middle/plugin"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
+	"time"
 )
 
 type Option func(config *Config)
@@ -39,7 +38,7 @@ func WithDefault() Option {
 		WithCodec(message.DefaultCodec)(config)
 		WithNetWork("nbio_tcp")(config)
 		WithMuxConnectionNumber(8)(config)
-		WithErrHandler(common2.DefaultErrHandler)(config)
+		WithNoStackTrace()(config)
 		WithPoolSize(0)(config)
 		WithNoMuxWriter()(config)
 		WithTraitMessageParser()(config)
@@ -162,6 +161,14 @@ func WithPlugin(plugin plugin.ClientPlugin) Option {
 	return func(config *Config) {
 		config.Plugins = append(config.Plugins, plugin)
 	}
+}
+
+func WithStackTrace() Option {
+	return WithErrHandler(errorhandler.NewStackTrace())
+}
+
+func WithNoStackTrace() Option {
+	return WithErrHandler(errorhandler.DefaultErrHandler)
 }
 
 func WithErrHandler(eh perror.LErrors) Option {

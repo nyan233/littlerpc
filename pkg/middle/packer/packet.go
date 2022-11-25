@@ -12,7 +12,7 @@ type Packer interface {
 }
 
 var (
-	encoderCollection = make(map[string]Packer, 8)
+	packerCollection = make(map[string]Packer, 8)
 )
 
 // Text 注意:text类型的压缩器只是提供给client&server
@@ -39,12 +39,12 @@ func Register(p Packer) {
 	if p.Scheme() == "" {
 		panic("encoder scheme is empty")
 	}
-	encoderCollection[p.Scheme()] = p
+	packerCollection[p.Scheme()] = p
 }
 
 // Get 该调用是线程安全的
 func Get(scheme string) Packer {
-	return encoderCollection[scheme]
+	return packerCollection[scheme]
 }
 
 func init() {

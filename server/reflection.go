@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/middle/codec"
 	"github.com/nyan233/littlerpc/pkg/middle/packer"
@@ -34,7 +34,7 @@ type LittleRpcReflection struct {
 func (l *LittleRpcReflection) MethodTable(sourceName string) (*MethodTable, error) {
 	source, ok := l.rpcServer.sources.LoadOk(sourceName)
 	if !ok {
-		return nil, common.ServiceNotfound
+		return nil, errorhandler.ServiceNotfound
 	}
 	mt := &MethodTable{
 		SourceName: sourceName,
@@ -74,7 +74,7 @@ func (l *LittleRpcReflection) AllPacker() ([]string, error) {
 func (l *LittleRpcReflection) MethodArgumentType(serviceName string) ([]*ArgumentType, error) {
 	service, ok := l.rpcServer.services.LoadOk(serviceName)
 	if !ok {
-		return nil, common.ServiceNotfound
+		return nil, errorhandler.ServiceNotfound
 	}
 	argDesc := make([]*ArgumentType, 0, 4)
 	typ := service.Value.Type()

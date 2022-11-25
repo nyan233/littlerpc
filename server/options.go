@@ -3,7 +3,7 @@ package server
 import (
 	"github.com/lesismal/llib/std/crypto/tls"
 	"github.com/nyan233/littlerpc/internal/pool"
-	common2 "github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	"github.com/nyan233/littlerpc/pkg/common/logger"
 	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
@@ -37,7 +37,7 @@ func WithDefaultServer() Option {
 		WithLogger(logger.DefaultLogger)(config)
 		WithKeepAlive(false, time.Second*120)(config)
 		WithNetwork("nbio_tcp")(config)
-		WithErrHandler(common2.DefaultErrHandler)(config)
+		WithNoStackTrace()(config)
 		WithExecPoolArgument(int32(runtime.NumCPU()*8), pool.MaxTaskPoolSize, 2048)(config)
 		WithTraitMessageParser()(config)
 		WithTraitMessageWriter()(config)
@@ -75,6 +75,14 @@ func WithPlugin(plg plugin.ServerPlugin) Option {
 	return func(config *Config) {
 		config.Plugins = append(config.Plugins, plg)
 	}
+}
+
+func WithStackTrace() Option {
+	return WithErrHandler(errorhandler.NewStackTrace())
+}
+
+func WithNoStackTrace() Option {
+	return WithErrHandler(errorhandler.DefaultErrHandler)
 }
 
 func WithErrHandler(eh perror.LErrors) Option {

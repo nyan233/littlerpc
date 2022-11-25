@@ -2,7 +2,7 @@ package msgwriter
 
 import (
 	"fmt"
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	"github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
 	perror "github.com/nyan233/littlerpc/protocol/error"
@@ -45,21 +45,21 @@ func (l *lRPCMux) Write(arg Argument, header byte) perror.LErrorDesc {
 	}()
 	arg.Pool.Put(buf1)
 	if err != nil {
-		return arg.EHandle.LWarpErrorDesc(common.ErrMessageEncoding, fmt.Sprintf("Encoding Iterator failed %v", err))
+		return arg.EHandle.LWarpErrorDesc(errorhandler.ErrMessageEncoding, fmt.Sprintf("Encoding Iterator failed %v", err))
 	}
 	for iter.Next() {
 		bytes := iter.Take()
 		if bytes == nil {
-			return arg.EHandle.LWarpErrorDesc(common.ErrMessageDecoding,
+			return arg.EHandle.LWarpErrorDesc(errorhandler.ErrMessageDecoding,
 				fmt.Sprintf("NoMuxMessage Encoding failed, bytes len : %v", len(bytes)))
 		}
 		writeN, err := arg.Conn.Write(bytes)
 		if err != nil {
-			return arg.EHandle.LWarpErrorDesc(common.ErrConnection,
+			return arg.EHandle.LWarpErrorDesc(errorhandler.ErrConnection,
 				fmt.Sprintf("Write muxMessage failed, bytes len : %v", len(bytes)))
 		}
 		if writeN != len(bytes) {
-			return arg.EHandle.LWarpErrorDesc(common.ErrConnection,
+			return arg.EHandle.LWarpErrorDesc(errorhandler.ErrConnection,
 				fmt.Sprintf("Mux write bytes not equal : w(%d) != b(%d)", writeN, len(bytes)))
 		}
 		if arg.OnDebug != nil {

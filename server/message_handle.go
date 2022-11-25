@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	metaDataUtil "github.com/nyan233/littlerpc/pkg/common/utils/metadata"
 	"github.com/nyan233/littlerpc/pkg/export"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
@@ -36,17 +36,17 @@ func (s *Server) messageContextCancel(msgOpt *messageOpt) {
 	ctxIdStr, ok := msgOpt.Message.MetaData.LoadOk(message.ContextId)
 	if !ok {
 		s.handleError(msgOpt.Conn, msgOpt.Writer, msgOpt.Message.GetMsgId(), perror.LWarpStdError(
-			common.ContextNotFound, fmt.Sprintf("contextId : %s", ctxIdStr)))
+			errorhandler.ContextNotFound, fmt.Sprintf("contextId : %s", ctxIdStr)))
 	}
 	ctxId, err := strconv.ParseUint(ctxIdStr, 10, 64)
 	if err != nil {
 		s.handleError(msgOpt.Conn, msgOpt.Writer, msgOpt.Message.GetMsgId(), perror.LWarpStdError(
-			common.ErrServer, err.Error()))
+			errorhandler.ErrServer, err.Error()))
 	}
 	err = s.ctxManager.CancelContext(msgOpt.Conn, ctxId)
 	if err != nil {
 		s.handleError(msgOpt.Conn, msgOpt.Writer, msgOpt.Message.GetMsgId(), perror.LWarpStdError(
-			common.ErrServer, err.Error()))
+			errorhandler.ErrServer, err.Error()))
 	}
 }
 
@@ -78,7 +78,7 @@ func (s *Server) messageCall(msgOpt *messageOpt) {
 		})
 		if err != nil {
 			msgOpt.Free()
-			s.handleError(msgOpt.Conn, msgOpt.Writer, msgId, s.eHandle.LWarpErrorDesc(common.ErrServer, err.Error()))
+			s.handleError(msgOpt.Conn, msgOpt.Writer, msgId, s.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error()))
 		}
 	}
 }
@@ -157,7 +157,7 @@ func (s *Server) handleResult(msgOpt *messageOpt, msg *message.Message, callResu
 		// 可替换的Codec已经不需要Any包装器了
 		bytes, err := msgOpt.Codec.Marshal(eface)
 		if err != nil {
-			s.handleError(msgOpt.Conn, msgOpt.Writer, msg.GetMsgId(), common.ErrServer)
+			s.handleError(msgOpt.Conn, msgOpt.Writer, msg.GetMsgId(), errorhandler.ErrServer)
 			return
 		}
 		msg.AppendPayloads(bytes)
@@ -169,8 +169,8 @@ func (s *Server) setErrResult(msg *message.Message, callResult reflect.Value) pe
 	interErr := reflect2.ToValueTypeEface(callResult)
 	// 无错误
 	if interErr == error(nil) {
-		msg.MetaData.Store(message.ErrorCode, strconv.Itoa(common.Success.Code()))
-		msg.MetaData.Store(message.ErrorMessage, common.Success.Message())
+		msg.MetaData.Store(message.ErrorCode, strconv.Itoa(errorhandler.Success.Code()))
+		msg.MetaData.Store(message.ErrorMessage, errorhandler.Success.Message())
 		return nil
 	}
 	// 检查是否实现了自定义错误的接口
@@ -181,7 +181,7 @@ func (s *Server) setErrResult(msg *message.Message, callResult reflect.Value) pe
 		bytes, err := desc.MarshalMores()
 		if err != nil {
 			return s.eHandle.LWarpErrorDesc(
-				common.ErrCodecMarshalError,
+				errorhandler.ErrCodecMarshalError,
 				fmt.Sprintf("%s : %s", message.ErrorMore, err.Error()))
 		}
 		msg.MetaData.Store(message.ErrorMore, convert.BytesToString(bytes))

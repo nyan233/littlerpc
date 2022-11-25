@@ -43,7 +43,6 @@ func (s *Server) handleError(conn transport.ConnAdapter, writer msgwriter.Writer
 	switch errNo.Code() {
 	case perror.UnsafeOption, perror.MessageDecodingFailed,
 		perror.MessageEncodingFailed, perror.ConnectionErr:
-		// 严重影响到后续运行的错误需要关闭连接
 		s.logger.Error("LRPC: trigger must close connection error: %v", errNo)
 	default:
 		s.logger.Warn("LRPC: trigger connection error: %v", errNo)
