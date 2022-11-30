@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc/pkg/container"
+	"github.com/nyan233/littlerpc/pkg/utils/convert"
 	"math"
 )
 
@@ -66,11 +67,11 @@ func Unmarshal(p container.Slice[byte], msg *Message) error {
 		}
 		keySize := binary.BigEndian.Uint32(p[:4])
 		valueSize := binary.BigEndian.Uint32(p[4:8])
-		p = p[8:]
 		// 相加防止溢出, 所以需要检查溢出
 		if p.Len() < int(keySize+valueSize) || keySize > math.MaxUint32-valueSize {
 			return errors.New("key and value size overflow")
 		}
+		p = p[8:]
 		msg.MetaData.Store(string(p[:keySize]), string(p[keySize:keySize+valueSize]))
 		p = p[keySize+valueSize:]
 	}
@@ -107,6 +108,7 @@ func Marshal(msg *Message, p *container.Slice[byte]) error {
 	if err := MarshaToMux(msg, p); err != nil {
 		return err
 	}
+	integerBuffer := make([]byte, 4)
 	if len(msg.serviceName) > math.MaxUint8 {
 		return errors.New(fmt.Sprintf("serviceName max Length = 255, but now Length = %d", len(msg.serviceName)))
 	}
@@ -118,12 +120,12 @@ func Marshal(msg *Message, p *container.Slice[byte]) error {
 	}
 	p.AppendS(byte(msg.MetaData.Len()))
 	msg.MetaData.Range(func(k, v string) bool {
-		*p = append(*p, FourBytesPadding...)
-		binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(k)))
-		*p = append(*p, FourBytesPadding...)
-		binary.BigEndian.PutUint32((*p)[len(*p)-4:], uint32(len(v)))
-		*p = append(*p, k...)
-		*p = append(*p, v...)
+		binary.BigEndian.PutUint32(integerBuffer, uint32(len(k)))
+		p.Append(integerBuffer)
+		binary.BigEndian.PutUint32(integerBuffer, uint32(len(v)))
+		p.Append(integerBuffer)
+		p.Append(convert.StringToBytes(k))
+		p.Append(convert.StringToBytes(v))
 		return true
 	})
 	// 序列化载荷数据描述信息
@@ -132,8 +134,8 @@ func Marshal(msg *Message, p *container.Slice[byte]) error {
 	}
 	p.AppendS(byte(msg.payloadLayout.Len()))
 	for _, v := range msg.payloadLayout {
-		p.Append(FourBytesPadding)
-		binary.BigEndian.PutUint32((*p)[len(*p)-4:], v)
+		binary.BigEndian.PutUint32(integerBuffer, v)
+		p.Append(integerBuffer)
 	}
 	p.Append(msg.payloads)
 	return nil

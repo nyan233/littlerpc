@@ -31,6 +31,9 @@ func NoMux(level int) *message.Message {
 func NoMuxToBytes(level int) []byte {
 	var bytes []byte
 	msg := NoMux(level)
-	message.Marshal(msg, (*container.Slice[byte])(&bytes))
+	err := message.Marshal(msg, (*container.Slice[byte])(&bytes))
+	if err != nil {
+		return nil
+	}
 	return bytes
 }

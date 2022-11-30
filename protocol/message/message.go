@@ -39,11 +39,6 @@ const (
 	_PayloadLayout = 1
 )
 
-var (
-	FourBytesPadding  = []byte{0, 0, 0, 0}
-	EightBytesPadding = []byte{0, 0, 0, 0, 0, 0, 0, 0}
-)
-
 type Getter interface {
 	First() uint8
 	BaseLength() int
