@@ -54,7 +54,7 @@ type Config struct {
 	ErrHandler perror.LErrors
 	// 自定义Goroutine Pool的建造器, 在客户端不推荐使用
 	// 在不需要使用异步回调模式时可以关闭
-	ExecPoolBuilder export.TaskPoolBuilder
+	ExecPoolBuilder export.TaskPoolBuilder[string]
 	Writer          msgwriter.Writer
 	ParserFactory   msgparser.Factory
 	// 是否启用调试模式
