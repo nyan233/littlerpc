@@ -31,7 +31,7 @@ func TestBalancer(t *testing.T) {
 }
 
 func testBalancer(t *testing.T, b Balancer, nodes []loadbalance.RpcNode) {
-	const TestN = 128 * 128 * 128
+	const TestN = 128 * 128
 	const TargetN = 64
 	b.FullNotify(nodes)
 	targets := make([]string, 0, TargetN)
