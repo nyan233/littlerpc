@@ -5,23 +5,22 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc/internal/pool"
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	"github.com/nyan233/littlerpc/pkg/common/logger"
 	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	metaDataUtil "github.com/nyan233/littlerpc/pkg/common/utils/metadata"
 	container2 "github.com/nyan233/littlerpc/pkg/container"
 	"github.com/nyan233/littlerpc/pkg/middle/loadbalance"
-	lerror "github.com/nyan233/littlerpc/protocol/error"
+	perror "github.com/nyan233/littlerpc/protocol/error"
 	"github.com/nyan233/littlerpc/protocol/message"
 	"reflect"
-	"sync"
 	"time"
 )
 
 type Complete struct {
 	Message *message.Message
-	Error   error
+	Error   perror.LErrorDesc
 }
 
 // Client 在Client中同时使用同步调用和异步调用将导致同步调用阻塞某一连接上的所有异步调用
@@ -39,15 +38,12 @@ type Client struct {
 	services container2.SyncMap118[string, *metadata.Process]
 	// 用于keepalive
 	logger logger.LLogger
-	// 注册的所有异步调用的回调函数
-	// processName:func(rep []interface{},err error)
-	callBacks container2.SyncMap118[string, func(rep []interface{}, err error)]
 	// 用于超时管理和异步调用模拟的goroutine池
-	gp pool.TaskPool
+	gp pool.TaskPool[string]
 	// 用于客户端的插件
 	pluginManager *pluginManager
 	// 错误处理接口
-	eHandle lerror.LErrors
+	eHandle perror.LErrors
 }
 
 func New(opts ...Option) (*Client, error) {
@@ -104,17 +100,13 @@ func New(opts ...Option) (*Client, error) {
 				client.logger.Error(fmt.Sprintf("poolId : %d -> Panic : %v", poolId, err))
 			})
 	} else {
-		client.gp = pool.NewTaskPool(
+		client.gp = pool.NewTaskPool[string](
 			pool.MaxTaskPoolSize/4, config.PoolSize, config.PoolSize*2, func(poolId int, err interface{}) {
 				client.logger.Error(fmt.Sprintf("poolId : %d -> Panic : %v", poolId, err))
 			})
 	}
 	// plugins
 	client.pluginManager = newPluginManager(config.Plugins)
-	// init callBacks register map
-	client.callBacks = container2.SyncMap118[string, func(rep []interface{}, err error)]{
-		SMap: sync.Map{},
-	}
 	// init ErrHandler
 	client.eHandle = config.ErrHandler
 	return client, nil
@@ -166,25 +158,25 @@ func (c *Client) RawCall(service string, args ...interface{}) ([]interface{}, er
 }
 
 // Request req/rep风格的RPC调用, 这要求rep必须是指针类型, 否则会返回ErrCallArgsType
-func (c *Client) Request(service string, ctx context.Context, request interface{}, response interface{}) error {
+func (c *Client) Request(service string, ctx context.Context, request interface{}, response interface{}, opts ...CallOption) error {
 	if response == nil {
-		return c.eHandle.LWarpErrorDesc(common.ErrCallArgsType, "response pointer equal nil")
+		return c.eHandle.LWarpErrorDesc(errorhandler.ErrCallArgsType, "response pointer equal nil")
 	}
-	_, err := c.call(service, nil, []interface{}{ctx, request}, []interface{}{response}, false)
+	_, err := c.call(service, opts, []interface{}{ctx, request}, []interface{}{response}, false)
 	return err
 }
 
 // Requests multi request and response
-func (c *Client) Requests(service string, requests []interface{}, responses []interface{}) error {
+func (c *Client) Requests(service string, requests []interface{}, responses []interface{}, opts ...CallOption) error {
 	if responses == nil || len(responses) > 0 {
-		return c.eHandle.LWarpErrorDesc(common.ErrCallArgsType, "responses length equal zero")
+		return c.eHandle.LWarpErrorDesc(errorhandler.ErrCallArgsType, "responses length equal zero")
 	}
 	for _, response := range responses {
 		if response == nil {
-			return c.eHandle.LWarpErrorDesc(common.ErrCallArgsType, "response pointer equal nil")
+			return c.eHandle.LWarpErrorDesc(errorhandler.ErrCallArgsType, "response pointer equal nil")
 		}
 	}
-	_, err := c.call(service, nil, requests, responses, false)
+	_, err := c.call(service, opts, requests, responses, false)
 	return err
 }
 
@@ -199,7 +191,7 @@ func (c *Client) Call(service string, args ...interface{}) ([]interface{}, error
 }
 
 func (c *Client) call(service string, opts []CallOption,
-	args []interface{}, reps []interface{}, check bool) (completeReps []interface{}, completeErr lerror.LErrorDesc) {
+	args []interface{}, reps []interface{}, check bool) (completeReps []interface{}, completeErr perror.LErrorDesc) {
 	defer func() {
 		if completeErr != nil && check && (completeReps == nil || len(completeReps) == 0) {
 			if serviceInstance, ok := c.services.LoadOk(service); ok {
@@ -209,7 +201,7 @@ func (c *Client) call(service string, opts []CallOption,
 	}()
 	cs, err := c.takeConnSource(service)
 	if err != nil && check {
-		return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, err)
+		return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, err)
 	}
 	mp := sharedPool.TakeMessagePool()
 	writeMsg := mp.Get().(*message.Message)
@@ -224,29 +216,30 @@ func (c *Client) call(service string, opts []CallOption,
 		c.logger.Error("LRPC: client plugin OnCall failed: %v", err)
 	}
 	sendErr := c.sendCallMsg(ctx, writeMsg, cs, false)
-	switch sendErr.Code() {
-	case lerror.ConnectionErr:
-		// TODO 连接错误启动重试
-		return nil, sendErr
-	case lerror.Success:
-		break
-	default:
-		return nil, sendErr
+	if sendErr != nil {
+		switch sendErr.Code() {
+		case perror.ConnectionErr:
+			// TODO 连接错误启动重试
+			return nil, sendErr
+		default:
+			return nil, sendErr
+		}
 	}
 	if reps == nil || len(reps) == 0 {
 		if check {
 			reps = make([]interface{}, method.Type().NumOut()-1)
 		}
 	}
-	var readErr lerror.LErrorDesc
+	var readErr perror.LErrorDesc
 	reps, readErr = c.readMsgAndDecodeReply(ctx, writeMsg.GetMsgId(), cs, method, reps)
 	c.pluginManager.OnResult(writeMsg, &reps, readErr)
+	if readErr == nil {
+		return reps, nil
+	}
 	switch readErr.Code() {
-	case lerror.ConnectionErr:
+	case perror.ConnectionErr:
 		// TODO 连接错误启动重试
 		return reps, readErr
-	case lerror.Success:
-		return reps, nil
 	default:
 		return reps, readErr
 	}
@@ -255,41 +248,30 @@ func (c *Client) call(service string, opts []CallOption,
 // AsyncCall TODO 改进这个不合时宜的API
 // AsyncCall 该函数返回时至少数据已经经过Codec的序列化，调用者有责任检查error
 // 该函数可能会传递来自Codec和内部组件的错误，因为它在发送消息之前完成
-func (c *Client) AsyncCall(service string, args ...interface{}) error {
+func (c *Client) AsyncCall(service string, args []interface{}, callBack func(results []interface{}, err error)) error {
+	if callBack == nil {
+		return c.eHandle.LWarpErrorDesc(errorhandler.ErrCallArgsType, "callBack is empty")
+	}
 	msg := message.New()
 	method, ctx, err := c.identArgAndEncode(service, msg, nil, args, false)
 	if err != nil {
 		return err
 	}
-	return c.gp.Push(func() {
-		// 查找对应的回调函数
-		var callBackIsOk bool
-		cbFn, ok := c.callBacks.LoadOk(service)
-		callBackIsOk = ok
+	return c.gp.Push(service, func() {
 		// 在池中获取一个底层传输的连接
 		conn, err := c.takeConnSource(service)
 		if err != nil {
-			cbFn(nil, err)
+			callBack(nil, err)
 			return
 		}
 		err = c.sendCallMsg(ctx, msg, conn, false)
-		if err != nil && callBackIsOk {
-			cbFn(nil, err)
-			return
-		} else if err != nil && !callBackIsOk {
+		if err != nil {
+			callBack(nil, err)
 			return
 		}
 		reps := make([]interface{}, method.Type().NumOut()-1)
 		reps, err = c.readMsgAndDecodeReply(ctx, msg.GetMsgId(), conn, method, reps)
-		if err != nil && callBackIsOk {
-			cbFn(nil, err)
-			return
-		} else if err != nil && !callBackIsOk {
-			return
-		}
-		if callBackIsOk {
-			cbFn(reps, nil)
-		}
+		callBack(reps, err)
 	})
 }
 
@@ -303,10 +285,6 @@ func (c *Client) takeConnSource(service string) (*connSource, error) {
 		return nil, errors.New("connection source not found")
 	}
 	return cs, nil
-}
-
-func (c *Client) RegisterCallBack(service string, fn func(rep []interface{}, err error)) {
-	c.callBacks.Store(service, fn)
 }
 
 func (c *Client) Close() error {
