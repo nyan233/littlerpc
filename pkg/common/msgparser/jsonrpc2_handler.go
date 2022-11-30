@@ -1,6 +1,7 @@
 package msgparser
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
 	"math"
@@ -66,7 +67,7 @@ func (j *jsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, 
 		}
 		switch trait.Params[0] {
 		case '[':
-			var msgs [][]byte
+			var msgs []json.RawMessage
 			err = j.Codec.Unmarshal(trait.Params, &msgs)
 			if err != nil {
 				return -1, err

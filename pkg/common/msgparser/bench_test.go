@@ -2,6 +2,8 @@ package msgparser
 
 import (
 	"fmt"
+	"github.com/nyan233/littlerpc/pkg/container"
+	"github.com/nyan233/littlerpc/protocol/message"
 	"github.com/nyan233/littlerpc/protocol/message/gen"
 	"testing"
 )
@@ -14,8 +16,29 @@ func BenchmarkParser(b *testing.B) {
 			var runCount int
 			parser.Reset()
 			messages := make([]byte, 0, i*64)
+			messageSplits := make([]*message.Message, 0)
+			lengths := make([]int, 0)
 			for j := 0; j < i; j++ {
-				messages = append(messages, gen.NoMuxToBytes(gen.Big)...)
+				msg := gen.NoMux(gen.Little)
+				messageSplits = append(messageSplits, msg)
+				var bytes container.Slice[byte]
+				err := message.Marshal(msg, &bytes)
+				if err != nil {
+					b.Fatal(err)
+				}
+				lengths = append(lengths, bytes.Len())
+				messages = append(messages, bytes...)
+			}
+			var point int
+			for index, length := range lengths {
+				msg := message.New()
+				err := message.Unmarshal(messages[point:point+length], msg)
+				if err != nil {
+					var bytes container.Slice[byte]
+					err = message.Marshal(messageSplits[index], &bytes)
+					b.Fatal(index, length, err)
+				}
+				point += length
 			}
 			b.StartTimer()
 			b.ReportAllocs()
@@ -23,7 +46,7 @@ func BenchmarkParser(b *testing.B) {
 				parseMsgs, err := parser.Parse(messages)
 				if err != nil {
 					_, err = parser.Parse(messages)
-					b.Fatal(err)
+					b.Fatal(j, err)
 				}
 				b.StopTimer()
 				for _, v := range parseMsgs {

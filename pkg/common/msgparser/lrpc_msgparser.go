@@ -64,6 +64,12 @@ func (h *lRPCTrait) Parse(data []byte) (msgs []ParserMessage, err error) {
 	defer func() {
 		if err != nil {
 			h.ResetScan()
+			if len(allMsg) == 0 {
+				return
+			}
+			for _, msg := range allMsg {
+				h.allocTor.FreeMessage(msg.Message)
+			}
 		}
 	}()
 	for {
@@ -115,9 +121,12 @@ func (h *lRPCTrait) Parse(data []byte) (msgs []ParserMessage, err error) {
 		case _ScanMsgParse2:
 			readN, readData := utils.ReadFromData(h.clickInterval, data)
 			h.halfBuffer = append(h.halfBuffer, readData...)
+			if readN == -1 {
+				return nil, errors.New("no read data")
+			}
 			data = data[readN:]
-			if readN < h.clickInterval {
-				h.clickInterval -= readN
+			h.clickInterval -= readN
+			if h.clickInterval > 0 {
 				continue
 			}
 			msg := h.allocTor.AllocMessage()

@@ -53,6 +53,7 @@ func TestParser(t *testing.T) {
 func TestJsonRPC2Parser(t *testing.T) {
 	request := new(jsonrpc2.Request)
 	request.Version = jsonrpc2.Version
+	request.MessageType = int(message.Call)
 	request.Method = "Test.JsonRPC2Case1"
 	request.MetaData = map[string]string{
 		"context-id": strconv.FormatInt(int64(random.FastRand()), 10),
@@ -75,10 +76,9 @@ func TestJsonRPC2Parser(t *testing.T) {
 	}
 	parser := Get(DefaultParser)(allocTor, 4096)
 	msg, err := parser.Parse(bytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.Nil(t, err, err)
 	assert.Equal(t, len(msg), 1)
+
 	iter := msg[0].Message.PayloadsIterator()
 	assert.Equal(t, iter.Tail(), 3)
 	var i int
@@ -94,6 +94,13 @@ func TestJsonRPC2Parser(t *testing.T) {
 		}
 	}
 	assert.Equal(t, msg[0].Message.GetServiceName(), "Test.JsonRPC2Case1")
+
+	// 测试是否能够处理错误的消息类型
+	request.MessageType = 0x889839
+	bytes, err = json.Marshal(request)
+	assert.Nil(t, err, err)
+	msg, err = parser.Parse(bytes)
+	assert.NotNil(t, err, "input error data but marshal able")
 }
 
 func parserOnBytes(s string) []byte {

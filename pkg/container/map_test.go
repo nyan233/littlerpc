@@ -64,6 +64,16 @@ func TestAllMap(t *testing.T) {
 		if oldLen != iMap.Len() {
 			printTestMap(t.Fatal, iMap, "delete after length not equal")
 		}
+		// 插入一个使用初始化数据的键, 检查长度
+		oldLen = iMap.Len()
+		iMap.Store("", 0)
+		if iMap.Len() != oldLen+1 {
+			printTestMap(t.Fatal, iMap, "store init key after length not equal")
+		}
+		iMap.Delete("")
+		if iMap.Len() != oldLen {
+			printTestMap(t.Fatal, iMap, "delete init key after length not equal")
+		}
 		for k, v := range genData {
 			genV, ok := iMap.LoadOk(v.Key)
 			if genV != k+1 {
