@@ -53,3 +53,12 @@ func Murmurhash3Onx8632(key []byte, seed uint32) uint32 {
 	hash = hash ^ (hash >> 16)
 	return hash
 }
+
+func Murmurhash3Onx8632OnInt(key int64, seed uint32) uint32 {
+	keyArray := *(*[8]byte)(unsafe.Pointer(&key))
+	return Murmurhash3Onx8632(keyArray[:], seed)
+}
+
+func Murmurhash3Onx8632OnUint(key uint64, seed uint32) uint32 {
+	return Murmurhash3Onx8632OnInt(int64(key), seed)
+}
