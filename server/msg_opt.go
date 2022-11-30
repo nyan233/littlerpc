@@ -182,7 +182,7 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 	for i := inputStart; i < len(callArgs) && iter.Next(); i++ {
 		callArg, err := check.MarshalFromUnsafe(c.Codec, iter.Take(), callArgs[i].Interface())
 		if err != nil {
-			return nil, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
+			return nil, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrCodecMarshalError, err.Error())
 		}
 		// 可以根据获取的参数类别的每一个参数的类型信息得到
 		// 所需的精确类型，所以不用再对变长的类型做处理
