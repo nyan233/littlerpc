@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	lreflect "github.com/nyan233/littlerpc/internal/reflect"
-	"github.com/nyan233/littlerpc/pkg/common"
 	"github.com/nyan233/littlerpc/pkg/common/check"
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	"github.com/nyan233/littlerpc/pkg/common/msgwriter"
 	"github.com/nyan233/littlerpc/pkg/common/utils/debug"
 	"github.com/nyan233/littlerpc/pkg/common/utils/metadata"
@@ -18,31 +18,31 @@ import (
 	"strconv"
 )
 
-func (c *Client) handleProcessRetErr(msg *message.Message) perror.LErrorDesc {
+func (c *Client) handleReturnError(msg *message.Message) perror.LErrorDesc {
 	var errCode int
 	var err error
 	if errCodeStr := msg.MetaData.Load(message.ErrorCode); errCodeStr == "" {
-		errCode = common.Success.Code()
+		errCode = perror.Success
 	} else {
-		errCode, err = strconv.Atoi(msg.MetaData.Load(message.ErrorCode))
+		errCode, err = strconv.Atoi(errCodeStr)
 		if err != nil {
-			return perror.LWarpStdError(common.ErrClient, err.Error())
+			return perror.LWarpStdError(errorhandler.ErrClient, err.Error())
 		}
 	}
-	var errMessage string
-	if errMessage = msg.MetaData.Load(message.ErrorMessage); errCode == common.Success.Code() && errMessage == "" {
-		errMessage = common.Success.Message()
-	}
 	// Success表示无错误
-	if errCode == common.Success.Code() && errMessage == common.Success.Message() {
+	if errCode == perror.Success {
 		return nil
+	}
+	var errMessage string
+	if errMessage = msg.MetaData.Load(message.ErrorMessage); errCode == errorhandler.Success.Code() && errMessage == "" {
+		errMessage = errorhandler.Success.Message()
 	}
 	desc := c.eHandle.LNewErrorDesc(errCode, errMessage)
 	moresBinStr := msg.MetaData.Load(message.ErrorMore)
 	if moresBinStr != "" {
 		err := desc.UnmarshalMores(convert.StringToBytes(moresBinStr))
 		if err != nil {
-			return c.eHandle.LWarpErrorDesc(common.ErrClient, err.Error())
+			return c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, err.Error())
 		}
 	}
 	return desc
@@ -50,16 +50,11 @@ func (c *Client) handleProcessRetErr(msg *message.Message) perror.LErrorDesc {
 
 // NOTE: 使用完的Message一定要放回给Parser的分配器中
 func (c *Client) readMsg(ctx context.Context, msgId uint64, lc *connSource) (*message.Message, perror.LErrorDesc) {
-	notify := lc.LoadNotify()
-	if notify == nil {
-		return nil, c.eHandle.LWarpErrorDesc(common.ErrConnection, "notify channel already release")
-	}
-	// 接收服务器返回的调用结果并将header反序列化
-	done, ok := notify.LoadOk(msgId)
+	done, ok := lc.LoadNotify(msgId)
 	if !ok {
-		return nil, c.eHandle.LWarpErrorDesc(common.ErrClient, "readMessage Lookup done channel failed")
+		return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrConnection, "notifySet channel not found")
 	}
-	defer notify.Delete(msgId)
+	defer lc.DeleteNotify(msgId)
 readStart:
 	select {
 	case <-ctx.Done():
@@ -79,7 +74,7 @@ readStart:
 		goto readStart
 	case pMsg := <-done:
 		if pMsg.Error != nil {
-			return nil, c.eHandle.LWarpErrorDesc(common.ErrConnection, pMsg.Error.Error())
+			return nil, pMsg.Error
 		}
 		msg := pMsg.Message
 		// TODO : Client Handle Ping&Pong
@@ -121,7 +116,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *co
 		for iter.Next() && marshalCount < len(reps) {
 			rep, err := check.MarshalFromUnsafe(c.cfg.Codec, iter.Take(), reps[marshalCount])
 			if err != nil {
-				return reps, c.eHandle.LWarpErrorDesc(common.ErrCodecUnMarshalError, "MarshalFromUnsafe failed", err)
+				return reps, c.eHandle.LWarpErrorDesc(errorhandler.ErrCodecUnMarshalError, "MarshalFromUnsafe failed", err)
 			}
 			reps[marshalCount] = rep
 		}
@@ -147,18 +142,18 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *co
 		for k, v := range outputList[:len(outputList)-1] {
 			returnV, err2 := check.MarshalFromUnsafe(c.cfg.Codec, iter.Take(), v)
 			if err2 != nil {
-				return reps, c.eHandle.LWarpErrorDesc(common.ErrCodecUnMarshalError, "MarshalFromUnsafe failed", err2.Error())
+				return reps, c.eHandle.LWarpErrorDesc(errorhandler.ErrCodecUnMarshalError, "MarshalFromUnsafe failed", err2.Error())
 			}
 			reps[k] = returnV
 		}
 		// 返回的参数个数和用户注册的过程不对应
 		if iter.Next() {
-			return reps, c.eHandle.LWarpErrorDesc(common.ErrServer, "return results number is no equal client",
+			return reps, c.eHandle.LWarpErrorDesc(errorhandler.ErrServer, "return results number is no equal client",
 				fmt.Sprintf("Server=%d", iter.Tail()),
 				fmt.Sprintf("Client=%d", len(outputList)))
 		}
 	}
-	return reps, c.handleProcessRetErr(msg)
+	return reps, c.handleReturnError(msg)
 }
 
 // return method
@@ -172,7 +167,7 @@ func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *con
 		serviceSource, ok := c.services.LoadOk(msg.GetServiceName())
 		if !ok {
 			return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(
-				common.ServiceNotfound, "client error", msg.GetServiceName())
+				errorhandler.ServiceNotfound, "client error", msg.GetServiceName())
 		}
 		value = serviceSource.Value
 		// 哨兵条件
@@ -225,7 +220,7 @@ func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *con
 	for _, v := range args {
 		bytes, err := c.cfg.Codec.Marshal(v)
 		if err != nil {
-			return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(common.ErrCodecMarshalError,
+			return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrCodecMarshalError,
 				"client error", err.Error())
 		}
 		msg.AppendPayloads(bytes)
@@ -247,16 +242,15 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *conn
 			msg.MetaData.Store(message.PackerScheme, c.cfg.Packer.Scheme())
 		}
 		// 注册用于通知的Channel
-		notify := lc.LoadNotify()
-		if notify == nil {
-			return c.eHandle.LWarpErrorDesc(common.ErrConnection, "notify channel already release")
+		storeOk := lc.StoreNotify(msg.GetMsgId(), make(chan Complete, 1))
+		if !storeOk {
+			return c.eHandle.LWarpErrorDesc(errorhandler.ErrConnection, "notifySet channel already release")
 		}
-		notify.Store(msg.GetMsgId(), make(chan Complete, 1))
 	}
 	if ctx != context.Background() && ctx != context.TODO() {
 		ctxIdStr, ok := ctx.Value(message.ContextId).(string)
 		if !ok {
-			return c.eHandle.LWarpErrorDesc(common.ErrClient, "register context but context id not found")
+			return c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, "register context but context id not found")
 		}
 		msg.MetaData.Store(message.ContextId, ctxIdStr)
 	}
@@ -284,5 +278,5 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *conn
 		}
 		return c.eHandle.LWarpErrorDesc(writeErr, "sendCallMsg usage Writer.Write failed")
 	}
-	return common.Success
+	return nil
 }

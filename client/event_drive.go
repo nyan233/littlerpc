@@ -1,15 +1,12 @@
 package client
 
 import (
-	"errors"
-	"fmt"
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	"github.com/nyan233/littlerpc/pkg/common/msgparser"
 	"github.com/nyan233/littlerpc/pkg/common/transport"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
-	"github.com/nyan233/littlerpc/protocol/message"
 	"io"
 	"math"
-	"strconv"
 )
 
 func (c *Client) onMessage(conn transport.ConnAdapter, bytes []byte) {
@@ -34,42 +31,32 @@ func (c *Client) onMessage(conn transport.ConnAdapter, bytes []byte) {
 	if allMsg == nil || len(allMsg) <= 0 {
 		return
 	}
-	notify := desc.LoadNotify()
 	for _, pMsg := range allMsg {
-		if notify == nil {
-			c.logger.Warn("LRPC: in onMessage time trigger onClose")
-			return
-		}
 		// 单个连接返回最大能分配的Message Id代表遇到了服务端解析器解析失败的错误
 		// 这种情况下, 服务端没办法知道真正的Message Id, 如果不通知在这个连接上等待的回复调用者
 		// 的话就会导致对应调用被永远阻塞, 要是直接关闭连接的话就会导致无法知道真正出现的问题, 所以通知完
 		// 所有的调用者之后再关闭连接
 		if pMsg.Message.GetMsgId() == math.MaxUint64 {
-			for _, notifyChannel := range notify.Clean() {
-				metadata := pMsg.Message.MetaData
-				var pErr error
-				errCodeStr, ok := metadata.LoadOk(message.ErrorCode)
-				if !ok {
-					pErr = errors.New("server return err but error code not found")
-				}
-				errCode, convErr := strconv.Atoi(errCodeStr)
-				if convErr != nil {
-					pErr = fmt.Errorf("server return err but error code atoi failed: %v", convErr)
-				}
-				errMsg, errMore := metadata.Load(message.ErrorMessage), metadata.Load(message.ErrorMore)
+			oldNotify := desc.SwapNotifyChannel(nil)
+			if oldNotify == nil {
+				c.logger.Warn("LRPC: in onMessage time trigger onClose or parse error")
+				return
+			}
+			for _, channel := range oldNotify {
+				pErr := c.handleReturnError(pMsg.Message)
 				if pErr == nil {
-					pErr = c.eHandle.LNewErrorDesc(errCode, errMsg, errMore)
+					pErr = c.eHandle.LWarpErrorDesc(errorhandler.ErrServer, "server parser error time return invalid response")
 				}
 				select {
-				case notifyChannel <- Complete{Error: pErr}:
+				case channel <- Complete{Error: pErr}:
 				default:
-					c.logger.Warn("LRPC: server parser parse message failed, but client notify channel is block")
+					c.logger.Warn("LRPC: server parser parse message failed, but client notifySet channel is block")
 				}
 			}
 			_ = desc.conn.Close()
 			return
 		}
-		done, ok := notify.LoadOk(pMsg.Message.GetMsgId())
+		done, ok := desc.LoadNotify(pMsg.Message.GetMsgId())
 		if !ok {
 			c.logger.Error("LRPC: Message read complete but done channel not found")
 			continue
@@ -89,6 +76,7 @@ func (c *Client) onOpen(conn transport.ConnAdapter) {
 		parser:    c.cfg.ParserFactory(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()}, 4096),
 		initSeq:   uint64(random.FastRand()),
 		initCtxId: uint64(random.FastRand()),
+		notifySet: make(map[uint64]chan Complete, 1024),
 	}
 	c.connSourceSet.Store(conn, desc)
 	return
@@ -100,13 +88,16 @@ func (c *Client) onClose(conn transport.ConnAdapter, err error) {
 		c.logger.Error("LRPC: OnClose lookup conn failed")
 		return
 	}
-	oldNotify := desc.SwapNotify(nil)
-	oldNotify.Range(func(key uint64, done chan Complete) bool {
-		done <- Complete{
-			Error: errors.New("connection Close"),
+	oldNotify := desc.SwapNotifyChannel(nil)
+	if oldNotify == nil {
+		c.logger.Warn("LRPC: onMessage click parse error")
+	} else {
+		for _, channel := range oldNotify {
+			channel <- Complete{
+				Error: c.eHandle.LWarpErrorDesc(errorhandler.ErrConnection, "client receive onClose"),
+			}
 		}
-		return true
-	})
+	}
 	if err != nil && err != io.EOF {
 		c.logger.Error("LRPC: OnClose err : %v", err)
 	}
