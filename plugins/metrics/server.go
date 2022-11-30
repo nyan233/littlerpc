@@ -5,24 +5,29 @@ import (
 	"reflect"
 )
 
-var (
-	ServerCallMetrics            = &CallMetrics{}
-	ServerUploadTrafficMetrics   = &TrafficMetrics{}
-	ServerDownloadTrafficMetrics = &TrafficMetrics{}
-)
-
 type ServerMetricsPlugin struct {
+	Call            *CallMetrics
+	UploadTraffic   *TrafficMetrics
+	DownloadTraffic *TrafficMetrics
+}
+
+func NewServer() *ServerMetricsPlugin {
+	return &ServerMetricsPlugin{
+		Call:            new(CallMetrics),
+		UploadTraffic:   new(TrafficMetrics),
+		DownloadTraffic: new(TrafficMetrics),
+	}
 }
 
 func (s *ServerMetricsPlugin) OnMessage(msg *message.Message, bytes *[]byte) error {
-	ServerDownloadTrafficMetrics.Add(int64(len(*bytes)))
-	ServerCallMetrics.IncCount()
+	s.DownloadTraffic.Add(int64(len(*bytes)))
+	s.Call.IncCount()
 	return nil
 }
 
 func (s *ServerMetricsPlugin) OnCallBefore(msg *message.Message, args *[]reflect.Value, err error) error {
 	if err != nil {
-		ServerCallMetrics.IncFailed()
+		s.Call.IncFailed()
 	}
 	return nil
 }
@@ -33,17 +38,17 @@ func (s *ServerMetricsPlugin) OnCallResult(msg *message.Message, results *[]refl
 
 func (s *ServerMetricsPlugin) OnReplyMessage(msg *message.Message, bytes *[]byte, err error) error {
 	if err != nil {
-		ServerCallMetrics.IncFailed()
+		s.Call.IncFailed()
 	}
-	ServerUploadTrafficMetrics.Add(int64(len(*bytes)))
+	s.UploadTraffic.Add(int64(len(*bytes)))
 	return nil
 }
 
 func (s *ServerMetricsPlugin) OnComplete(msg *message.Message, err error) error {
 	if err != nil {
-		ServerCallMetrics.IncFailed()
+		s.Call.IncFailed()
 	} else {
-		ServerCallMetrics.IncComplete()
+		s.Call.IncComplete()
 	}
 	return nil
 }

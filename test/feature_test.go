@@ -8,9 +8,12 @@ import (
 	"github.com/nyan233/littlerpc/pkg/common/metadata"
 	"github.com/nyan233/littlerpc/plugins/metrics"
 	lserver "github.com/nyan233/littlerpc/server"
+	"github.com/stretchr/testify/assert"
+	"github.com/zbh255/bilog"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -79,15 +82,15 @@ func TestServerAndClient(t *testing.T) {
 	logger.SetOpenLogger(false)
 	baseServerOpts := []lserver.Option{
 		lserver.WithAddressServer(":1234"),
+		lserver.WithStackTrace(),
+		lserver.WithLogger(logger.New(bilog.NewLogger(os.Stdout, bilog.PANIC))),
 		lserver.WithOpenLogger(false),
-		//lserver.WithLogger(logger.New(bilog.NewLogger(os.Stdout, bilog.PANIC))),
-		lserver.WithPlugin(new(metrics.ServerMetricsPlugin)),
-		//lserver.WithDebug(true),
+		lserver.WithDebug(false),
 	}
 	baseClientOpts := []lclient.Option{
 		lclient.WithAddress(":1234"),
 		lclient.WithMuxConnectionNumber(16),
-		lclient.WithPlugin(new(metrics.ClientMetricsPlugin)),
+		lclient.WithStackTrace(),
 	}
 	testRunConfigs := []struct {
 		TestName                         string
@@ -135,7 +138,8 @@ func TestServerAndClient(t *testing.T) {
 }
 
 func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts []lclient.Option) {
-	server := lserver.New(serverOpts...)
+	sm := metrics.NewServer()
+	server := lserver.New(append(serverOpts, lserver.WithPlugin(sm))...)
 	h := &HelloTest{}
 	err := server.RegisterClass("", h, map[string]metadata.ProcessOption{
 		"SelectUser": {
@@ -172,7 +176,8 @@ func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts [
 	sendN := 50
 	addV := 65536
 	wg.Add(nGoroutine)
-	client, err := lclient.New(clientOpts...)
+	cm := metrics.NewClient()
+	client, err := lclient.New(append(clientOpts, lclient.WithPlugin(cm))...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +185,7 @@ func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts [
 	for i := 0; i < nGoroutine; i++ {
 		j := i
 		go func() {
-			for i := 0; i < sendN; i++ {
+			for k := 0; k < sendN; k++ {
 				err := proxy.Add(int64(addV))
 				if err != nil {
 					panic(err)
@@ -199,15 +204,21 @@ func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts [
 				if user.Name != "Jeni" {
 					panic(interface{}("the no value"))
 				}
-				_, _ = proxy.ModifyUser(context.Background(), j+100, User{
+				_, err = proxy.ModifyUser(context.Background(), j+100, User{
 					Id:   j + 100,
 					Name: "Tony",
 				})
+				if err != nil {
+					panic(err)
+				}
 				_, _, err = proxy.GetCount()
 				if err != nil {
 					t.Error(err)
 				}
-				_ = proxy.DeleteUser(context.Background(), j+100)
+				err = proxy.DeleteUser(context.Background(), j+100)
+				if err != nil {
+					panic(err)
+				}
 				pp := proxy.(*HelloTestProxy)
 				// 构造一次错误的请求
 				_, err = pp.Call("HelloTest.DeleteUser", context.Background(), "string")
@@ -225,22 +236,15 @@ func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts [
 			wg.Done()
 		}()
 	}
-	go func() {
-		for {
-			time.Sleep(time.Second * 10)
-			t.Log(metrics.ServerCallMetrics.LoadCount())
-			t.Log(metrics.ClientCallMetrics.LoadCount())
-			// t.Log(proxy.GetCount())
-			t.Log(atomic.LoadInt64(&h.count))
-		}
-	}()
 	wg.Wait()
-	if atomic.LoadInt64(&h.count) != int64(addV*nGoroutine)*int64(sendN) {
-		t.Fatal("h.count no correct")
-	}
-	if metrics.ClientCallMetrics.LoadFailed() != int64(nGoroutine)*int64(sendN) {
-		t.Fatal("errCount size not correct")
-	}
+	assert.Equal(t, atomic.LoadInt64(&h.count), int64(addV*nGoroutine)*int64(sendN), "h.count no correct")
+
+	assert.Equal(t, cm.Call.LoadFailed(), sm.Call.LoadFailed())
+	//assert.Equal(t, cm.Call.LoadComplete(), sm.Call.LoadComplete())
+	//assert.Equal(t, cm.Call.LoadAll(), sm.Call.LoadAll())
+	//assert.Equal(t, cm.Call.LoadCount(), sm.Call.LoadCount())
+
+	assert.Equal(t, cm.Call.LoadFailed(), int64(nGoroutine)*int64(sendN), "errCount size not correct")
 }
 
 func TestBalance(t *testing.T) {

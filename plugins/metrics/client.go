@@ -4,13 +4,18 @@ import (
 	"github.com/nyan233/littlerpc/protocol/message"
 )
 
-var (
-	ClientCallMetrics            = &CallMetrics{}
-	ClientUploadTrafficMetrics   = &TrafficMetrics{}
-	ClientDownloadTrafficMetrics = &TrafficMetrics{}
-)
-
 type ClientMetricsPlugin struct {
+	Call            *CallMetrics
+	UploadTraffic   *TrafficMetrics
+	DownloadTraffic *TrafficMetrics
+}
+
+func NewClient() *ClientMetricsPlugin {
+	return &ClientMetricsPlugin{
+		Call:            new(CallMetrics),
+		UploadTraffic:   new(TrafficMetrics),
+		DownloadTraffic: new(TrafficMetrics),
+	}
 }
 
 func (c *ClientMetricsPlugin) OnCall(msg *message.Message, args *[]interface{}) error {
@@ -18,20 +23,20 @@ func (c *ClientMetricsPlugin) OnCall(msg *message.Message, args *[]interface{}) 
 }
 
 func (c *ClientMetricsPlugin) OnSendMessage(msg *message.Message, bytes *[]byte) error {
-	ClientUploadTrafficMetrics.Add(int64(len(*bytes)))
-	ClientCallMetrics.IncCount()
+	c.UploadTraffic.Add(int64(len(*bytes)))
+	c.Call.IncCount()
 	return nil
 }
 
 func (c *ClientMetricsPlugin) OnReceiveMessage(msg *message.Message, bytes *[]byte) error {
-	ClientDownloadTrafficMetrics.Add(0)
+	c.DownloadTraffic.Add(0)
 	return nil
 }
 
 func (c *ClientMetricsPlugin) OnResult(msg *message.Message, results *[]interface{}, err error) {
 	if err != nil {
-		ClientCallMetrics.IncFailed()
+		c.Call.IncFailed()
 	} else {
-		ClientCallMetrics.IncComplete()
+		c.Call.IncComplete()
 	}
 }
