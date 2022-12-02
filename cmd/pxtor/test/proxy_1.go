@@ -2,7 +2,7 @@ package test
 
 import (
 	"errors"
-	"github.com/nyan233/littlerpc/pkg/common"
+	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
 	perror "github.com/nyan233/littlerpc/protocol/error"
 )
 
@@ -25,5 +25,5 @@ func (p *Test) ErrHandler(s1 string) (err error) {
 }
 
 func (p *Test) ErrHandler2(s1 string) (err error) {
-	return perror.LNewStdError(common.Success.Code(), common.Success.Message())
+	return perror.LNewStdError(errorhandler.Success.Code(), errorhandler.Success.Message())
 }

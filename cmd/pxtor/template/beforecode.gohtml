@@ -1,0 +1,30 @@
+package {{.PackageName}}
+
+/*
+    @Generator   : {{.GeneratorName}}
+    @CreateTime  : {{.CreateTime}}
+    @Author      : {{.Author}}
+    @Comment     : code is auto generate do not edit
+*/
+
+import (
+    {{range .ImportList}}"{{.}}"%s{{end}}
+)
+
+type {{.InterfaceName}} interface {
+    {{range .MethodList}}{{.}}%s{{end}}
+}
+
+type {{.TypeName}} struct {
+    *client.Client
+}
+
+func New{{.RealTypeName}}(client *client.Client) {{.InterfaceName}} {
+    proxy := new({{.TypeName}})
+    err := client.BindFunc("{{.SourceName}}", proxy)
+    if err != nil {
+        panic(err)
+    }
+    proxy.Client = client
+    return proxy
+}
