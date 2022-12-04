@@ -1,6 +1,4 @@
 .idea
 .vscode
 ./cmd/pxtor/test/Test_proxy.go
-go.sum
-
 fuzz
