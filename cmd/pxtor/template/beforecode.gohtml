@@ -11,20 +11,38 @@ import (
     {{range .ImportList}}"{{.}}"%s{{end}}
 )
 
+var (
+    _ binder = new(client.Client)
+    _ caller = new(client.Client)
+    _ {{.InterfaceName}} = new({{.TypeName}})
+)
+
+type binder interface {
+    BindFunc(source string,proxy interface{}) error
+}
+
+type caller interface {
+    Call(service string, args ...interface{}) (reps []interface{},err error)
+}
+
 type {{.InterfaceName}} interface {
     {{range .MethodList}}{{.}}%s{{end}}
 }
 
 type {{.TypeName}} struct {
-    *client.Client
+    caller
 }
 
-func New{{.RealTypeName}}(client *client.Client) {{.InterfaceName}} {
+func New{{.RealTypeName}}(b binder) {{.InterfaceName}} {
     proxy := new({{.TypeName}})
-    err := client.BindFunc("{{.SourceName}}", proxy)
+    err := b.BindFunc("{{.SourceName}}", proxy)
     if err != nil {
         panic(err)
     }
-    proxy.Client = client
+    c,ok := b.(caller)
+    if !ok {
+        panic("the argument is not implemented caller")
+    }
+    proxy.caller = c
     return proxy
 }

@@ -1,11 +1,5 @@
 package test
 
-import (
-	"errors"
-	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
-	perror "github.com/nyan233/littlerpc/protocol/error"
-)
-
 type Test struct{}
 
 func (p *Test) Foo(s1 string) (int, error) {
@@ -18,12 +12,4 @@ func (p *Test) Bar(s1 string) (int, error) {
 
 func (p *Test) NoReturnValue(i int) error {
 	return nil
-}
-
-func (p *Test) ErrHandler(s1 string) (err error) {
-	return errors.New(s1)
-}
-
-func (p *Test) ErrHandler2(s1 string) (err error) {
-	return perror.LNewStdError(errorhandler.Success.Code(), errorhandler.Success.Message())
 }

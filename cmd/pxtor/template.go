@@ -1,16 +1,19 @@
 package main
 
 import (
+	"embed"
 	"fmt"
-	"io/ioutil"
 )
 
 var (
+	//go:embed template
+	templateFs embed.FS
+
 	BeforeCodeTemplate string
 )
 
 func init() {
-	bfData, err := ioutil.ReadFile("./template/beforecode.gohtml")
+	bfData, err := templateFs.ReadFile("template/beforecode.gohtml")
 	if err != nil {
 		panic(err)
 	}
