@@ -5,46 +5,92 @@ import (
 	"flag"
 	"fmt"
 	"github.com/nyan233/littlerpc/client"
+	"github.com/nyan233/littlerpc/cmd/lrpcurl/proxy"
 	"github.com/nyan233/littlerpc/pkg/common/logger"
 	"github.com/nyan233/littlerpc/pkg/utils/convert"
 	"github.com/nyan233/littlerpc/server"
+	"io"
+	"log"
+	"os"
 	"strings"
+	"unsafe"
 )
 
-type MethodTable = server.MethodTable
-type ArgumentType = server.ArgumentType
+type Caller interface {
+	RawCall(service string, args ...interface{}) (reps []interface{}, err error)
+}
+
+type OutType string
+
+const (
+	FormatJson OutType = "format_json"
+	Json       OutType = "json"
+	Text       OutType = "text"
+)
+
+const (
+	GetAllSupportOption = "get_all_support_option"
+	GetAllInstance      = "get_all_instance"
+	GetAllCodec         = "get_all_codec"
+	GetAllPacker        = "get_all_packer"
+	GetMethodTable      = "get_method_table"
+	GetArgumentType     = "get_argument_type"
+	CallFunc            = "call_func"
+)
 
 var (
-	source = flag.String("source", "", "资源的描述,Example: 127.0.0.1:9090")
-	option = flag.String("option", "get_all_instance", "操作(get_all_instance | get_arg_type)")
-	target = flag.String("target", "Hello.Hello", "调用的目标: InstanceName.MethodName")
-	call   = flag.String("call", "null", "调用传递的参数: [100,\"hh\"]")
+	allSupportOption = []string{
+		GetAllCodec, GetAllPacker, GetAllInstance, GetMethodTable, GetArgumentType, CallFunc,
+	}
+)
+
+var (
+	serverAddr = flag.String("address", "127.0.0.1:9090", "服务器地址,Example: 127.0.0.1:9090")
+	source     = flag.String("source", server.ReflectionSource, "资源的名称,注册方法时指定的实例名称")
+	option     = flag.String("option", "get_all_instance", "操作(get_all_instance | get_arg_type)")
+	service    = flag.String("service", "Hello.Hello", "调用的目标: InstanceName.MethodName")
+	outType    = flag.String("out_type", string(FormatJson), "输出的信息的格式(format_json/json/text)")
+	call       = flag.String("call", "null", "调用传递的参数: [100,\"hh\"]")
 )
 
 func main() {
 	flag.Parse()
 	logger.SetOpenLogger(false)
 	c := dial()
-	proxy := NewLittleRpcReflectionProxy(c)
+	parserOption(proxy.NewLittleRpcReflection(c), c)
+}
+
+func parserOption(proxy proxy.LittleRpcReflectionProxy, caller Caller) {
 	switch *option {
-	case "get_all_instance":
-		getAllInstance(proxy)
-	case "get_arg_type":
-		getArgType(proxy)
-	case "get_method_table":
-		getMethodTable(proxy)
-	case "call_func":
-		callFunc(c)
+	case GetAllSupportOption:
+		getAllSupportOption(OutType(*outType), os.Stdout)
+	case GetAllCodec:
+		getAllCodec(proxy, OutType(*option), os.Stdout)
+	case GetAllPacker:
+		getAllPacker(proxy, OutType(*option), os.Stdout)
+	case GetAllInstance:
+		getAllInstance(proxy, OutType(*outType), os.Stdout)
+	case GetArgumentType:
+		getArgType(proxy, *service, OutType(*outType), os.Stdout)
+	case GetMethodTable:
+		getMethodTable(proxy, *source, OutType(*outType), os.Stdout)
+	case CallFunc:
+		var rawArgs []json.RawMessage
+		err := json.Unmarshal(convert.StringToBytes(*call), &rawArgs)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		callFunc(caller, *service, *(*[][]byte)(unsafe.Pointer(&rawArgs)), OutType(*outType), os.Stdout)
 	}
 }
 
 func dial() *client.Client {
 	c, err := client.New(
 		client.WithCustomLogger(logger.NilLogger{}),
-		client.WithUseMux(false),
+		client.WithNoMuxWriter(),
 		client.WithMuxConnection(false),
 		client.WithProtocol("std_tcp"),
-		client.WithAddress(*source),
+		client.WithAddress(*serverAddr),
 	)
 	*call = strings.TrimPrefix(*call, "\xef\xbb\xbf")
 	if err != nil {
@@ -53,65 +99,142 @@ func dial() *client.Client {
 	return c
 }
 
-func getAllInstance(proxy LittleRpcReflectionInterface) {
-	instance, err := proxy.AllInstance()
-	if err != nil {
-		panic(err)
+func getAllSupportOption(ot OutType, w io.Writer) {
+	switch ot {
+	case Text:
+		for _, option := range allSupportOption {
+			_, _ = fmt.Fprintln(w, option)
+		}
+	default:
+		anyOutFromJson(allSupportOption, ot, w)
 	}
-	iBytes, err := json.Marshal(instance)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(string(iBytes))
 }
 
-func getArgType(proxy LittleRpcReflectionInterface) {
-	var args []string
-	err := json.Unmarshal(convert.StringToBytes(*call), &args)
+func getAllInstance(proxy proxy.LittleRpcReflectionProxy, ot OutType, w io.Writer) {
+	instances, err := proxy.AllInstance()
 	if err != nil {
-		panic(err)
+		log.Fatalln(err)
 	}
-	argumentType, err := proxy.MethodArgumentType(args[0], args[1])
-	if err != nil {
-		panic(err)
+	switch ot {
+	case Text:
+		for k, v := range instances {
+			_, _ = fmt.Fprintf(w, "%s --> %s\n", k, v)
+		}
+	default:
+		anyOutFromJson(instances, ot, w)
 	}
-	aBytes, err := json.Marshal(argumentType)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(string(aBytes))
 }
 
-func getMethodTable(proxy LittleRpcReflectionInterface) {
-	var args []string
-	err := json.Unmarshal(convert.StringToBytes(*call), &args)
+func getArgType(proxy proxy.LittleRpcReflectionProxy, service string, ot OutType, w io.Writer) {
+	argType, err := proxy.MethodArgumentType(service)
 	if err != nil {
-		panic(err)
+		log.Fatalln(err)
 	}
-	table, err := proxy.MethodTable(args[0])
-	if err != nil {
-		panic(err)
+	switch ot {
+	case Text:
+		if argType == nil || len(argType) == 0 {
+			return
+		}
+		for _, v := range argType {
+			_, _ = fmt.Fprintln(w, v.TypeName)
+		}
+	default:
+		anyOutFromJson(argType, ot, w)
 	}
-	tBytes, err := json.Marshal(table)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(string(tBytes))
 }
 
-func callFunc(c *client.Client) {
-	var args []interface{}
-	err := json.Unmarshal(convert.StringToBytes(*call), &args)
+func getMethodTable(proxy proxy.LittleRpcReflectionProxy, sourceName string, ot OutType, w io.Writer) {
+	tab, err := proxy.MethodTable(sourceName)
 	if err != nil {
-		panic(err)
+		log.Fatalln(err)
 	}
-	reply, err := c.RawCall(*target, args...)
+	if tab == nil {
+		return
+	}
+	switch ot {
+	case Text:
+		break
+	default:
+		anyOutFromJson(tab, ot, w)
+	}
+}
+
+func getAllPacker(proxy proxy.LittleRpcReflectionProxy, ot OutType, w io.Writer) {
+	packers, err := proxy.AllPacker()
 	if err != nil {
-		panic(err)
+		log.Fatalln(err)
 	}
-	replyBytes, err := json.Marshal(reply)
+	switch ot {
+	case Text:
+		if packers == nil {
+			return
+		}
+		for _, packer := range packers {
+			_, _ = fmt.Fprintln(w, packer)
+		}
+	default:
+		anyOutFromJson(packers, ot, w)
+	}
+}
+
+func getAllCodec(proxy proxy.LittleRpcReflectionProxy, ot OutType, w io.Writer) {
+	codecs, err := proxy.AllCodec()
 	if err != nil {
-		panic(err)
+		log.Fatalln(err)
 	}
-	fmt.Println(string(replyBytes))
+	switch ot {
+	case Text:
+		if codecs == nil {
+			return
+		}
+		for _, codec := range codecs {
+			_, _ = fmt.Fprintln(w, codec)
+		}
+	default:
+		anyOutFromJson(codecs, ot, w)
+	}
+}
+
+func anyOutFromJson(data any, ot OutType, w io.Writer) {
+	switch ot {
+	case FormatJson:
+		bytes, err := json.MarshalIndent(data, "", "\t")
+		if err != nil {
+			log.Fatalln(err)
+		}
+		_, _ = fmt.Fprintln(w, string(bytes))
+	case Json:
+		bytes, err := json.Marshal(data)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		_, _ = fmt.Fprintln(w, string(bytes))
+	}
+}
+
+func callFunc(c Caller, service string, argsBytes [][]byte, ot OutType, w io.Writer) {
+	args := make([]interface{}, 0, 8)
+	for k, rawArg := range argsBytes {
+		if len(args) == k {
+			args = append(args, nil)
+		}
+		err := json.Unmarshal(rawArg, &args[k])
+		if err != nil {
+			log.Fatalln(err)
+		}
+	}
+	reps, err := c.RawCall(service, args...)
+	reps = append(reps, err)
+	switch ot {
+	case Text:
+		for _, rep := range reps {
+			bytes, err := json.Marshal(rep)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			_, _ = fmt.Fprintln(w, string(bytes))
+		}
+	default:
+		anyOutFromJson(reps, ot, w)
+	}
 }
