@@ -102,3 +102,10 @@ func (cm *connManager) TakeConn(service string) (transport.ConnAdapter, error) {
 func (cm *connManager) ReleaseConn(node loadbalance.RpcNode, conn transport.ConnAdapter) error {
 	return cm.selector.ReleaseConn(node, conn)
 }
+
+func (cm *connManager) Exit() error {
+	if cm.resolver != nil {
+		return cm.resolver.Close()
+	}
+	return nil
+}

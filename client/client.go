@@ -297,5 +297,5 @@ func (c *Client) Close() error {
 	if err != nil {
 		return err
 	}
-	return c.cm.resolver.Close()
+	return c.cm.Exit()
 }
