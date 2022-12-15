@@ -29,11 +29,11 @@ func (l *liveResolver) Instance() Resolver {
 	return l
 }
 
-func (l *liveResolver) Parse() ([]loadbalance.RpcNode, error) {
+func (l *liveResolver) Parse() ([]*loadbalance.RpcNode, error) {
 	nodeAddrs := strings.Split(l.parseUrl, ";")
-	nodes := make([]loadbalance.RpcNode, 0, len(nodeAddrs))
+	nodes := make([]*loadbalance.RpcNode, 0, len(nodeAddrs))
 	for _, nodeAddr := range nodeAddrs {
-		nodes = append(nodes, loadbalance.RpcNode{Address: nodeAddr})
+		nodes = append(nodes, &loadbalance.RpcNode{Address: nodeAddr})
 	}
 	return nodes, nil
 }

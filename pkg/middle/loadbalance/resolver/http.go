@@ -44,7 +44,7 @@ func NewHttp(initUrl string, u Update, scanInterval time.Duration) (Resolver, er
 	return hr, nil
 }
 
-func (h *httpResolver) Parse() ([]loadbalance.RpcNode, error) {
+func (h *httpResolver) Parse() ([]*loadbalance.RpcNode, error) {
 	response, err := http.Get(h.parseUrl)
 	if err != nil {
 		return nil, err
@@ -55,9 +55,9 @@ func (h *httpResolver) Parse() ([]loadbalance.RpcNode, error) {
 		return nil, err
 	}
 	nodeAddrs := strings.Split(string(bytes), "\n")
-	nodes := make([]loadbalance.RpcNode, 0, len(nodeAddrs))
+	nodes := make([]*loadbalance.RpcNode, 0, len(nodeAddrs))
 	for _, nodeAddr := range nodeAddrs {
-		nodes = append(nodes, loadbalance.RpcNode{Address: nodeAddr})
+		nodes = append(nodes, &loadbalance.RpcNode{Address: nodeAddr})
 	}
 	return nodes, nil
 }

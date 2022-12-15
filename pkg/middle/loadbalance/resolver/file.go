@@ -42,15 +42,15 @@ func NewFile(initUrl string, u Update, scanInterval time.Duration) (Resolver, er
 	return fr, nil
 }
 
-func (f *fileResolver) Parse() ([]loadbalance.RpcNode, error) {
+func (f *fileResolver) Parse() ([]*loadbalance.RpcNode, error) {
 	fileData, err := os.ReadFile(f.parseUrl)
 	if err != nil {
 		return nil, err
 	}
 	nodeAddrs := strings.Split(string(fileData), "\n")
-	nodes := make([]loadbalance.RpcNode, 0, len(nodeAddrs))
+	nodes := make([]*loadbalance.RpcNode, 0, len(nodeAddrs))
 	for _, nodeAddr := range nodeAddrs {
-		nodes = append(nodes, loadbalance.RpcNode{Address: nodeAddr})
+		nodes = append(nodes, &loadbalance.RpcNode{Address: nodeAddr})
 	}
 	return nodes, nil
 }

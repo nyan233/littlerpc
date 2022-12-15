@@ -61,15 +61,15 @@ func TestResolver(t *testing.T) {
 type mockFactory func(u Update) (Resolver, error)
 
 type mockUpdateImpl struct {
-	nodes []loadbalance.RpcNode
+	nodes []*loadbalance.RpcNode
 }
 
-func (m *mockUpdateImpl) IncNotify(keys []int, nodes []loadbalance.RpcNode) {
+func (m *mockUpdateImpl) IncNotify(keys []int, nodes []*loadbalance.RpcNode) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mockUpdateImpl) FullNotify(nodes []loadbalance.RpcNode) {
+func (m *mockUpdateImpl) FullNotify(nodes []*loadbalance.RpcNode) {
 	m.nodes = nodes
 }
 
