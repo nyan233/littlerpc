@@ -7,14 +7,18 @@ import (
 	"time"
 )
 
+type MapOnTest[Key any, Value any] interface {
+	LoadOk(Key) (Value, bool)
+	Store(Key, Value)
+	Delete(Key)
+	Len() int
+}
+
 func TestAllMap(t *testing.T) {
-	type Map[Key any, Value any] interface {
-		LoadOk(Key) (Value, bool)
-		Store(Key, Value)
-		Delete(Key)
-		Len() int
+	type RCUMapStore[Key comparable, Val any] interface {
+		StoreMulti(kvs []RCUMapElement[Key, Val])
 	}
-	printTestMap := func(printFn func(args ...any), iMap Map[string, int], errStr string) {
+	printTestMap := func(printFn func(args ...any), iMap MapOnTest[string, int], errStr string) {
 		switch iMap.(type) {
 		case *MutexMap[string, int]:
 			printFn("MutexMap    : ", errStr)
@@ -24,6 +28,8 @@ func TestAllMap(t *testing.T) {
 			printFn("SliceMap    : ", errStr)
 		case *SyncMap118[string, int]:
 			printFn("SyncMap118  : ", errStr)
+		case *RCUMap[string, int]:
+			printFn("RCUMap      : ", errStr)
 		}
 	}
 	type gen struct {
@@ -31,8 +37,8 @@ func TestAllMap(t *testing.T) {
 		Value int
 	}
 	const KeyNum int = 16384
-	for i := 0; i < 4; i++ {
-		var iMap Map[string, int]
+	for i := 0; i < 5; i++ {
+		var iMap MapOnTest[string, int]
 		switch i {
 		case 0:
 			iMap = &MutexMap[string, int]{}
@@ -42,6 +48,8 @@ func TestAllMap(t *testing.T) {
 			iMap = NewSliceMap[string, int](8)
 		case 3:
 			iMap = &SyncMap118[string, int]{}
+		case 4:
+			iMap = NewRCUMap[string, int]()
 		}
 		genData := make([]gen, KeyNum)
 		now := time.Now()
@@ -50,7 +58,19 @@ func TestAllMap(t *testing.T) {
 				Key:   strconv.FormatInt(int64((1<<16)+j), 16),
 				Value: j + 1,
 			}
-			iMap.Store(genData[j].Key, genData[j].Value)
+			if _, ok := iMap.(RCUMapStore[string, int]); !ok {
+				iMap.Store(genData[j].Key, genData[j].Value)
+			}
+		}
+		if inter, ok := iMap.(RCUMapStore[string, int]); ok {
+			kvs := make([]RCUMapElement[string, int], len(genData))
+			for k, v := range genData {
+				kvs[k] = RCUMapElement[string, int]{
+					Key:   v.Key,
+					Value: v.Value,
+				}
+			}
+			inter.StoreMulti(kvs)
 		}
 		// 插入一个已经存在的键, 检查长度是否计算正确
 		oldLen := iMap.Len()
@@ -85,7 +105,7 @@ func TestAllMap(t *testing.T) {
 			iMap.Delete(v.Key)
 		}
 		if iMap.Len() != 0 {
-			printTestMap(t.Fatal, iMap, "Map length a not equal zero")
+			printTestMap(t.Fatal, iMap, "MaperOnTest length a not equal zero")
 		}
 		printTestMap(t.Log, iMap, "ExecTime :"+time.Since(now).String())
 	}
