@@ -3,6 +3,7 @@ package balancer
 import (
 	"github.com/nyan233/littlerpc/pkg/middle/loadbalance"
 	"github.com/nyan233/littlerpc/pkg/utils/random"
+	"math"
 )
 
 type randomBalance struct {
@@ -18,11 +19,13 @@ func (r *randomBalance) Scheme() string {
 }
 
 func (r *randomBalance) Target(service string) (loadbalance.RpcNode, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	if r.nodes == nil || len(r.nodes) == 0 {
-		return *new(loadbalance.RpcNode), ErrAbleUsageRpcNodes
+	for {
+		length := r.length()
+		i := random.FastRandN(math.MaxUint32) % uint32(length)
+		node := r.loadNode(int(i))
+		if node == nil {
+			continue
+		}
+		return *node, nil
 	}
-	node := r.nodes[random.FastRandN(uint32(len(r.nodes)))]
-	return node, nil
 }

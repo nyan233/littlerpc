@@ -23,11 +23,13 @@ func (h *hashBalance) Scheme() string {
 }
 
 func (h *hashBalance) Target(service string) (loadbalance.RpcNode, error) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if h.nodes == nil || len(h.nodes) == 0 {
-		return *new(loadbalance.RpcNode), ErrAbleUsageRpcNodes
+	for {
+		length := h.length()
+		i := hash.Murmurhash3Onx8632(convert.StringToBytes(service), random.FastRandN(math.MaxUint32)) % uint32(length)
+		node := h.loadNode(int(i))
+		if node == nil {
+			continue
+		}
+		return *node, nil
 	}
-	i := hash.Murmurhash3Onx8632(convert.StringToBytes(service), random.FastRandN(math.MaxUint32)) % uint32(len(h.nodes))
-	return h.nodes[int(i)%len(h.nodes)], nil
 }

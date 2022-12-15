@@ -3,11 +3,12 @@ package balancer
 import (
 	"github.com/lafikl/consistent"
 	"github.com/nyan233/littlerpc/pkg/middle/loadbalance"
+	"sync/atomic"
 )
 
 type consistentHash struct {
-	absBalance
-	chNodes *consistent.Consistent
+	chNodes   atomic.Pointer[consistent.Consistent]
+	copyNodes atomic.Value // []*loadbalance.RpcNode
 }
 
 func NewConsistentHash() Balancer {
@@ -18,34 +19,31 @@ func (c *consistentHash) Scheme() string {
 	return "consistent-hash"
 }
 
-func (c *consistentHash) IncNotify(keys []int, nodes []loadbalance.RpcNode) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *consistentHash) IncNotify(keys []int, nodes []*loadbalance.RpcNode) {
+	copyNodes := c.copyNodes.Load().([]*loadbalance.RpcNode)
+	ch := c.chNodes.Load()
 	for k, v := range keys {
-		node := c.nodes[v]
-		c.nodes[v] = nodes[k]
-		c.chNodes.Remove(node.Address)
-		c.chNodes.Add(nodes[k].Address)
+		node := copyNodes[v]
+		copyNodes[v] = nodes[k]
+		ch.Remove(node.Address)
+		ch.Add(nodes[k].Address)
 	}
 }
 
-func (c *consistentHash) FullNotify(nodes []loadbalance.RpcNode) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.nodes = nodes
-	c.chNodes = consistent.New()
+func (c *consistentHash) FullNotify(nodes []*loadbalance.RpcNode) {
+	ch := consistent.New()
 	for _, v := range nodes {
-		c.chNodes.Add(v.Address)
+		ch.Add(v.Address)
 	}
+	c.chNodes.Store(ch)
 }
 
 func (c *consistentHash) Target(service string) (loadbalance.RpcNode, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	addr, err := c.chNodes.GetLeast(service)
+	ch := c.chNodes.Load()
+	addr, err := ch.GetLeast(service)
 	if err != nil {
 		return loadbalance.RpcNode{}, err
 	}
-	c.chNodes.Inc(addr)
+	ch.Inc(addr)
 	return loadbalance.RpcNode{Address: addr}, err
 }

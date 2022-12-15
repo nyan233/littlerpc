@@ -9,13 +9,7 @@ import (
 )
 
 func TestBalancer(t *testing.T) {
-	nodes := make([]loadbalance.RpcNode, 0, 128)
-	for i := 0; i < 128; i++ {
-		nodes = append(nodes, loadbalance.RpcNode{
-			Address: fmt.Sprintf("127.0.0.1:%d", 1030+i),
-			Weight:  10,
-		})
-	}
+	nodes := genNodes(128)
 	t.Run("TestHashBalancer", func(t *testing.T) {
 		testBalancer(t, &hashBalance{}, nodes)
 	})
@@ -30,15 +24,12 @@ func TestBalancer(t *testing.T) {
 	})
 }
 
-func testBalancer(t *testing.T, b Balancer, nodes []loadbalance.RpcNode) {
-	const TestN = 128 * 128
+func testBalancer(t *testing.T, b Balancer, nodes []*loadbalance.RpcNode) {
+	const TestN = 128 * 128 * 16
 	const TargetN = 64
 	b.FullNotify(nodes)
-	targets := make([]string, 0, TargetN)
+	targets := genTarget(TargetN)
 	targetRing := 0
-	for i := 0; i < TargetN; i++ {
-		targets = append(targets, fmt.Sprintf("/littlerpc/source/%d.html", random.FastRand()))
-	}
 	countMap := make(map[string]int, len(nodes))
 	for i := 0; i < TestN*len(nodes); i++ {
 		node, err := b.Target(targets[targetRing%len(targets)])
@@ -68,4 +59,23 @@ func stdDev(array []int) (int64, float64) {
 		stdDevSum += math.Pow(float64(v-avg), 2)
 	}
 	return int64(avg), math.Sqrt(stdDevSum / float64(len(array)))
+}
+
+func genNodes(size int) []*loadbalance.RpcNode {
+	nodes := make([]*loadbalance.RpcNode, 0, 128)
+	for i := 0; i < size; i++ {
+		nodes = append(nodes, &loadbalance.RpcNode{
+			Address: fmt.Sprintf("127.0.0.1:%d", 1030+i),
+			Weight:  10,
+		})
+	}
+	return nodes
+}
+
+func genTarget(size int) []string {
+	targets := make([]string, 0, size)
+	for i := 0; i < size; i++ {
+		targets = append(targets, fmt.Sprintf("/littlerpc/source/%d.html", random.FastRand()))
+	}
+	return targets
 }

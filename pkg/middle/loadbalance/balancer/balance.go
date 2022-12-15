@@ -20,9 +20,9 @@ type Balancer interface {
 	// 默认实现RoundRobbin和Hash
 	Scheme() string
 	// IncNotify 用于增量通知, 适合地址列表少量变化的时候
-	IncNotify(keys []int, nodes []loadbalance.RpcNode)
+	IncNotify(keys []int, nodes []*loadbalance.RpcNode)
 	// FullNotify 全量更新
-	FullNotify(nodes []loadbalance.RpcNode)
+	FullNotify(nodes []*loadbalance.RpcNode)
 	// Target 依赖Key从地址列表中给出一个地址
 	// 负载均衡器没有可用节点时则会返回error
 	Target(service string) (loadbalance.RpcNode, error)

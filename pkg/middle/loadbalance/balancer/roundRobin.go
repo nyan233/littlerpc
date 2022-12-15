@@ -19,12 +19,14 @@ func (r *roundRobbin) Scheme() string {
 }
 
 func (r *roundRobbin) Target(service string) (loadbalance.RpcNode, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	if r.nodes == nil || len(r.nodes) == 0 {
-		return *new(loadbalance.RpcNode), ErrAbleUsageRpcNodes
+	for {
+		length := r.length()
+		i := atomic.LoadInt64(&r.count) % int64(length)
+		node := r.loadNode(int(i))
+		if node == nil {
+			continue
+		}
+		atomic.AddInt64(&r.count, 1)
+		return *node, nil
 	}
-	node := r.nodes[atomic.LoadInt64(&r.count)%int64(len(r.nodes))]
-	atomic.AddInt64(&r.count, 1)
-	return node, nil
 }
