@@ -2,8 +2,8 @@ package test
 
 import (
 	"errors"
-	"github.com/nyan233/littlerpc/pkg/common/errorhandler"
-	perror "github.com/nyan233/littlerpc/protocol/error"
+	"github.com/nyan233/littlerpc/core/common/errorhandler"
+	perror "github.com/nyan233/littlerpc/core/protocol/error"
 )
 
 func (p *Test) ErrHandler(s1 string) (err error) {

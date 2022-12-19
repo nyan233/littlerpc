@@ -3,8 +3,8 @@ package pool
 import (
 	"context"
 	"errors"
-	"github.com/nyan233/littlerpc/pkg/utils/convert"
-	"github.com/nyan233/littlerpc/pkg/utils/hash"
+	"github.com/nyan233/littlerpc/core/utils/convert"
+	"github.com/nyan233/littlerpc/core/utils/hash"
 	"runtime"
 	"sync"
 	"sync/atomic"

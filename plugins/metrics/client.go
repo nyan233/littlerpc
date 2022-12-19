@@ -1,7 +1,7 @@
 package metrics
 
 import (
-	"github.com/nyan233/littlerpc/protocol/message"
+	"github.com/nyan233/littlerpc/core/protocol/message"
 )
 
 type ClientMetricsPlugin struct {

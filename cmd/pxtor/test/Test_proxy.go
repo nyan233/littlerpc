@@ -2,13 +2,13 @@ package test
 
 /*
    @Generator   : littlerpc-generator
-   @CreateTime  : 2022-12-04 14:41:02.7926342 +0800 CST m=+0.465414101
+   @CreateTime  : 2022-12-04 17:14:08.9460343 +0800 CST m=+0.288736501
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
 
 import (
-	"github.com/nyan233/littlerpc/client"
+	"github.com/nyan233/littlerpc/core/client"
 )
 
 var (

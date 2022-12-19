@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/nyan233/littlerpc/client"
-	"github.com/nyan233/littlerpc/pkg/common/logger"
-	"github.com/nyan233/littlerpc/server"
+	client2 "github.com/nyan233/littlerpc/core/client"
+	"github.com/nyan233/littlerpc/core/common/logger"
+	server2 "github.com/nyan233/littlerpc/core/server"
 	"math/rand"
 	"testing"
 )
@@ -40,7 +40,7 @@ func (b *BenchAlloc) AllocLittleNBytesNoInit(n, size int) ([][]byte, error) {
 func BenchmarkClientAlloc(b *testing.B) {
 	// 关闭服务器烦人的日志
 	logger.SetOpenLogger(false)
-	s1 := server.New(server.WithAddressServer(":1234"), server.WithOpenLogger(false))
+	s1 := server2.New(server2.WithAddressServer(":1234"), server2.WithOpenLogger(false))
 	err := s1.RegisterClass("", new(BenchAlloc), nil)
 	if err != nil {
 		b.Fatal(err)
@@ -50,7 +50,7 @@ func BenchmarkClientAlloc(b *testing.B) {
 		b.Fatal(err)
 	}
 	defer s1.Stop()
-	c1, err := client.New(client.WithAddress(":1234"))
+	c1, err := client2.New(client2.WithAddress(":1234"))
 	if err != nil {
 		b.Fatal(err)
 	}

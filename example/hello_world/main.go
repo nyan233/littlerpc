@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/nyan233/littlerpc/client"
-	"github.com/nyan233/littlerpc/server"
+	"github.com/nyan233/littlerpc/core/client"
+	"github.com/nyan233/littlerpc/core/server"
 )
 
 type Hello struct{}

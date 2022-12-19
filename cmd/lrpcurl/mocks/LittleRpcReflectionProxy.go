@@ -3,7 +3,7 @@
 package mocks
 
 import (
-	server "github.com/nyan233/littlerpc/server"
+	"github.com/nyan233/littlerpc/core/server"
 	mock "github.com/stretchr/testify/mock"
 )
 

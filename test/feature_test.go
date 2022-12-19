@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	lclient "github.com/nyan233/littlerpc/client"
-	"github.com/nyan233/littlerpc/pkg/common/logger"
-	"github.com/nyan233/littlerpc/pkg/common/metadata"
+	"github.com/nyan233/littlerpc/core/client"
+	"github.com/nyan233/littlerpc/core/common/logger"
+	"github.com/nyan233/littlerpc/core/common/metadata"
+	server2 "github.com/nyan233/littlerpc/core/server"
 	"github.com/nyan233/littlerpc/plugins/metrics"
-	lserver "github.com/nyan233/littlerpc/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/zbh255/bilog"
 	"log"
@@ -80,48 +80,48 @@ func TestServerAndClient(t *testing.T) {
 	}()
 	// 关闭服务器烦人的日志
 	logger.SetOpenLogger(false)
-	baseServerOpts := []lserver.Option{
-		lserver.WithAddressServer(":1234"),
-		lserver.WithStackTrace(),
-		lserver.WithLogger(logger.New(bilog.NewLogger(os.Stdout, bilog.PANIC))),
-		lserver.WithOpenLogger(false),
-		lserver.WithDebug(false),
+	baseServerOpts := []server2.Option{
+		server2.WithAddressServer(":1234"),
+		server2.WithStackTrace(),
+		server2.WithLogger(logger.New(bilog.NewLogger(os.Stdout, bilog.PANIC))),
+		server2.WithOpenLogger(false),
+		server2.WithDebug(false),
 	}
-	baseClientOpts := []lclient.Option{
-		lclient.WithAddress(":1234"),
-		lclient.WithMuxConnectionNumber(16),
-		lclient.WithStackTrace(),
+	baseClientOpts := []client.Option{
+		client.WithAddress(":1234"),
+		client.WithMuxConnectionNumber(16),
+		client.WithStackTrace(),
 	}
 	testRunConfigs := []struct {
 		TestName                         string
 		NoAbleUsageNoTransactionProtocol bool
-		ServerOptions                    []lserver.Option
-		ClientOptions                    []lclient.Option
+		ServerOptions                    []server2.Option
+		ClientOptions                    []client.Option
 	}{
 		{
 			TestName:      "TestLRPCProtocol-%s-NoMux-NonTls",
 			ServerOptions: append(baseServerOpts),
-			ClientOptions: append(baseClientOpts, lclient.WithNoMuxWriter()),
+			ClientOptions: append(baseClientOpts, client.WithNoMuxWriter()),
 		},
 		{
 			TestName:      "TestLRPCProtocol-%s-Mux-NonTls",
 			ServerOptions: append(baseServerOpts),
-			ClientOptions: append(baseClientOpts, lclient.WithMuxWriter()),
+			ClientOptions: append(baseClientOpts, client.WithMuxWriter()),
 		},
 		{
 			TestName:      "TestLRPCProtocol-%s-NoMux-Gzip-NonTls",
 			ServerOptions: append(baseServerOpts),
-			ClientOptions: append(baseClientOpts, lclient.WithNoMuxWriter(), lclient.WithPacker("gzip")),
+			ClientOptions: append(baseClientOpts, client.WithNoMuxWriter(), client.WithPacker("gzip")),
 		},
 		{
 			TestName:      "TestLRPCProtocol-%s-Mux-Gzip-NonTls",
 			ServerOptions: append(baseServerOpts),
-			ClientOptions: append(baseClientOpts, lclient.WithMuxWriter(), lclient.WithPacker("gzip")),
+			ClientOptions: append(baseClientOpts, client.WithMuxWriter(), client.WithPacker("gzip")),
 		},
 		{
 			TestName:                         "TestJsonRPC2-%s-SingleProtocol-NonTls",
-			ServerOptions:                    append(baseServerOpts, lserver.WithNetwork("nbio_ws")),
-			ClientOptions:                    append(baseClientOpts, lclient.WithJsonRpc2Writer(), lclient.WithNetWork("nbio_ws")),
+			ServerOptions:                    append(baseServerOpts, server2.WithNetwork("nbio_ws")),
+			ClientOptions:                    append(baseClientOpts, client.WithJsonRpc2Writer(), client.WithNetWork("nbio_ws")),
 			NoAbleUsageNoTransactionProtocol: true,
 		},
 	}
@@ -130,16 +130,16 @@ func TestServerAndClient(t *testing.T) {
 		for _, runConfig := range testRunConfigs {
 			t.Run(fmt.Sprintf(runConfig.TestName, network), func(t *testing.T) {
 				testServerAndClient(t,
-					append([]lserver.Option{lserver.WithNetwork(network)}, runConfig.ServerOptions...),
-					append([]lclient.Option{lclient.WithNetWork(network)}, runConfig.ClientOptions...))
+					append([]server2.Option{server2.WithNetwork(network)}, runConfig.ServerOptions...),
+					append([]client.Option{client.WithNetWork(network)}, runConfig.ClientOptions...))
 			})
 		}
 	}
 }
 
-func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts []lclient.Option) {
+func testServerAndClient(t *testing.T, serverOpts []server2.Option, clientOpts []client.Option) {
 	sm := metrics.NewServer()
-	server := lserver.New(append(serverOpts, lserver.WithPlugin(sm))...)
+	server := server2.New(append(serverOpts, server2.WithPlugin(sm))...)
 	h := &HelloTest{}
 	err := server.RegisterClass("", h, map[string]metadata.ProcessOption{
 		"SelectUser": {
@@ -177,7 +177,7 @@ func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts [
 	addV := 65536
 	wg.Add(nGoroutine)
 	cm := metrics.NewClient()
-	client, err := lclient.New(append(clientOpts, lclient.WithPlugin(cm))...)
+	client, err := client.New(append(clientOpts, client.WithPlugin(cm))...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,8 +250,8 @@ func testServerAndClient(t *testing.T, serverOpts []lserver.Option, clientOpts [
 func TestBalance(t *testing.T) {
 	// 关闭服务器烦人的日志
 	logger.SetOpenLogger(false)
-	server := lserver.New(lserver.WithAddressServer("127.0.0.1:9090", "127.0.0.1:8080"),
-		lserver.WithOpenLogger(false))
+	server := server2.New(server2.WithAddressServer("127.0.0.1:9090", "127.0.0.1:8080"),
+		server2.WithOpenLogger(false))
 	err := server.RegisterClass("", new(HelloTest), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -261,17 +261,17 @@ func TestBalance(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	c1, err := lclient.New(
-		lclient.WithBalance("roundRobin"),
-		lclient.WithResolver("live", "live://127.0.0.1:8080;127.0.0.1:9090"),
+	c1, err := client.New(
+		client.WithBalance("roundRobin"),
+		client.WithResolver("live", "live://127.0.0.1:8080;127.0.0.1:9090"),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p1 := NewHelloTestProxy(c1)
-	c2, err := lclient.New(
-		lclient.WithBalance("roundRobin"),
-		lclient.WithResolver("live", "live://127.0.0.1:8080;127.0.0.1:9090"),
+	c2, err := client.New(
+		client.WithBalance("roundRobin"),
+		client.WithResolver("live", "live://127.0.0.1:8080;127.0.0.1:9090"),
 	)
 	if err != nil {
 		t.Fatal(err)

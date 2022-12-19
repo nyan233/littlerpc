@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/nyan233/littlerpc/client"
 	"github.com/nyan233/littlerpc/cmd/lrpcurl/proxy"
-	"github.com/nyan233/littlerpc/pkg/common/logger"
-	"github.com/nyan233/littlerpc/pkg/utils/convert"
-	"github.com/nyan233/littlerpc/server"
+	client2 "github.com/nyan233/littlerpc/core/client"
+	logger2 "github.com/nyan233/littlerpc/core/common/logger"
+	"github.com/nyan233/littlerpc/core/server"
+	"github.com/nyan233/littlerpc/core/utils/convert"
 	"io"
 	"log"
 	"os"
@@ -50,12 +50,12 @@ var (
 	option     = flag.String("option", "get_all_instance", "操作(get_all_instance | get_arg_type)")
 	service    = flag.String("service", "Hello.Hello", "调用的目标: InstanceName.MethodName")
 	outType    = flag.String("out_type", string(FormatJson), "输出的信息的格式(format_json/json/text)")
-	call       = flag.String("call", "null", "调用传递的参数: [100,\"hh\"]")
+	call       = flag.String("call", "null", "调用传递的参数(不包括context/stream): [100,\"hh\"]")
 )
 
 func main() {
 	flag.Parse()
-	logger.SetOpenLogger(false)
+	logger2.SetOpenLogger(false)
 	c := dial()
 	parserOption(proxy.NewLittleRpcReflection(c), c)
 }
@@ -84,13 +84,13 @@ func parserOption(proxy proxy.LittleRpcReflectionProxy, caller Caller) {
 	}
 }
 
-func dial() *client.Client {
-	c, err := client.New(
-		client.WithCustomLogger(logger.NilLogger{}),
-		client.WithNoMuxWriter(),
-		client.WithMuxConnection(false),
-		client.WithProtocol("std_tcp"),
-		client.WithAddress(*serverAddr),
+func dial() *client2.Client {
+	c, err := client2.New(
+		client2.WithCustomLogger(logger2.NilLogger{}),
+		client2.WithNoMuxWriter(),
+		client2.WithMuxConnection(false),
+		client2.WithProtocol("std_tcp"),
+		client2.WithAddress(*serverAddr),
 	)
 	*call = strings.TrimPrefix(*call, "\xef\xbb\xbf")
 	if err != nil {
@@ -209,6 +209,11 @@ func anyOutFromJson(data any, ot OutType, w io.Writer) {
 			log.Fatalln(err)
 		}
 		_, _ = fmt.Fprintln(w, string(bytes))
+	default:
+		_, err := w.Write([]byte("invalid output format"))
+		if err != nil {
+			log.Fatalln(err)
+		}
 	}
 }
 

@@ -8,7 +8,7 @@ package main
 
 import (
 	"context"
-	"github.com/nyan233/littlerpc/client"
+	"github.com/nyan233/littlerpc/core/client"
 )
 
 type HelloTestInterface interface {
