@@ -65,9 +65,9 @@ func parserOption(proxy proxy.LittleRpcReflectionProxy, caller Caller) {
 	case GetAllSupportOption:
 		getAllSupportOption(OutType(*outType), os.Stdout)
 	case GetAllCodec:
-		getAllCodec(proxy, OutType(*option), os.Stdout)
+		getAllCodec(proxy, OutType(*outType), os.Stdout)
 	case GetAllPacker:
-		getAllPacker(proxy, OutType(*option), os.Stdout)
+		getAllPacker(proxy, OutType(*outType), os.Stdout)
 	case GetAllInstance:
 		getAllInstance(proxy, OutType(*outType), os.Stdout)
 	case GetArgumentType:
@@ -81,6 +81,8 @@ func parserOption(proxy proxy.LittleRpcReflectionProxy, caller Caller) {
 			log.Fatalln(err)
 		}
 		callFunc(caller, *service, *(*[][]byte)(unsafe.Pointer(&rawArgs)), OutType(*outType), os.Stdout)
+	default:
+		log.Fatalln("no implement option")
 	}
 }
 
@@ -210,10 +212,7 @@ func anyOutFromJson(data any, ot OutType, w io.Writer) {
 		}
 		_, _ = fmt.Fprintln(w, string(bytes))
 	default:
-		_, err := w.Write([]byte("invalid output format"))
-		if err != nil {
-			log.Fatalln(err)
-		}
+		log.Fatalln("invalid output format")
 	}
 }
 
