@@ -2,13 +2,13 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"github.com/nyan233/littlerpc/cmd/lrpcurl/proxy"
-	client2 "github.com/nyan233/littlerpc/core/client"
-	logger2 "github.com/nyan233/littlerpc/core/common/logger"
+	"github.com/nyan233/littlerpc/core/client"
+	"github.com/nyan233/littlerpc/core/common/logger"
 	"github.com/nyan233/littlerpc/core/server"
 	"github.com/nyan233/littlerpc/core/utils/convert"
+	flag "github.com/spf13/pflag"
 	"io"
 	"log"
 	"os"
@@ -45,17 +45,17 @@ var (
 )
 
 var (
-	serverAddr = flag.String("address", "127.0.0.1:9090", "服务器地址,Example: 127.0.0.1:9090")
-	source     = flag.String("source", server.ReflectionSource, "资源的名称,注册方法时指定的实例名称")
-	option     = flag.String("option", "get_all_instance", "操作(get_all_instance | get_arg_type)")
-	service    = flag.String("service", "Hello.Hello", "调用的目标: InstanceName.MethodName")
-	outType    = flag.String("out_type", string(FormatJson), "输出的信息的格式(format_json/json/text)")
-	call       = flag.String("call", "null", "调用传递的参数(不包括context/stream): [100,\"hh\"]")
+	serverAddr = flag.StringP("address", "a", "127.0.0.1:9090", "服务器地址,Example: 127.0.0.1:9090")
+	source     = flag.StringP("source", "s", server.ReflectionSource, "资源的名称,注册方法时指定的实例名称")
+	option     = flag.StringP("option", "o", "get_all_instance", "操作(get_all_instance | get_arg_type)")
+	service    = flag.StringP("service", "n", "Hello.Hello", "调用的目标: InstanceName.MethodName")
+	outType    = flag.StringP("out_type", "t", string(FormatJson), "输出的信息的格式(format_json/json/text)")
+	call       = flag.StringP("call", "c", "null", "调用传递的参数(不包括context/stream): [100,\"hh\"]")
 )
 
 func main() {
 	flag.Parse()
-	logger2.SetOpenLogger(false)
+	logger.SetOpenLogger(false)
 	c := dial()
 	parserOption(proxy.NewLittleRpcReflection(c), c)
 }
@@ -84,13 +84,13 @@ func parserOption(proxy proxy.LittleRpcReflectionProxy, caller Caller) {
 	}
 }
 
-func dial() *client2.Client {
-	c, err := client2.New(
-		client2.WithCustomLogger(logger2.NilLogger{}),
-		client2.WithNoMuxWriter(),
-		client2.WithMuxConnection(false),
-		client2.WithProtocol("std_tcp"),
-		client2.WithAddress(*serverAddr),
+func dial() *client.Client {
+	c, err := client.New(
+		client.WithCustomLogger(logger.NilLogger{}),
+		client.WithNoMuxWriter(),
+		client.WithMuxConnection(false),
+		client.WithProtocol("std_tcp"),
+		client.WithAddress(*serverAddr),
 	)
 	*call = strings.TrimPrefix(*call, "\xef\xbb\xbf")
 	if err != nil {
