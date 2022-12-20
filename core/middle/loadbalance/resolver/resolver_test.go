@@ -13,8 +13,8 @@ import (
 
 func TestResolver(t *testing.T) {
 	t.Run("TestFileResolver", func(t *testing.T) {
-		testResolver(t, func(nodes []loadbalance.RpcNode) {
-			file, err := os.OpenFile("./testdata/address.txt", os.O_RDWR|os.O_CREATE, 0755)
+		testResolver(t, func(nodes []*loadbalance.RpcNode) {
+			file, err := os.OpenFile("./testdata/address.txt", os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0755)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -30,7 +30,7 @@ func TestResolver(t *testing.T) {
 	})
 	t.Run("TestLiveResolver", func(t *testing.T) {
 		var parseUrl string
-		testResolver(t, func(nodes []loadbalance.RpcNode) {
+		testResolver(t, func(nodes []*loadbalance.RpcNode) {
 			addresses := node2Address(nodes)
 			parseUrl = strings.Join(addresses, ";")
 		}, func(u Update) (Resolver, error) {
@@ -49,7 +49,7 @@ func TestResolver(t *testing.T) {
 		go func() {
 			t.Error(http.ListenAndServe(ServerAddr, http.DefaultServeMux))
 		}()
-		testResolver(t, func(nodes []loadbalance.RpcNode) {
+		testResolver(t, func(nodes []*loadbalance.RpcNode) {
 			addresses := node2Address(nodes)
 			addressData = strings.Join(addresses, "\n")
 		}, func(u Update) (Resolver, error) {
@@ -73,14 +73,14 @@ func (m *mockUpdateImpl) FullNotify(nodes []*loadbalance.RpcNode) {
 	m.nodes = nodes
 }
 
-func testResolver(t *testing.T, save func(nodes []loadbalance.RpcNode), factory mockFactory) {
+func testResolver(t *testing.T, save func(nodes []*loadbalance.RpcNode), factory mockFactory) {
 	const (
 		NNodes = 128
 	)
 	mockUpdate := new(mockUpdateImpl)
-	genNodes := make([]loadbalance.RpcNode, 0, NNodes)
+	genNodes := make([]*loadbalance.RpcNode, 0, NNodes)
 	for i := 0; i < NNodes; i++ {
-		genNodes = append(genNodes, loadbalance.RpcNode{
+		genNodes = append(genNodes, &loadbalance.RpcNode{
 			Address: fmt.Sprintf("127.0.0.1:%d", i+int(uint16(random.FastRand()))),
 			Weight:  0,
 		})
@@ -93,7 +93,7 @@ func testResolver(t *testing.T, save func(nodes []loadbalance.RpcNode), factory 
 	assert.Equal(t, mockUpdate.nodes, genNodes)
 }
 
-func node2Address(nodes []loadbalance.RpcNode) []string {
+func node2Address(nodes []*loadbalance.RpcNode) []string {
 	addresses := make([]string, 0, len(nodes))
 	for _, node := range nodes {
 		addresses = append(addresses, node.Address)
