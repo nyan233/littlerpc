@@ -111,7 +111,7 @@ func (c *messageOpt) Check() perror.LErrorDesc {
 		if err := c.Server.pManager.OnCallBefore(c.Message, &callArgs, errors.New("arguments check failed")); err != nil {
 			c.Server.logger.Error("LRPC: call plugin OnCallBefore failed: %v", err)
 		}
-		return lErr
+		return c.Server.eHandle.LWarpErrorDesc(lErr, "arguments check failed")
 	}
 	// Plugin
 	if err := c.Server.pManager.OnCallBefore(c.Message, &callArgs, nil); err != nil {
