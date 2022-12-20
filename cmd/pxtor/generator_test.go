@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
@@ -8,22 +9,26 @@ func TestFutures(t *testing.T) {
 	*dir = "./test"
 	*receiver = "test.Test"
 	*sourceName = "littlerpc/internal/test1"
+	*style = SyncStyle
 	for i := 0; i < 100; i++ {
 		genCode()
 	}
 }
 
 func TestGenApi(t *testing.T) {
-	_, err := genSyncApi("Hello", "littlerpc/test/pxtor/internal", "Add",
-		[]string{"s1", "d1"}, []string{"string", "int"}, []string{"string", "error"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	after, err := genSync(Argument{
+		Name: "p",
+		Type: "TestProxy",
+	}, "Hello", "littlerpc/test/pxtor/internal", []Argument{
+		{"s1", "string"}, {"d1", "int"},
+	}, []Argument{
+		{"", "string"}, {"", "error"},
+	})
+	assert.NotEqualf(t, after(), "", "result equal empty")
+	assert.Nil(t, err)
 	_, err = genAsyncApi("Hello", "littlerpc/test/pxtor/internal", "Add",
 		[]string{"s1", "d1"}, []string{"string", "int"}, []string{"string", "error"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.Nil(t, err)
 }
 
 func TestCreateBeforeCode(t *testing.T) {

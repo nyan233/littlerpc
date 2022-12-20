@@ -3,8 +3,8 @@ package main
 import (
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
+	flag "github.com/spf13/pflag"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -17,13 +17,22 @@ import (
 	"time"
 )
 
+type GenMethod func(receive Argument, name, service string, input []Argument, output []Argument) (getResult func() string, err error)
+
+const (
+	SyncStyle     = "sync"
+	AsyncStyle    = "async"
+	RequestsStyle = "requests"
+)
+
 var (
-	receiver   = flag.String("r", "", "代理对象的接收器: package.RecvName")
-	dir        = flag.String("d", "./", "解析接收器的路径: ./")
-	outName    = flag.String("o", "", "输出的文件名，默认的格式: receiver_proxy.go")
-	sourceName = flag.String("s", "", "SourceName Example(Hello1.Hello2) SourceName == Hello1")
-	genAsync   = flag.Bool("g", false, "生成Async Api, 默认不生成")
-	fileSet    *token.FileSet
+	receiver   = flag.StringP("receive", "r", "", "代理对象的接收器: package.RecvName")
+	dir        = flag.StringP("dir", "d", "./", "解析接收器的路径: ./")
+	outName    = flag.StringP("out", "o", "", "输出的文件名，默认的格式: receiver_proxy.go")
+	sourceName = flag.StringP("source", "s", "", "SourceName Example(Hello1.Hello2) SourceName == Hello1")
+	// TODO: 实现不同API风格的生成函数
+	style   = flag.StringP("gen", "g", SyncStyle, "生成的API风格, TODO")
+	fileSet *token.FileSet
 )
 
 func main() {
@@ -56,12 +65,19 @@ func genCode() {
 	// 要写入到文件的数据，提供这个是为了方便格式化生成的代码
 	var fileBuffer bytes.Buffer
 	fileBuffer.Grow(512)
+	var genFn GenMethod
+	switch *style {
+	case SyncStyle:
+		genFn = genSync
+	default:
+		panic("no support gen style")
+	}
 	for k, v := range pkgDir.Files {
 		rawFile, err := os.Open(path.Dir(*dir) + "/" + k)
 		if err != nil {
 			panic(interface{}(err))
 		}
-		tmp := getAllFunc(v, rawFile, *sourceName, *genAsync, func(recvT string) bool {
+		tmp := getAllFunc(v, rawFile, *sourceName, genFn, func(recvT string) bool {
 			if recvT == recvName {
 				return true
 			}
@@ -94,7 +110,7 @@ func genCode() {
 	}
 }
 
-func getAllFunc(file *ast.File, rawFile *os.File, sourceName string, genAsync bool, filter func(recvT string) bool) []string {
+func getAllFunc(file *ast.File, rawFile *os.File, sourceName string, genFunc GenMethod, filter func(recvT string) bool) []string {
 	funcStrs := make([]string, 0)
 	for _, v := range file.Decls {
 		funcDecl, ok := v.(*ast.FuncDecl)
@@ -128,96 +144,45 @@ func getAllFunc(file *ast.File, rawFile *os.File, sourceName string, genAsync bo
 		recvName := receiver.Name
 		// 被代理对应持有的方法名
 		funName := funcDecl.Name.Name
-		// 输入参数名字列表
-		inNameList := make([]string, 0, 4)
-		// 输入参数类型列表
-		inTypeList := make([]string, 0, 4)
-		// 输出参数类型列表
-		outTypeList := make([]string, 0, 4)
+		inputList := make([]Argument, 0, 4)
+		outputList := make([]Argument, 0, 4)
 		// 处理参数的序列化
 		for _, pv := range funcDecl.Type.Params.List {
-			// 多个参数同一类型的时候可能参数列表会是这样的: s1,s2 string
-			// 这种情况要处理
 			for _, pvName := range pv.Names {
-				// 添加到输入参数名字列表
-				inNameList = append(inNameList, pvName.Name)
-				// 类型肯定只有一个，不可能多个参数多个类型
-				// 添加到输入参数类型列表
-				inTypeList = append(inTypeList, handleAstType(pv.Type, rawFile))
+				inputList = append(inputList, Argument{
+					Name: pvName.Name,
+					Type: handleAstType(pv.Type, rawFile),
+				})
 			}
 		}
 		// 找出所有的返回值类型
 		for _, rv := range funcDecl.Type.Results.List {
-			outTypeList = append(outTypeList, handleAstType(rv.Type, rawFile))
+			outputList = append(outputList, Argument{Type: handleAstType(rv.Type, rawFile)})
 		}
-		syncApi, err := genSyncApi(recvName, sourceName, funName, inNameList, inTypeList, outTypeList)
+		after, err := genFunc(Argument{
+			Name: "p",
+			Type: recvName,
+		}, funName, sourceName+"."+funName, inputList, outputList)
 		if err != nil {
 			return nil
 		}
-		funcStrs = append(funcStrs, syncApi)
-		if genAsync {
-			asyncApi, err := genAsyncApi(recvName, sourceName, funName, inNameList, inTypeList, outTypeList)
-			if err != nil {
-				return nil
-			}
-			funcStrs = append(funcStrs, asyncApi[0])
-			funcStrs = append(funcStrs, asyncApi[1])
-		}
+		funcStrs = append(funcStrs, after())
 	}
 	return funcStrs
 }
 
 // 生成同步调用的Api
-func genSyncApi(recvName, source, service string, inNameList, inTypeList, outList []string) (string, error) {
-	if len(inNameList) != len(inTypeList) {
-		return "", errors.New("inNameList and inTypeList length not equal")
+func genSync(receive Argument, name, service string, input []Argument, output []Argument) (getResult func() string, err error) {
+	receive.Type = GetTypeName(receive.Type)
+	m := Method{
+		Receive:     receive,
+		ServiceName: service,
+		Name:        name,
+		InputList:   input,
+		OutputList:  output,
+		Statement:   Statement{},
 	}
-	recvName = GetTypeName(recvName)
-	var sb strings.Builder
-	_, _ = fmt.Fprintf(&sb, "func (p %s) %s(", recvName, service)
-	for i := 0; i < len(inNameList); i++ {
-		_, _ = fmt.Fprintf(&sb, "%s %s,", inNameList[i], inTypeList[i])
-	}
-	sb.WriteString(") ")
-	for k, v := range outList {
-		// 多返回值的情况
-		if len(outList) > 1 && k == 0 {
-			sb.WriteString("(")
-		}
-		sb.WriteString(v)
-		// 不是最后一个返回值才添加分隔符
-		if len(outList) > 1 && len(outList)-1 != k {
-			sb.WriteString(",")
-		}
-		// 多返回值的情况
-		if len(outList) > 1 && k == len(outList)-1 {
-			sb.WriteString(")")
-		}
-	}
-	if len(outList) > 1 {
-		_, _ = fmt.Fprintf(&sb, "{rep,err := p.Call(\"%s.%s\",", source, service)
-	} else {
-		_, _ = fmt.Fprintf(&sb, "{_,err := p.Call(\"%s.%s\",", source, service)
-	}
-	for _, v := range inNameList {
-		sb.WriteString(v)
-		sb.WriteString(",")
-	}
-	sb.WriteString(");")
-	for k, v := range outList[:len(outList)-1] {
-		_, _ = fmt.Fprintf(&sb, "r%d,_ := rep[%d].(%s);", k, k, v)
-	}
-	// 生成最终返回的代码
-	sb.WriteString("return ")
-	for k := range outList[:len(outList)-1] {
-		if k == len(outList)-1 {
-			_, _ = fmt.Fprintf(&sb, "r%d", k)
-			continue
-		}
-		_, _ = fmt.Fprintf(&sb, "r%d,", k)
-	}
-	sb.WriteString("err;}")
-	return sb.String(), nil
+	return m.FormatToSync, nil
 }
 
 // 生成异步调用的Api
@@ -305,11 +270,11 @@ func createBeforeCode(pkgName, recvName, source string, allFunc []string) string
 	sb.Grow(1024)
 	desc := &BeforeCodeDesc{
 		PackageName:   pkgName,
-		GeneratorName: "littlerpc-generator",
+		GeneratorName: "pxtor",
 		CreateTime:    time.Now(),
 		Author:        "NoAuthor",
 		ImportList: []string{
-			"github.com/nyan233/littlerpc/client",
+			"github.com/nyan233/littlerpc/core/client",
 		},
 		InterfaceName: interfaceName,
 		SourceName:    source,
