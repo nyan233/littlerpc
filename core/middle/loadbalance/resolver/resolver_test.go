@@ -5,6 +5,7 @@ import (
 	"github.com/nyan233/littlerpc/core/middle/loadbalance"
 	"github.com/nyan233/littlerpc/core/utils/random"
 	"github.com/stretchr/testify/assert"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -38,7 +39,7 @@ func TestResolver(t *testing.T) {
 		})
 	})
 	t.Run("TestHttpResolver", func(t *testing.T) {
-		const ServerAddr = "127.0.0.1:7658"
+		const ServerAddr = "127.0.0.1:15832"
 		var addressData string
 		http.DefaultServeMux.HandleFunc("/address", func(w http.ResponseWriter, _ *http.Request) {
 			_, err := w.Write([]byte(addressData))
@@ -46,9 +47,16 @@ func TestResolver(t *testing.T) {
 				t.Error(err)
 			}
 		})
+		done := make(chan bool, 1)
 		go func() {
-			t.Error(http.ListenAndServe(ServerAddr, http.DefaultServeMux))
+			listener, err := net.Listen("tcp", ServerAddr)
+			if err != nil {
+				t.Error(err)
+			}
+			done <- true
+			t.Error(http.Serve(listener, http.DefaultServeMux))
 		}()
+		<-done
 		testResolver(t, func(nodes []*loadbalance.RpcNode) {
 			addresses := node2Address(nodes)
 			addressData = strings.Join(addresses, "\n")
