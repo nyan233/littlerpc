@@ -120,14 +120,22 @@ func TestServerAndClient(t *testing.T) {
 		},
 		{
 			TestName:                         "TestJsonRPC2-%s-SingleProtocol-NonTls",
-			ServerOptions:                    append(baseServerOpts, server2.WithNetwork("nbio_ws")),
-			ClientOptions:                    append(baseClientOpts, client.WithJsonRpc2Writer(), client.WithNetWork("nbio_ws")),
+			ServerOptions:                    append(baseServerOpts),
+			ClientOptions:                    append(baseClientOpts, client.WithJsonRpc2Writer()),
 			NoAbleUsageNoTransactionProtocol: true,
 		},
 	}
 	networks := []string{"nbio_tcp", "std_tcp", "nbio_ws"}
 	for _, network := range networks {
 		for _, runConfig := range testRunConfigs {
+			if runConfig.NoAbleUsageNoTransactionProtocol {
+				switch network {
+				case "nbio_tcp":
+					continue
+				case "std_tcp":
+					continue
+				}
+			}
 			t.Run(fmt.Sprintf(runConfig.TestName, network), func(t *testing.T) {
 				testServerAndClient(t,
 					append([]server2.Option{server2.WithNetwork(network)}, runConfig.ServerOptions...),
@@ -171,7 +179,7 @@ func testServerAndClient(t *testing.T, serverOpts []server2.Option, clientOpts [
 
 	var wg sync.WaitGroup
 	// 启动多少的客户端
-	nGoroutine := 1
+	nGoroutine := 50
 	// 一个客户端连续发送多少次消息
 	sendN := 50
 	addV := 65536

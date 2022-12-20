@@ -13,7 +13,7 @@ func (m *muxHandler) Header() []byte {
 }
 
 func (m *muxHandler) BaseLen() (BaseLenType, int) {
-	return SingleRequest, mux2.BlockBaseLen
+	return MultiRequest, mux2.BlockBaseLen
 }
 
 func (m *muxHandler) MessageLength(base []byte) int {

@@ -5,6 +5,7 @@ import (
 	"github.com/nyan233/littlerpc/core/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/core/container"
 	message2 "github.com/nyan233/littlerpc/core/protocol/message"
+	"github.com/nyan233/littlerpc/core/protocol/message/gen"
 	mux2 "github.com/nyan233/littlerpc/core/protocol/message/mux"
 	"github.com/nyan233/littlerpc/core/utils/random"
 	"github.com/stretchr/testify/assert"
@@ -48,6 +49,66 @@ func TestParser(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, len(allMasg), 2)
+}
+
+func TestConcurrentHalfParse(t *testing.T) {
+	const (
+		ConsumerSize   = 16
+		ChanBufferSize = 8
+		CycleSize      = 1000
+	)
+	producer := func(channels []chan []byte, data []byte, cycleSize int) {
+		for i := 0; i < cycleSize; i++ {
+			tmpData := data
+			for len(tmpData) > 0 {
+				var readN int
+				if len(tmpData) >= 20 {
+					readN = 20
+				} else {
+					readN = len(tmpData)
+				}
+				for _, channel := range channels {
+					channel <- tmpData[:readN]
+				}
+				tmpData = tmpData[readN:]
+			}
+		}
+		for _, channel := range channels {
+			close(channel)
+		}
+	}
+	consumer := func(parser Parser, channel chan []byte, checkHeader byte, wg *sync.WaitGroup) {
+		defer wg.Done()
+		for {
+			select {
+			case data, ok := <-channel:
+				if !ok {
+					return
+				}
+				msgs, err := parser.Parse(data)
+				if err != nil {
+					t.Error(err)
+				}
+				if msgs != nil && len(msgs) > 0 {
+					for _, msg := range msgs {
+						assert.Equal(t, checkHeader, msg.Header)
+						parser.Free(msg.Message)
+					}
+				}
+			}
+		}
+	}
+	consumerChannels := make([]chan []byte, ConsumerSize)
+	for k := range consumerChannels {
+		consumerChannels[k] = make(chan []byte, ChanBufferSize)
+	}
+	var wg sync.WaitGroup
+	wg.Add(ConsumerSize)
+	for _, v := range consumerChannels {
+		go consumer(NewLRPCTrait(NewDefaultSimpleAllocTor(), 4096), v, message2.MagicNumber, &wg)
+	}
+	go producer(consumerChannels, gen.MuxToBytes(gen.Big), CycleSize)
+	wg.Wait()
 }
 
 func TestJsonRPC2Parser(t *testing.T) {
