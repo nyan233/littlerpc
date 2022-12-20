@@ -6,6 +6,7 @@ import (
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	"github.com/nyan233/littlerpc/core/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/core/middle/codec"
+	errno "github.com/nyan233/littlerpc/core/protocol/error"
 	error2 "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/utils/convert"
@@ -54,23 +55,24 @@ func (j *JsonRPC2) requestWrite(arg Argument) error2.LErrorDesc {
 		return true
 	})
 	request.Method = arg.Message.GetServiceName()
+	if arg.Encoder != nil && arg.Encoder.Scheme() != message.DefaultPacker {
+		return arg.EHandle.LNewErrorDesc(errno.UnsafeOption, "usage not supported for packer, only support text")
+	}
+	// json是文本型数据, 不需要base64编码, 如果是protobuf等二进制则需要base64编码之后才能被解析
+	var isJsonParams bool
+	if scheme := arg.Message.MetaData.Load(message.CodecScheme); scheme == "" || scheme == message.DefaultCodec {
+		isJsonParams = true
+	}
 	iter := arg.Message.PayloadsIterator()
 	request.Params = append(request.Params, '[')
 	for iter.Next() {
-		var bytes []byte
-		var err error
-		if arg.Encoder.Scheme() != message.DefaultPacker {
-			bytes, err = arg.Encoder.EnPacket(iter.Take())
-			if err != nil {
-				return arg.EHandle.LWarpErrorDesc(errorhandler.ErrMessageEncoding,
-					fmt.Sprintf("jsonrpc2 Packer UnPacket failed: %v", err))
-			}
+		if !isJsonParams {
+			request.Params = append(request.Params, '"')
+			request.Params = append(request.Params, base64.StdEncoding.EncodeToString(iter.Take())...)
+			request.Params = append(request.Params, '"')
 		} else {
-			bytes = iter.Take()
+			request.Params = append(request.Params, iter.Take()...)
 		}
-		request.Params = append(request.Params, '"')
-		request.Params = append(request.Params, base64.StdEncoding.EncodeToString(bytes)...)
-		request.Params = append(request.Params, '"')
 		if iter.Next() {
 			request.Params = append(request.Params, ',')
 		}

@@ -1,6 +1,7 @@
 package msgparser
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"github.com/nyan233/littlerpc/core/common/jsonrpc2"
@@ -46,9 +47,12 @@ func (j *jsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, 
 			msg.MetaData.Store(k, v)
 		}
 	}
+	isJsonParams := true
 	var packerScheme string
 	if base.MetaData != nil {
 		packerScheme = base.MetaData[message.PackerScheme]
+		codecScheme := base.MetaData[message.CodecScheme]
+		isJsonParams = codecScheme == "" || codecScheme == message.DefaultCodec
 	}
 	if !(packerScheme == "" || packerScheme == message.DefaultPacker) {
 		return -1, errors.New("jsonrpc2 not supported only text packer")
@@ -72,7 +76,17 @@ func (j *jsonRpc2Handler) Unmarshal(data []byte, msg *message.Message) (Action, 
 				return -1, err
 			}
 			for _, v := range msgs {
-				msg.AppendPayloads(v)
+				var bytes []byte
+				var err error
+				if !isJsonParams {
+					bytes, err = base64.StdEncoding.DecodeString(convert.BytesToString(v))
+					if err != nil {
+						return 0, err
+					}
+				} else {
+					bytes = v
+				}
+				msg.AppendPayloads(bytes)
 			}
 		default:
 			msg.AppendPayloads(trait.Params)
