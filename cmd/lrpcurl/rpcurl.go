@@ -105,6 +105,7 @@ func dial() *client.Client {
 		client.WithNoMuxWriter(),
 		client.WithMuxConnection(false),
 		client.WithProtocol("std_tcp"),
+		client.WithStackTrace(),
 		client.WithAddress(*serverAddr),
 	)
 	*call = strings.TrimPrefix(*call, "\xef\xbb\xbf")
@@ -238,7 +239,7 @@ func callFunc(ctx context.Context, c Caller, service string, argsBytes [][]byte,
 			log.Fatalln(err)
 		}
 	}
-	reps, err := c.RawCall(service, args)
+	reps, err := c.RawCall(service, args...)
 	reps = append(reps, err)
 	switch ot {
 	case Text:
