@@ -179,7 +179,7 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 	}
 	iter.Reset()
 	for i := inputStart; i < len(callArgs) && iter.Next(); i++ {
-		callArg, err := check.MarshalFromUnsafe(c.Codec, iter.Take(), callArgs[i].Interface())
+		callArg, err := check.UnMarshalFromUnsafe(c.Codec, iter.Take(), callArgs[i].Interface())
 		if err != nil {
 			return nil, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrCodecMarshalError, err.Error())
 		}

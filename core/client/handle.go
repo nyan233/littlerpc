@@ -113,18 +113,15 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *co
 	// 用于查找type的reflect.Value为nil证明客户端使用了RawCall, 因为没法知道参数的类型和参数的
 	// 个数, 只能用保守的方法估算, 有多少算多少
 	if !method.IsValid() {
-		var marshalCount int
-		if len(reps) <= marshalCount {
-			reps = append(reps, nil)
-		}
-		for iter.Next() && marshalCount < len(reps) {
-			rep, err := check.MarshalFromUnsafe(c.cfg.Codec, iter.Take(), reps[marshalCount])
+		reps = make([]interface{}, 0, iter.Tail())
+		for iter.Next() {
+			rep, err := check.UnMarshalFromUnsafe(c.cfg.Codec, iter.Take(), nil)
 			if err != nil {
-				return reps, c.eHandle.LWarpErrorDesc(errorhandler.ErrCodecUnMarshalError, "MarshalFromUnsafe failed", err)
+				return reps, c.eHandle.LWarpErrorDesc(errorhandler.ErrCodecUnMarshalError, "UnMarshalFromUnsafe failed", err.Error())
 			}
-			reps[marshalCount] = rep
+			reps = append(reps, rep)
 		}
-		return reps, nil
+		return reps, c.handleReturnError(msg)
 	}
 	if iter.Tail() > 0 {
 		// 处理结果再处理错误, 因为调用过程可能因为某种原因失败返回错误, 但也会返回处理到一定
@@ -144,9 +141,9 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *co
 		})
 		iter.Reset()
 		for k, v := range outputList[:len(outputList)-1] {
-			returnV, err2 := check.MarshalFromUnsafe(c.cfg.Codec, iter.Take(), v)
+			returnV, err2 := check.UnMarshalFromUnsafe(c.cfg.Codec, iter.Take(), v)
 			if err2 != nil {
-				return reps, c.eHandle.LWarpErrorDesc(errorhandler.ErrCodecUnMarshalError, "MarshalFromUnsafe failed", err2.Error())
+				return reps, c.eHandle.LWarpErrorDesc(errorhandler.ErrCodecUnMarshalError, "UnMarshalFromUnsafe failed", err2.Error())
 			}
 			reps[k] = returnV
 		}
