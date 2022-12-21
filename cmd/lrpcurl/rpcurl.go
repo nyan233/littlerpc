@@ -230,13 +230,10 @@ func anyOutFromJson(data any, ot OutType, w io.Writer) {
 }
 
 func callFunc(ctx context.Context, c Caller, service string, argsBytes [][]byte, ot OutType, w io.Writer) {
-	args := make([]interface{}, 0, 8)
-	args = append(args, ctx)
+	args := make([]interface{}, len(argsBytes)+1)
+	args[0] = ctx
 	for k, rawArg := range argsBytes {
-		if len(args) == k {
-			args = append(args, nil)
-		}
-		err := json.Unmarshal(rawArg, &args[k])
+		err := json.Unmarshal(rawArg, &args[k+1])
 		if err != nil {
 			log.Fatalln(err)
 		}

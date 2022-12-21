@@ -9,13 +9,13 @@ type binder struct {
 	mock.Mock
 }
 
-// BindFunc provides a mock function with given fields: source, proxy
-func (_m *binder) BindFunc(source string, proxy interface{}) error {
-	ret := _m.Called(source, proxy)
+// BindFunc provides a mock function with given fields: source, _a1
+func (_m *binder) BindFunc(source string, _a1 interface{}) error {
+	ret := _m.Called(source, _a1)
 
 	var r0 error
 	if rf, ok := ret.Get(0).(func(string, interface{}) error); ok {
-		r0 = rf(source, proxy)
+		r0 = rf(source, _a1)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -29,7 +29,7 @@ type mockConstructorTestingTnewBinder interface {
 }
 
 // newBinder creates a new instance of binder. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
-func newBinder(t mockConstructorTestingTnewBinder) *binder {
+func NewBinder(t mockConstructorTestingTnewBinder) *binder {
 	mock := &binder{}
 	mock.Mock.Test(t)
 
