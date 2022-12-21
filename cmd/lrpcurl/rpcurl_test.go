@@ -124,7 +124,7 @@ func newMockReflectionProxy(t *testing.T) proxy.LittleRpcReflectionProxy {
 func newMockCaller(t *testing.T) Caller {
 	callerMock := mocks.NewCaller(t)
 	callerMock.On("RawCall", mock.AnythingOfType("string"),
-		[]interface{}{context.Background(), "hello-world", float64(123456)}).Return(
+		context.Background(), mock.AnythingOfType("string"), mock.AnythingOfType("float64")).Return(
 		func(service string, args ...interface{}) []interface{} {
 			return args[1:]
 		},
