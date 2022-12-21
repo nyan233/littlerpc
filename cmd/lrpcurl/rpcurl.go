@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/nyan233/littlerpc/cmd/lrpcurl/proxy"
@@ -12,7 +13,9 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"unsafe"
 )
 
@@ -46,9 +49,9 @@ var (
 
 var (
 	serverAddr = flag.StringP("address", "a", "127.0.0.1:9090", "服务器地址,Example: 127.0.0.1:9090")
-	source     = flag.StringP("source", "s", server.ReflectionSource, "资源的名称,注册方法时指定的实例名称")
-	option     = flag.StringP("option", "o", "get_all_instance", "操作(get_all_instance | get_arg_type)")
-	service    = flag.StringP("service", "n", "Hello.Hello", "调用的目标: InstanceName.MethodName")
+	source     = flag.StringP("source", "i", server.ReflectionSource, "资源的名称,注册方法时指定的实例名称")
+	option     = flag.StringP("option", "o", "get_all_instance", "操作, get_all_support_option -> 获取所有支持的操作了解更多")
+	service    = flag.StringP("service", "s", "Hello.Hello", "调用的目标: InstanceName.MethodName")
 	outType    = flag.StringP("out_type", "t", string(FormatJson), "输出的信息的格式(format_json/json/text)")
 	call       = flag.StringP("call", "c", "null", "调用传递的参数(不包括context/stream): [100,\"hh\"]")
 )
@@ -57,30 +60,40 @@ func main() {
 	flag.Parse()
 	logger.SetOpenLogger(false)
 	c := dial()
-	parserOption(proxy.NewLittleRpcReflection(c), c)
+	defer c.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	channel := make(chan os.Signal)
+	signal.Notify(channel, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM)
+	go func() {
+		select {
+		case <-channel:
+			cancel()
+		}
+	}()
+	parserOption(ctx, proxy.NewLittleRpcReflection(c), c)
 }
 
-func parserOption(proxy proxy.LittleRpcReflectionProxy, caller Caller) {
+func parserOption(ctx context.Context, proxy proxy.LittleRpcReflectionProxy, caller Caller) {
 	switch *option {
 	case GetAllSupportOption:
 		getAllSupportOption(OutType(*outType), os.Stdout)
 	case GetAllCodec:
-		getAllCodec(proxy, OutType(*outType), os.Stdout)
+		getAllCodec(ctx, proxy, OutType(*outType), os.Stdout)
 	case GetAllPacker:
-		getAllPacker(proxy, OutType(*outType), os.Stdout)
+		getAllPacker(ctx, proxy, OutType(*outType), os.Stdout)
 	case GetAllInstance:
-		getAllInstance(proxy, OutType(*outType), os.Stdout)
+		getAllInstance(ctx, proxy, OutType(*outType), os.Stdout)
 	case GetArgumentType:
-		getArgType(proxy, *service, OutType(*outType), os.Stdout)
+		getArgType(ctx, proxy, *service, OutType(*outType), os.Stdout)
 	case GetMethodTable:
-		getMethodTable(proxy, *source, OutType(*outType), os.Stdout)
+		getMethodTable(ctx, proxy, *source, OutType(*outType), os.Stdout)
 	case CallFunc:
 		var rawArgs []json.RawMessage
 		err := json.Unmarshal(convert.StringToBytes(*call), &rawArgs)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		callFunc(caller, *service, *(*[][]byte)(unsafe.Pointer(&rawArgs)), OutType(*outType), os.Stdout)
+		callFunc(ctx, caller, *service, *(*[][]byte)(unsafe.Pointer(&rawArgs)), OutType(*outType), os.Stdout)
 	default:
 		log.Fatalln("no implement option")
 	}
@@ -112,8 +125,8 @@ func getAllSupportOption(ot OutType, w io.Writer) {
 	}
 }
 
-func getAllInstance(proxy proxy.LittleRpcReflectionProxy, ot OutType, w io.Writer) {
-	instances, err := proxy.AllInstance()
+func getAllInstance(ctx context.Context, proxy proxy.LittleRpcReflectionProxy, ot OutType, w io.Writer) {
+	instances, err := proxy.AllInstance(ctx)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -127,8 +140,8 @@ func getAllInstance(proxy proxy.LittleRpcReflectionProxy, ot OutType, w io.Write
 	}
 }
 
-func getArgType(proxy proxy.LittleRpcReflectionProxy, service string, ot OutType, w io.Writer) {
-	argType, err := proxy.MethodArgumentType(service)
+func getArgType(ctx context.Context, proxy proxy.LittleRpcReflectionProxy, service string, ot OutType, w io.Writer) {
+	argType, err := proxy.MethodArgumentType(ctx, service)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -138,15 +151,15 @@ func getArgType(proxy proxy.LittleRpcReflectionProxy, service string, ot OutType
 			return
 		}
 		for _, v := range argType {
-			_, _ = fmt.Fprintln(w, v.TypeName)
+			anyOutFromJson(v, Json, w)
 		}
 	default:
 		anyOutFromJson(argType, ot, w)
 	}
 }
 
-func getMethodTable(proxy proxy.LittleRpcReflectionProxy, sourceName string, ot OutType, w io.Writer) {
-	tab, err := proxy.MethodTable(sourceName)
+func getMethodTable(ctx context.Context, proxy proxy.LittleRpcReflectionProxy, sourceName string, ot OutType, w io.Writer) {
+	tab, err := proxy.MethodTable(ctx, sourceName)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -161,8 +174,8 @@ func getMethodTable(proxy proxy.LittleRpcReflectionProxy, sourceName string, ot 
 	}
 }
 
-func getAllPacker(proxy proxy.LittleRpcReflectionProxy, ot OutType, w io.Writer) {
-	packers, err := proxy.AllPacker()
+func getAllPacker(ctx context.Context, proxy proxy.LittleRpcReflectionProxy, ot OutType, w io.Writer) {
+	packers, err := proxy.AllPacker(ctx)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -179,8 +192,8 @@ func getAllPacker(proxy proxy.LittleRpcReflectionProxy, ot OutType, w io.Writer)
 	}
 }
 
-func getAllCodec(proxy proxy.LittleRpcReflectionProxy, ot OutType, w io.Writer) {
-	codecs, err := proxy.AllCodec()
+func getAllCodec(ctx context.Context, proxy proxy.LittleRpcReflectionProxy, ot OutType, w io.Writer) {
+	codecs, err := proxy.AllCodec(ctx)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -216,8 +229,9 @@ func anyOutFromJson(data any, ot OutType, w io.Writer) {
 	}
 }
 
-func callFunc(c Caller, service string, argsBytes [][]byte, ot OutType, w io.Writer) {
+func callFunc(ctx context.Context, c Caller, service string, argsBytes [][]byte, ot OutType, w io.Writer) {
 	args := make([]interface{}, 0, 8)
+	args = append(args, ctx)
 	for k, rawArg := range argsBytes {
 		if len(args) == k {
 			args = append(args, nil)
@@ -227,7 +241,7 @@ func callFunc(c Caller, service string, argsBytes [][]byte, ot OutType, w io.Wri
 			log.Fatalln(err)
 		}
 	}
-	reps, err := c.RawCall(service, args...)
+	reps, err := c.RawCall(service, args)
 	reps = append(reps, err)
 	switch ot {
 	case Text:
