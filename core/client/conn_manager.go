@@ -25,8 +25,6 @@ type connSource struct {
 	node loadbalance.RpcNode
 	// message ID的起始, 开始时随机分配
 	initSeq uint64
-	// context id的起始, 开始时随机分配
-	initCtxId uint64
 	// 负责消息的解析
 	parser msgparser.Parser
 	mu     sync.Mutex
@@ -36,10 +34,6 @@ type connSource struct {
 
 func (lc *connSource) GetMsgId() uint64 {
 	return atomic.AddUint64(&lc.initSeq, 1)
-}
-
-func (lc *connSource) GetContextId() uint64 {
-	return atomic.AddUint64(&lc.initCtxId, 1)
 }
 
 func (lc *connSource) SwapNotifyChannel(notify map[uint64]chan Complete) map[uint64]chan Complete {

@@ -72,10 +72,10 @@ func (c *Client) onMessage(conn transport.ConnAdapter, bytes []byte) {
 
 func (c *Client) onOpen(conn transport.ConnAdapter) {
 	desc := &connSource{
-		conn:      conn,
-		parser:    c.cfg.ParserFactory(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()}, 4096),
-		initSeq:   uint64(random.FastRand()),
-		initCtxId: uint64(random.FastRand()),
+		conn:    conn,
+		parser:  c.cfg.ParserFactory(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()}, 4096),
+		initSeq: uint64(random.FastRand()),
+
 		notifySet: make(map[uint64]chan Complete, 1024),
 	}
 	c.connSourceSet.Store(conn, desc)

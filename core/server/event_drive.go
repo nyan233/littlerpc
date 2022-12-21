@@ -57,7 +57,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		case message.Ping:
 			s.messageKeepAlive(msgOpt)
 		case message.ContextCancel:
-			s.messageContextCancel(msgOpt, desc)
+			s.messageContextCancel(msgOpt)
 		case message.Call:
 			s.messageCall(msgOpt, desc)
 		default:
@@ -79,6 +79,8 @@ func (s *Server) onOpen(conn transport.ConnAdapter) {
 	)
 	desc.Writer = s.config.WriterFactory()
 	desc.ctxManager = newContextManager()
+	desc.remoteAddr = conn.RemoteAddr()
+	desc.localAddr = conn.LocalAddr()
 	s.connsSourceDesc.Store(conn, desc)
 	// init keepalive
 	if s.config.KeepAlive {

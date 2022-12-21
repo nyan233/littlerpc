@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc/core/common/check"
+	rContext "github.com/nyan233/littlerpc/core/common/context"
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	"github.com/nyan233/littlerpc/core/common/metadata"
 	"github.com/nyan233/littlerpc/core/common/msgparser"
@@ -23,17 +24,19 @@ import (
 
 // 该类型拥有的方法都有很多的副作用, 请谨慎
 type messageOpt struct {
-	Server    *Server
-	Header    byte
-	ContextId uint64
-	Codec     codec.Codec
-	Packer    packer.Packer
-	Message   *message.Message
-	freeFunc  func(msg *message.Message)
-	Service   *metadata.Process
-	Conn      transport.ConnAdapter
-	Desc      *connSourceDesc
-	CallArgs  []reflect.Value
+	Server   *Server
+	Header   byte
+	Codec    codec.Codec
+	Packer   packer.Packer
+	Message  *message.Message
+	freeFunc func(msg *message.Message)
+	Service  *metadata.Process
+	Conn     transport.ConnAdapter
+	Desc     *connSourceDesc
+	// 弃用原来的Context-Id, Context-Id时会为每次请求创建一个新的context
+	// Cancel func取消的是从context-id创建的原始context中派生的, 因此并没有context-id
+	Cancel   context.CancelFunc
+	CallArgs []reflect.Value
 }
 
 func newConnDesc(s *Server, msg msgparser.ParserMessage, conn transport.ConnAdapter, desc *connSourceDesc) *messageOpt {
@@ -139,11 +142,8 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 		if err == nil {
 			return
 		}
-		if c.ContextId != 0 {
-			err := c.Desc.ctxManager.CancelContext(c.ContextId)
-			if err != nil {
-				c.Server.logger.Error("return err cancel context failed : %v", err)
-			}
+		if c.Cancel != nil {
+			c.Cancel()
 		}
 	}()
 	var callArgs []reflect.Value
@@ -191,22 +191,23 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 }
 
 func (c *messageOpt) checkContextAndStream(callArgs []reflect.Value) (offset int, err perror.LErrorDesc) {
-	// 存在contextId则注册context
 	ctx := context.Background()
 	ctxIdStr, ok := c.Message.MetaData.LoadOk(message.ContextId)
-	if ok {
+	// 客户端携带context-id且对应的过程支持context时才注册context
+	// 为不支持context的过程注册时无意义的且可能会导致context泄漏
+	if ok && c.Service.SupportContext {
 		ctxId, err := strconv.ParseUint(ctxIdStr, 10, 64)
 		if err != nil {
 			return 0, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
 		}
-		c.ContextId = ctxId
-		iCtx, cancel := context.WithCancel(ctx)
-		ctx = iCtx
-		err = c.Desc.ctxManager.RegisterContextCancel(ctxId, cancel)
+		rawCtx, _ := c.Desc.ctxManager.RegisterContextCancel(ctxId)
+		ctx, c.Cancel = context.WithCancel(rawCtx)
 		if err != nil {
 			return 0, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
 		}
 	}
+	ctx = rContext.WithLocalAddr(ctx, c.Desc.localAddr)
+	ctx = rContext.WithRemoteAddr(ctx, c.Desc.remoteAddr)
 	callArgs = callArgs[:0]
 	switch {
 	case c.Service.SupportContext:

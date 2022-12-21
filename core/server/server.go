@@ -15,6 +15,7 @@ import (
 	lerror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/internal/pool"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
+	"net"
 	"reflect"
 	"sync"
 )
@@ -22,6 +23,8 @@ import (
 type connSourceDesc struct {
 	Parser     msgparser.Parser
 	Writer     msgwriter.Writer
+	remoteAddr net.Addr
+	localAddr  net.Addr
 	ctxManager *contextManager
 }
 

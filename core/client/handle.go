@@ -16,6 +16,7 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"sync/atomic"
 )
 
 func (c *Client) handleReturnError(msg *message.Message) error2.LErrorDesc {
@@ -64,8 +65,11 @@ readStart:
 		cancelMsg.Reset()
 		cancelMsg.SetMsgType(message.ContextCancel)
 		cancelMsg.SetMsgId(msgId)
-		cancelMsg.MetaData.Store(message.ContextId, ctx.Value(message.ContextId).(string))
-		err := c.sendCallMsg(ctx, cancelMsg, lc, true)
+		ctxId := c.contextM.Unregister(ctx)
+		if ctxId == 0 {
+			return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, "register context but context id not found")
+		}
+		err := c.sendCallMsg(ctxId, cancelMsg, lc, true)
 		if err != nil {
 			return nil, err
 		}
@@ -159,14 +163,14 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *co
 // return method
 // raw == true 时 value.IsNil() == true, 这个方法保证这样的语义
 func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *connSource, args []interface{}, raw bool) (
-	value reflect.Value, ctx context.Context, err error2.LErrorDesc) {
+	value reflect.Value, ctx context.Context, ctxId uint64, err error2.LErrorDesc) {
 
 	ctx = context.Background()
 	msg.SetServiceName(service)
 	if !raw {
 		serviceSource, ok := c.services.LoadOk(msg.GetServiceName())
 		if !ok {
-			return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(
+			return reflect.ValueOf(nil), nil, 0, c.eHandle.LWarpErrorDesc(
 				errorhandler.ServiceNotfound, "client error", msg.GetServiceName())
 		}
 		value = serviceSource.Value
@@ -175,22 +179,15 @@ func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *con
 			return
 		}
 		switch {
-		case serviceSource.SupportContext:
+		case serviceSource.SupportContext || serviceSource.SupportStream && serviceSource.SupportContext:
 			rCtx := args[0].(context.Context)
 			if rCtx == context.Background() || rCtx == context.TODO() {
 				break
 			}
-			ctxIdStr := strconv.FormatUint(cs.GetContextId(), 10)
-			ctx = context.WithValue(ctx, message.ContextId, ctxIdStr)
+			ctx = rCtx
+			ctxId = c.contextM.Register(ctx, c.getContextId())
 		case serviceSource.SupportStream:
 			break
-		case serviceSource.SupportStream && serviceSource.SupportContext:
-			rCtx := args[0].(context.Context)
-			if rCtx == context.Background() || rCtx == context.TODO() {
-				break
-			}
-			ctxIdStr := strconv.FormatUint(cs.GetContextId(), 10)
-			ctx = context.WithValue(ctx, message.ContextId, ctxIdStr)
 		}
 		args = args[metadata.InputOffset(serviceSource):]
 	} else {
@@ -207,8 +204,8 @@ func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *con
 				if iCtx == context.Background() || iCtx == context.TODO() {
 					break
 				}
-				ctxIdStr := strconv.FormatUint(cs.GetContextId(), 10)
-				ctx = context.WithValue(iCtx, message.ContextId, ctxIdStr)
+				ctx = iCtx
+				ctxId = c.contextM.Register(ctx, c.getContextId())
 			case stream.LStream:
 				break
 			default:
@@ -220,7 +217,7 @@ func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *con
 	for _, v := range args {
 		bytes, err := c.cfg.Codec.Marshal(v)
 		if err != nil {
-			return reflect.ValueOf(nil), nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrCodecMarshalError,
+			return reflect.ValueOf(nil), nil, 0, c.eHandle.LWarpErrorDesc(errorhandler.ErrCodecMarshalError,
 				"client error", err.Error())
 		}
 		msg.AppendPayloads(bytes)
@@ -230,7 +227,7 @@ func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *con
 
 // direct == true表示直接发送消息, false表示sendMsg自己会将Message的类型修改为Call
 // context中保存ContextId则不管true or false都会被写入
-func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *connSource, direct bool) error2.LErrorDesc {
+func (c *Client) sendCallMsg(ctxId uint64, msg *message.Message, lc *connSource, direct bool) error2.LErrorDesc {
 	// init header
 	if !direct {
 		msg.SetMsgId(lc.GetMsgId())
@@ -247,12 +244,8 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *conn
 			return c.eHandle.LWarpErrorDesc(errorhandler.ErrConnection, "notifySet channel already release")
 		}
 	}
-	if ctx != context.Background() && ctx != context.TODO() {
-		ctxIdStr, ok := ctx.Value(message.ContextId).(string)
-		if !ok {
-			return c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, "register context but context id not found")
-		}
-		msg.MetaData.Store(message.ContextId, ctxIdStr)
+	if ctxId > 0 {
+		msg.MetaData.Store(message.ContextId, strconv.FormatUint(ctxId, 10))
 	}
 	// 具体写入器已经提前被选定好, 客户端不需要泛写入器, 所以Header可以忽略
 	writeErr := c.cfg.Writer.Write(msgwriter.Argument{
@@ -279,4 +272,8 @@ func (c *Client) sendCallMsg(ctx context.Context, msg *message.Message, lc *conn
 		return c.eHandle.LWarpErrorDesc(writeErr, "sendCallMsg usage Writer.Write failed")
 	}
 	return nil
+}
+
+func (c *Client) getContextId() uint64 {
+	return atomic.AddUint64(&c.contextInitId, 1)
 }

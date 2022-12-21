@@ -31,7 +31,7 @@ func (s *Server) messageKeepAlive(msgOpt *messageOpt) {
 }
 
 // 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
-func (s *Server) messageContextCancel(msgOpt *messageOpt, desc *connSourceDesc) {
+func (s *Server) messageContextCancel(msgOpt *messageOpt) {
 	defer msgOpt.Free()
 	ctxIdStr, ok := msgOpt.Message.MetaData.LoadOk(message2.ContextId)
 	if !ok {
@@ -43,7 +43,7 @@ func (s *Server) messageContextCancel(msgOpt *messageOpt, desc *connSourceDesc) 
 		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgOpt.Message.GetMsgId(), error2.LWarpStdError(
 			errorhandler.ErrServer, err.Error()))
 	}
-	err = desc.ctxManager.CancelContext(ctxId)
+	err = msgOpt.Desc.ctxManager.CancelContext(ctxId)
 	if err != nil {
 		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgOpt.Message.GetMsgId(), error2.LWarpStdError(
 			errorhandler.ErrServer, err.Error()))
@@ -67,14 +67,14 @@ func (s *Server) messageCall(msgOpt *messageOpt, desc *connSourceDesc) {
 	}
 	switch {
 	case msgOpt.Service.Option.SyncCall:
-		s.callHandleUnit(msgOpt, desc)
+		s.callHandleUnit(msgOpt)
 	case msgOpt.Service.Option.UseRawGoroutine:
 		go func() {
-			s.callHandleUnit(msgOpt, desc)
+			s.callHandleUnit(msgOpt)
 		}()
 	default:
 		err := s.taskPool.Push(msgOpt.Message.GetServiceName(), func() {
-			s.callHandleUnit(msgOpt, desc)
+			s.callHandleUnit(msgOpt)
 		})
 		if err != nil {
 			msgOpt.Free()
@@ -85,7 +85,7 @@ func (s *Server) messageCall(msgOpt *messageOpt, desc *connSourceDesc) {
 
 // 提供用于任务池的处理调用用户过程的单元
 // 因为用户过程可能会有阻塞操作
-func (s *Server) callHandleUnit(msgOpt *messageOpt, desc *connSourceDesc) {
+func (s *Server) callHandleUnit(msgOpt *messageOpt) {
 	msgId := msgOpt.Message.GetMsgId()
 	msgOpt.Free()
 
@@ -98,9 +98,8 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt, desc *connSourceDesc) {
 	}()
 	callResult := msgOpt.Service.Value.Call(msgOpt.CallArgs)
 	// context存在时且未被取消, 则在调用结束之后取消
-	if msgOpt.Service.SupportContext &&
-		msgOpt.CallArgs[0].Interface().(context.Context).Err() == nil && msgOpt.ContextId != 0 {
-		_ = desc.ctxManager.CancelContext(msgOpt.ContextId)
+	if msgOpt.Service.SupportContext && msgOpt.CallArgs[0].Interface().(context.Context).Err() == nil && msgOpt.Cancel != nil {
+		msgOpt.Cancel()
 	}
 	// TODO v0.4.x计划删除
 	// 函数在没有返回error则填充nil

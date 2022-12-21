@@ -13,6 +13,7 @@ import (
 	"github.com/nyan233/littlerpc/core/middle/loadbalance"
 	error2 "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
+	"github.com/nyan233/littlerpc/core/utils/random"
 	"github.com/nyan233/littlerpc/internal/pool"
 	"reflect"
 	"time"
@@ -33,6 +34,9 @@ type Client struct {
 	engine transport2.ClientBuilder
 	// 为每个连接分配的资源
 	connSourceSet *container2.RWMutexMap[transport2.ConnAdapter, *connSource]
+	contextM      *contextManager
+	// context id的起始, 开始时随机分配
+	contextInitId uint64
 	// services 可以支持不同实例的调用
 	// 所有的操作都是线程安全的
 	services container2.RCUMap[string, *metadata.Process]
@@ -111,6 +115,9 @@ func New(opts ...Option) (*Client, error) {
 	client.eHandle = config.ErrHandler
 	// init service map
 	client.services = *container2.NewRCUMap[string, *metadata.Process]()
+	// init context manager
+	client.contextM = newContextManager()
+	client.contextInitId = uint64(random.FastRand())
 	return client, nil
 }
 
@@ -214,7 +221,7 @@ func (c *Client) call(service string, opts []CallOption,
 	writeMsg := mp.Get().(*message.Message)
 	defer mp.Put(writeMsg)
 	writeMsg.Reset()
-	method, ctx, err := c.identArgAndEncode(service, writeMsg, cs, args, !check)
+	method, ctx, ctxId, err := c.identArgAndEncode(service, writeMsg, cs, args, !check)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +229,7 @@ func (c *Client) call(service string, opts []CallOption,
 	if pluginErr := c.pluginManager.OnCall(writeMsg, &args); pluginErr != nil {
 		c.logger.Error("LRPC: client plugin OnCall failed: %v", pluginErr)
 	}
-	err = c.sendCallMsg(ctx, writeMsg, cs, false)
+	err = c.sendCallMsg(ctxId, writeMsg, cs, false)
 	if err != nil {
 		switch err.Code() {
 		case error2.ConnectionErr:
@@ -259,7 +266,7 @@ func (c *Client) AsyncCall(service string, args []interface{}, callBack func(res
 		return c.eHandle.LWarpErrorDesc(errorhandler.ErrCallArgsType, "callBack is empty")
 	}
 	msg := message.New()
-	method, ctx, err := c.identArgAndEncode(service, msg, nil, args, false)
+	method, ctx, ctxId, err := c.identArgAndEncode(service, msg, nil, args, false)
 	if err != nil {
 		return err
 	}
@@ -270,7 +277,7 @@ func (c *Client) AsyncCall(service string, args []interface{}, callBack func(res
 			callBack(nil, err)
 			return
 		}
-		err = c.sendCallMsg(ctx, msg, conn, false)
+		err = c.sendCallMsg(ctxId, msg, conn, false)
 		if err != nil {
 			callBack(nil, err)
 			return
