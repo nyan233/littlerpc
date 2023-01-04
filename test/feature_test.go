@@ -86,6 +86,7 @@ func TestServerAndClient(t *testing.T) {
 		server2.WithLogger(logger.New(bilog.NewLogger(os.Stdout, bilog.PANIC))),
 		server2.WithOpenLogger(false),
 		server2.WithDebug(false),
+		//server2.WithPlugin(pLogger.New(os.Stdout)),
 	}
 	baseClientOpts := []client.Option{
 		client.WithAddress(":1234"),
@@ -170,10 +171,7 @@ func testServerAndClient(t *testing.T, serverOpts []server2.Option, clientOpts [
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = server.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
+	go server.Service()
 
 	defer server.Stop()
 
@@ -185,11 +183,11 @@ func testServerAndClient(t *testing.T, serverOpts []server2.Option, clientOpts [
 	addV := 65536
 	wg.Add(nGoroutine)
 	cm := metrics.NewClient()
-	client, err := client.New(append(clientOpts, client.WithPlugin(cm))...)
+	c, err := client.New(append(clientOpts, client.WithPlugin(cm))...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	proxy := NewHelloTestProxy(client)
+	proxy := NewHelloTestProxy(c)
 	for i := 0; i < nGoroutine; i++ {
 		j := i
 		go func() {
@@ -264,10 +262,7 @@ func TestBalance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = server.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
+	go server.Service()
 	defer server.Stop()
 	c1, err := client.New(
 		client.WithBalance("roundRobin"),

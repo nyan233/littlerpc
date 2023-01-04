@@ -18,6 +18,13 @@ import (
 	"net"
 	"reflect"
 	"sync"
+	"sync/atomic"
+)
+
+const (
+	_Stop    int64 = 1 << 3
+	_Start   int64 = 1 << 4
+	_Restart int64 = 1 << 6
 )
 
 type connSourceDesc struct {
@@ -47,17 +54,35 @@ type Server struct {
 	pManager *pluginManager
 	// Error Handler
 	eHandle lerror.LErrors
-	config  *Config
+	// Server Global Event
+	ev *event
+	// 初始信息
+	opts []Option
+	// 用于原子更新
+	config atomic.Pointer[Config]
 }
 
 func New(opts ...Option) *Server {
-	server := &Server{}
+	server := new(Server)
+	applyConfig(server, opts)
+	server.ev = newEvent()
+	server.services = *container.NewRCUMap[string, *metadata.Process]()
+	server.sources = *container.NewRCUMap[string, *metadata.Source]()
+	// init reflection service
+	err := server.RegisterClass(ReflectionSource, &LittleRpcReflection{server}, nil)
+	if err != nil {
+		panic(err)
+	}
+	return server
+}
+
+func applyConfig(server *Server, opts []Option) {
 	sc := &Config{}
 	WithDefaultServer()(sc)
 	for _, v := range opts {
 		v(sc)
 	}
-	server.config = sc
+	server.config.Store(sc)
 	if sc.Logger != nil {
 		server.logger = sc.Logger
 	} else {
@@ -86,14 +111,6 @@ func New(opts ...Option) *Server {
 		server.taskPool = pool.NewTaskPool[string](
 			sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, debug.ServerRecover(server.logger))
 	}
-	server.services = *container.NewRCUMap[string, *metadata.Process]()
-	server.sources = *container.NewRCUMap[string, *metadata.Source]()
-	// init reflection service
-	err := server.RegisterClass(ReflectionSource, &LittleRpcReflection{server}, nil)
-	if err != nil {
-		panic(err)
-	}
-	return server
 }
 
 func (s *Server) RegisterClass(source string, i interface{}, custom map[string]metadata.ProcessOption) error {
@@ -142,11 +159,11 @@ func (s *Server) RegisterClass(source string, i interface{}, custom map[string]m
 func (s *Server) registerProcess(src *metadata.Source, process string, processValue reflect.Value, option *metadata.ProcessOption) {
 	processDesc := &metadata.Process{
 		Value:  processValue,
-		Option: new(metadata.ProcessOption),
+		Option: s.config.Load().DefaultProcessOption,
 	}
 	src.ProcessSet[process] = processDesc
 	if option != nil {
-		processDesc.Option = option
+		processDesc.Option = *option
 	}
 	// 一个参数都没有的话则不需要进行那些根据输入参数来调整的选项
 	if processValue.Type().NumIn() == 0 {
@@ -201,19 +218,53 @@ func (s *Server) RegisterAnonymousFunc(service string, fn interface{}, option *m
 	return nil
 }
 
-func (s *Server) Start() error {
-	return s.server.Start()
+func (s *Server) Service() error {
+	s.ev.Entry(int(_Start))
+	return s.service()
 }
 
-func (s *Server) Stop() error {
-	err := s.taskPool.Stop()
+func (s *Server) service() error {
+	err := s.server.Start()
 	if err != nil {
 		return err
 	}
-	return s.server.Stop()
+	done, ack, ok := s.ev.Wait()
+	if !ok {
+		return errors.New("wait event failed")
+	}
+	select {
+	case <-done:
+		defer ack()
+	}
+	err = s.server.Stop()
+	if err != nil {
+		return err
+	}
+	err = s.taskPool.Stop()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Server) Stop() error {
+	if !(s.ev.Complete(int(_Start)) || s.ev.Complete(int(_Restart))) {
+		return errors.New("server in unknown state")
+	}
+	return nil
 }
 
 // Restart TODO: 实现重启Server
-func (s *Server) Restart(opts ...Option) error {
-	return errors.New("restart not implemented")
+func (s *Server) Restart(override bool, opts ...Option) error {
+	if err := s.Stop(); err != nil {
+		return err
+	}
+	s.ev.Entry(int(_Restart))
+	if !override {
+		s.opts = append(s.opts, opts...)
+	} else {
+		s.opts = opts
+	}
+	applyConfig(s, s.opts)
+	return s.service()
 }

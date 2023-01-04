@@ -45,10 +45,7 @@ func BenchmarkClientAlloc(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	err = s1.Start()
-	if err != nil {
-		b.Fatal(err)
-	}
+	go s1.Service()
 	defer s1.Stop()
 	c1, err := client2.New(client2.WithAddress(":1234"))
 	if err != nil {
