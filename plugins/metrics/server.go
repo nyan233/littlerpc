@@ -1,11 +1,14 @@
 package metrics
 
 import (
+	"github.com/nyan233/littlerpc/core/middle/plugin"
+	perror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"reflect"
 )
 
 type ServerMetricsPlugin struct {
+	plugin.AbstractServer
 	Call            *CallMetrics
 	UploadTraffic   *TrafficMetrics
 	DownloadTraffic *TrafficMetrics
@@ -19,36 +22,35 @@ func NewServer() *ServerMetricsPlugin {
 	}
 }
 
-func (s *ServerMetricsPlugin) OnMessage(msg *message.Message, bytes *[]byte) error {
-	s.DownloadTraffic.Add(int64(len(*bytes)))
+func (s *ServerMetricsPlugin) Receive4S(pub *plugin.Context, msg *message.Message) perror.LErrorDesc {
+	if msg == nil {
+		return nil
+	}
 	s.Call.IncCount()
+	s.UploadTraffic.Add(int64(msg.GetAndSetLength()))
 	return nil
 }
 
-func (s *ServerMetricsPlugin) OnCallBefore(msg *message.Message, args *[]reflect.Value, err error) error {
+func (s *ServerMetricsPlugin) Call4S(pub *plugin.Context, args []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
 	if err != nil {
 		s.Call.IncFailed()
 	}
 	return nil
 }
 
-func (s *ServerMetricsPlugin) OnCallResult(msg *message.Message, results *[]reflect.Value) error {
-	return nil
-}
-
-func (s *ServerMetricsPlugin) OnReplyMessage(msg *message.Message, bytes *[]byte, err error) error {
+func (s *ServerMetricsPlugin) AfterCall4S(pub *plugin.Context, args, results []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
 	if err != nil {
 		s.Call.IncFailed()
 	}
-	s.UploadTraffic.Add(int64(len(*bytes)))
 	return nil
 }
 
-func (s *ServerMetricsPlugin) OnComplete(msg *message.Message, err error) error {
+func (s *ServerMetricsPlugin) AfterSend4S(pub *plugin.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
 	if err != nil {
 		s.Call.IncFailed()
-	} else {
-		s.Call.IncComplete()
+		return nil
 	}
+	s.Call.IncComplete()
+	s.DownloadTraffic.Add(int64(msg.GetAndSetLength()))
 	return nil
 }

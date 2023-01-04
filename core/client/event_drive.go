@@ -4,6 +4,7 @@ import (
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	"github.com/nyan233/littlerpc/core/common/msgparser"
 	"github.com/nyan233/littlerpc/core/common/transport"
+	"github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/utils/random"
 	"io"
 	"math"
@@ -42,8 +43,12 @@ func (c *Client) onMessage(conn transport.ConnAdapter, bytes []byte) {
 				c.logger.Warn("LRPC: in onMessage time trigger onClose or parse error")
 				return
 			}
+			pErr := c.handleReturnError(pMsg.Message)
+			// 没有任何接收者则打印错误, 避免错误被忽略
+			if len(oldNotify) == 0 {
+				c.logger.Warn("LRPC: error not receiver : %v", pErr)
+			}
 			for _, channel := range oldNotify {
-				pErr := c.handleReturnError(pMsg.Message)
 				if pErr == nil {
 					pErr = c.eHandle.LWarpErrorDesc(errorhandler.ErrServer, "server parser error time return invalid response")
 				}
@@ -56,27 +61,39 @@ func (c *Client) onMessage(conn transport.ConnAdapter, bytes []byte) {
 			_ = desc.conn.Close()
 			return
 		}
-		done, ok := desc.LoadNotify(pMsg.Message.GetMsgId())
-		if !ok {
-			c.logger.Error("LRPC: Message read complete but done channel not found")
+		switch pMsg.Message.GetMsgType() {
+		case message.ContextCancel:
+			// context cancel消息暂时不通知, 因为用的MsgId跟当前的Caller获得的MsgId一致
+			// 这样会导致后续消息找不到通知通道,
 			continue
-		}
-		select {
-		case done <- Complete{Message: pMsg.Message}:
-			break
+		case message.Return:
+			done, ok := desc.LoadNotify(pMsg.Message.GetMsgId())
+			if !ok {
+				c.logger.Error("LRPC: Message read complete but done channel not found")
+				continue
+			}
+			select {
+			case done <- Complete{Message: pMsg.Message}:
+				break
+			default:
+				c.logger.Error("LRPC: OnMessage done channel is block")
+			}
+		case message.Pong:
+			// TODO: keep-alive重置连接定时器
 		default:
-			c.logger.Error("LRPC: OnMessage done channel is block")
+			c.logger.Warn("LRPC: unknown message type")
 		}
 	}
 }
 
 func (c *Client) onOpen(conn transport.ConnAdapter) {
 	desc := &connSource{
-		conn:    conn,
-		parser:  c.cfg.ParserFactory(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()}, 4096),
-		initSeq: uint64(random.FastRand()),
-
-		notifySet: make(map[uint64]chan Complete, 1024),
+		conn:       conn,
+		parser:     c.cfg.ParserFactory(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()}, 4096),
+		initSeq:    uint64(random.FastRand()),
+		LocalAddr:  conn.LocalAddr(),
+		RemoteAddr: conn.RemoteAddr(),
+		notifySet:  make(map[uint64]chan Complete, 1024),
 	}
 	c.connSourceSet.Store(conn, desc)
 	return

@@ -4,6 +4,7 @@ import (
 	"github.com/lesismal/llib/std/crypto/tls"
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	logger2 "github.com/nyan233/littlerpc/core/common/logger"
+	"github.com/nyan233/littlerpc/core/common/metadata"
 	"github.com/nyan233/littlerpc/core/common/msgparser"
 	"github.com/nyan233/littlerpc/core/common/msgwriter"
 	"github.com/nyan233/littlerpc/core/middle/plugin"
@@ -41,6 +42,7 @@ func WithDefaultServer() Option {
 		WithTraitMessageParser()(config)
 		WithTraitMessageWriter()(config)
 		WithTaskPool()(config)
+		WithDefaultProcessOption(metadata.ProcessOption{})(config)
 	}
 }
 
@@ -142,5 +144,17 @@ func WithKeepAlive(open bool, timeOut time.Duration) Option {
 	return func(config *Config) {
 		config.KeepAlive = open
 		config.KeepAliveTimeout = timeOut
+	}
+}
+
+func WithReflection() Option {
+	return func(config *Config) {
+		config.OpenReflection = true
+	}
+}
+
+func WithDefaultProcessOption(opt metadata.ProcessOption) Option {
+	return func(config *Config) {
+		config.DefaultProcessOption = opt
 	}
 }

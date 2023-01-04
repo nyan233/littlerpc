@@ -16,6 +16,14 @@ func TestReflection(t *testing.T) {
 		services: *container.NewRCUMap[string, *metadata.Process](),
 		sources:  *container.NewRCUMap[string, *metadata.Source](),
 	}
+	noneServer.config.Store(&Config{
+		DefaultProcessOption: metadata.ProcessOption{
+			SyncCall:        true,
+			CompleteReUsage: true,
+			UseMux:          false,
+			UseRawGoroutine: false,
+		},
+	})
 	reflection := &LittleRpcReflection{
 		rpcServer: noneServer,
 	}

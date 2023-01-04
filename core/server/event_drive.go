@@ -4,10 +4,13 @@ import (
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	msgparser2 "github.com/nyan233/littlerpc/core/common/msgparser"
 	"github.com/nyan233/littlerpc/core/common/transport"
+	"github.com/nyan233/littlerpc/core/middle/plugin"
 	lerror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/protocol/message/analysis"
+	"github.com/nyan233/littlerpc/core/utils/convert"
 	"math"
+	"runtime"
 	"time"
 )
 
@@ -16,6 +19,9 @@ func (s *Server) onClose(conn transport.ConnAdapter, err error) {
 		s.logger.Warn("LRPC: Close Connection: %s:%s err: %v", conn.LocalAddr(), conn.RemoteAddr(), err)
 	} else {
 		s.logger.Info("LRPC: Close Connection: %s:%s", conn.LocalAddr(), conn.RemoteAddr())
+	}
+	if !s.pManager.Event4S(plugin.OnClose) {
+		s.logger.Warn("LRPC: plugin entry interrupted onClose")
 	}
 	// 关闭之前的清理工作
 	desc, ok := s.connsSourceDesc.LoadOk(conn)
@@ -28,15 +34,20 @@ func (s *Server) onClose(conn transport.ConnAdapter, err error) {
 }
 
 func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
+	if !s.pManager.Event4S(plugin.OnMessage) {
+		s.logger.Info("LRPC: plugin interrupted onMessage")
+		return
+	}
 	desc, ok := s.connsSourceDesc.LoadOk(c)
 	if !ok {
 		s.logger.Error("LRPC: no register message-parser, remote ip = %s", c.RemoteAddr())
 		_ = c.Close()
 		return
 	}
-	if s.config.Debug {
+	if s.config.Load().Debug {
 		s.logger.Debug(analysis.NoMux(data).String())
 	}
+	defer s.recover(c, desc)
 	traitMsgs, err := desc.Parser.Parse(data)
 	if err != nil {
 		// 错误处理过程会在严重错误时关闭连接, 所以msgId == math.MaxUint64也没有关系
@@ -63,6 +74,7 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		default:
 			// 释放消息, 这一步所有分支内都不可少
 			msgOpt.Free()
+			msgOpt.FreePluginCtx()
 			s.handleError(c, msgOpt.Desc.Writer, traitMsg.Message.GetMsgId(), lerror.LWarpStdError(errorhandler.ErrServer,
 				"Unknown Message Call Type", traitMsg.Message.GetMsgType()))
 			continue
@@ -71,22 +83,48 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 }
 
 func (s *Server) onOpen(conn transport.ConnAdapter) {
+	if !s.pManager.Event4S(plugin.OnOpen) {
+		_ = conn.Close()
+		s.logger.Info("LRPC: plugin interrupted onOpen")
+		return
+	}
 	// 初始化连接的相关数据
+	cfg := s.config.Load()
 	desc := &connSourceDesc{}
-	desc.Parser = s.config.ParserFactory(
+	desc.Parser = cfg.ParserFactory(
 		&msgparser2.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()},
 		msgparser2.DefaultBufferSize*16,
 	)
-	desc.Writer = s.config.WriterFactory()
+	desc.Writer = cfg.WriterFactory()
 	desc.ctxManager = newContextManager()
 	desc.remoteAddr = conn.RemoteAddr()
 	desc.localAddr = conn.LocalAddr()
 	s.connsSourceDesc.Store(conn, desc)
 	// init keepalive
-	if s.config.KeepAlive {
-		if err := conn.SetDeadline(time.Now().Add(s.config.KeepAliveTimeout)); err != nil {
+	if cfg.KeepAlive {
+		if err := conn.SetDeadline(time.Now().Add(cfg.KeepAliveTimeout)); err != nil {
 			s.logger.Error("LRPC: keepalive set deadline failed: %v", err)
 			_ = conn.Close()
 		}
 	}
+}
+
+func (s *Server) recover(c transport.ConnAdapter, desc *connSourceDesc) {
+	e := recover()
+	if e == nil {
+		return
+	}
+	switch e.(type) {
+	case lerror.LErrorDesc:
+		s.handleError(c, desc.Writer, math.MaxUint64, e.(lerror.LErrorDesc))
+	case error:
+		s.handleError(c, desc.Writer, math.MaxUint64,
+			s.eHandle.LNewErrorDesc(lerror.UnsafeOption, "runtime error", e.(error).Error()))
+	default:
+		s.handleError(c, desc.Writer, math.MaxUint64,
+			s.eHandle.LWarpErrorDesc(errorhandler.ErrServer, "unknown error"))
+	}
+	var buf [4096]byte
+	length := runtime.Stack(buf[:], false)
+	s.logger.Panic("LRPC: recover panic : %v\n%s", e, convert.BytesToString(buf[:length]))
 }

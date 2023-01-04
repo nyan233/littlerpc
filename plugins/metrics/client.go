@@ -1,10 +1,13 @@
 package metrics
 
 import (
+	"github.com/nyan233/littlerpc/core/middle/plugin"
+	perror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
 )
 
 type ClientMetricsPlugin struct {
+	plugin.AbstractClient
 	Call            *CallMetrics
 	UploadTraffic   *TrafficMetrics
 	DownloadTraffic *TrafficMetrics
@@ -18,25 +21,34 @@ func NewClient() *ClientMetricsPlugin {
 	}
 }
 
-func (c *ClientMetricsPlugin) OnCall(msg *message.Message, args *[]interface{}) error {
-	return nil
-}
-
-func (c *ClientMetricsPlugin) OnSendMessage(msg *message.Message, bytes *[]byte) error {
-	c.UploadTraffic.Add(int64(len(*bytes)))
+func (c *ClientMetricsPlugin) Request4C(pub *plugin.Context, args []interface{}, msg *message.Message) perror.LErrorDesc {
 	c.Call.IncCount()
 	return nil
 }
 
-func (c *ClientMetricsPlugin) OnReceiveMessage(msg *message.Message, bytes *[]byte) error {
-	c.DownloadTraffic.Add(0)
+func (c *ClientMetricsPlugin) AfterSend4C(pub *plugin.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
+	if msg == nil || err != nil {
+		c.Call.IncFailed()
+		return nil
+	}
+	c.UploadTraffic.Add(int64(msg.GetAndSetLength()))
 	return nil
 }
 
-func (c *ClientMetricsPlugin) OnResult(msg *message.Message, results *[]interface{}, err error) {
+func (c *ClientMetricsPlugin) Receive4C(pub *plugin.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
 	if err != nil {
 		c.Call.IncFailed()
-	} else {
-		c.Call.IncComplete()
+		return nil
 	}
+	c.DownloadTraffic.Add(int64(msg.GetAndSetLength()))
+	return nil
+}
+
+func (c *ClientMetricsPlugin) AfterReceive4C(pub *plugin.Context, results []interface{}, err perror.LErrorDesc) perror.LErrorDesc {
+	if err != nil {
+		c.Call.IncFailed()
+		return nil
+	}
+	c.Call.IncComplete()
+	return nil
 }

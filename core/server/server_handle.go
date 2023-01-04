@@ -11,22 +11,24 @@ import (
 	"strconv"
 )
 
-func (s *Server) encodeAndSendMsg(msgOpt *messageOpt, msg *message.Message) {
+func (s *Server) encodeAndSendMsg(msgOpt *messageOpt, msg *message.Message, beforeErr error2.LErrorDesc, handleErr bool) {
+	if err := s.pManager.Send4S(msgOpt.PCtx, msg, beforeErr); err != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msg.GetMsgId(), err)
+		return
+	}
+	if handleErr && beforeErr != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msg.GetMsgId(), beforeErr)
+		return
+	}
 	err := msgOpt.Desc.Writer.Write(msgwriter.Argument{
 		Message: msg,
 		Conn:    msgOpt.Conn,
 		Encoder: msgOpt.Packer,
 		Pool:    sharedPool.TakeBytesPool(),
-		OnDebug: debug.MessageDebug(s.logger, s.config.Debug),
+		OnDebug: debug.MessageDebug(s.logger, s.config.Load().Debug),
 		EHandle: s.eHandle,
 	}, msgOpt.Header)
-	if err != nil {
-		pErr := s.pManager.OnComplete(msg, err)
-		if err != nil {
-			s.logger.Error("LRPC: call OnComplete plugin failed: %v", pErr)
-		}
-		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msg.GetMsgId(), err)
-	}
+	_ = s.pManager.AfterSend4S(msgOpt.PCtx, msg, err)
 }
 
 // NOTE: 这里负责处理Server遇到的所有错误, 它会在遇到严重的错误时关闭连接, 不那么重要的错误则尝试返回给客户端
@@ -36,8 +38,9 @@ func (s *Server) encodeAndSendMsg(msgOpt *messageOpt, msg *message.Message) {
 // writer == nil时从msgwriter选择一个Writer, 默认选择NoMux Write
 func (s *Server) handleError(conn transport.ConnAdapter, writer msgwriter.Writer, msgId uint64, errNo error2.LErrorDesc) {
 	bytesBuffer := sharedPool.TakeBytesPool()
+	cfg := s.config.Load()
 	if writer == nil {
-		writer = s.config.WriterFactory()
+		writer = cfg.WriterFactory()
 	}
 	// 普通错误打印警告, 严重错误打印error
 	switch errNo.Code() {
@@ -69,8 +72,8 @@ func (s *Server) handleError(conn transport.ConnAdapter, writer msgwriter.Writer
 		Conn:       conn,
 		Encoder:    packer.Get("text"),
 		Pool:       bytesBuffer,
-		OnDebug:    debug.MessageDebug(s.logger, s.config.Debug),
-		OnComplete: nil, // TODO: 将某个合适的插件注入
+		OnDebug:    debug.MessageDebug(s.logger, cfg.Debug),
+		OnComplete: nil, //TODO: 将某个合适的插件注入
 		EHandle:    s.eHandle,
 	}, message.MagicNumber)
 	if err != nil {

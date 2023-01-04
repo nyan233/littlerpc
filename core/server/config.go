@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/lesismal/llib/std/crypto/tls"
 	"github.com/nyan233/littlerpc/core/common/logger"
+	"github.com/nyan233/littlerpc/core/common/metadata"
 	"github.com/nyan233/littlerpc/core/common/msgparser"
 	"github.com/nyan233/littlerpc/core/common/msgwriter"
 	"github.com/nyan233/littlerpc/core/middle/plugin"
@@ -30,4 +31,8 @@ type Config struct {
 	Debug           bool
 	ParserFactory   msgparser.Factory
 	WriterFactory   msgwriter.Factory
+	// 是否开启反射服务
+	OpenReflection bool
+	// 默认的Service配置
+	DefaultProcessOption metadata.ProcessOption
 }

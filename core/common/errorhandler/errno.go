@@ -16,4 +16,5 @@ var (
 	ErrClient              = DefaultErrHandler.LNewErrorDesc(error2.ClientError, "client error")
 	ErrConnection          = DefaultErrHandler.LNewErrorDesc(error2.ConnectionErr, "connection error")
 	ContextNotFound        = DefaultErrHandler.LNewErrorDesc(error2.ContextNotFound, "context not found")
+	ErrPlugin              = DefaultErrHandler.LNewErrorDesc(10275, "plugin error")
 )

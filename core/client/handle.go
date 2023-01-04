@@ -9,6 +9,7 @@ import (
 	"github.com/nyan233/littlerpc/core/common/stream"
 	"github.com/nyan233/littlerpc/core/common/utils/debug"
 	"github.com/nyan233/littlerpc/core/common/utils/metadata"
+	"github.com/nyan233/littlerpc/core/middle/plugin"
 	error2 "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/utils/convert"
@@ -50,12 +51,17 @@ func (c *Client) handleReturnError(msg *message.Message) error2.LErrorDesc {
 }
 
 // NOTE: 使用完的Message一定要放回给Parser的分配器中
-func (c *Client) readMsg(ctx context.Context, msgId uint64, lc *connSource) (*message.Message, error2.LErrorDesc) {
+func (c *Client) readMsg(ctx context.Context, pCtx *plugin.Context, msgId uint64, lc *connSource) (msg *message.Message, err error2.LErrorDesc) {
 	done, ok := lc.LoadNotify(msgId)
 	if !ok {
 		return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrConnection, "notifySet channel not found")
 	}
 	defer lc.DeleteNotify(msgId)
+	defer func() {
+		if pErr := c.pluginManager.Receive4C(pCtx, msg, err); pErr != nil {
+			err = c.eHandle.LWarpErrorDesc(errorhandler.ErrPlugin, pErr)
+		}
+	}()
 readStart:
 	select {
 	case <-ctx.Done():
@@ -69,7 +75,7 @@ readStart:
 		if ctxId == 0 {
 			return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, "register context but context id not found")
 		}
-		err := c.sendCallMsg(ctxId, cancelMsg, lc, true)
+		err := c.sendCallMsg(nil, ctxId, cancelMsg, lc, true)
 		if err != nil {
 			return nil, err
 		}
@@ -91,17 +97,12 @@ readStart:
 			}
 			msg.ReWritePayload(packet)
 		}
-		// OnReceiveMessage 接收完消息之后调用的插件过程
-		stdErr := c.pluginManager.OnReceiveMessage(msg, nil)
-		if stdErr != nil {
-			c.logger.Error("LRPC: call plugin OnReceiveMessage failed: %v", stdErr)
-		}
 		return msg, nil
 	}
 }
 
-func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *connSource, method reflect.Value, reps []interface{}) ([]interface{}, error2.LErrorDesc) {
-	msg, err := c.readMsg(ctx, msgId, lc)
+func (c *Client) readMsgAndDecodeReply(ctx context.Context, pCtx *plugin.Context, msgId uint64, lc *connSource, method reflect.Value, reps []interface{}) ([]interface{}, error2.LErrorDesc) {
+	msg, err := c.readMsg(ctx, pCtx, msgId, lc)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +160,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, msgId uint64, lc *co
 
 // return method
 // raw == true 时 value.IsNil() == true, 这个方法保证这样的语义
-func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *connSource, args []interface{}, raw bool) (
+func (c *Client) identArgAndEncode(service string, msg *message.Message, args []interface{}, raw bool) (
 	value reflect.Value, ctx context.Context, ctxId uint64, err error2.LErrorDesc) {
 
 	ctx = context.Background()
@@ -224,7 +225,7 @@ func (c *Client) identArgAndEncode(service string, msg *message.Message, cs *con
 
 // direct == true表示直接发送消息, false表示sendMsg自己会将Message的类型修改为Call
 // context中保存ContextId则不管true or false都会被写入
-func (c *Client) sendCallMsg(ctxId uint64, msg *message.Message, lc *connSource, direct bool) error2.LErrorDesc {
+func (c *Client) sendCallMsg(pCtx *plugin.Context, ctxId uint64, msg *message.Message, lc *connSource, direct bool) error2.LErrorDesc {
 	// init header
 	if !direct {
 		msg.SetMsgId(lc.GetMsgId())
@@ -244,6 +245,9 @@ func (c *Client) sendCallMsg(ctxId uint64, msg *message.Message, lc *connSource,
 	if ctxId > 0 {
 		msg.MetaData.Store(message.ContextId, strconv.FormatUint(ctxId, 10))
 	}
+	if err := c.pluginManager.Send4C(pCtx, msg, nil); err != nil {
+		return err
+	}
 	// 具体写入器已经提前被选定好, 客户端不需要泛写入器, 所以Header可以忽略
 	writeErr := c.cfg.Writer.Write(msgwriter.Argument{
 		Message: msg,
@@ -251,14 +255,11 @@ func (c *Client) sendCallMsg(ctxId uint64, msg *message.Message, lc *connSource,
 		Encoder: c.cfg.Packer,
 		Pool:    sharedPool.TakeBytesPool(),
 		OnDebug: debug.MessageDebug(c.logger, false),
-		OnComplete: func(bytes []byte, err error2.LErrorDesc) {
-			// 发送完成时调用插件
-			if err := c.pluginManager.OnSendMessage(msg, &bytes); err != nil {
-				c.logger.Error("LRPC: call plugin OnSendMessage failed: %v", err)
-			}
-		},
 		EHandle: c.eHandle,
 	}, math.MaxUint8)
+	if err := c.pluginManager.AfterSend4C(pCtx, msg, writeErr); err != nil {
+		return err
+	}
 	if writeErr != nil {
 		switch writeErr.Code() {
 		case error2.UnsafeOption, error2.MessageEncodingFailed:

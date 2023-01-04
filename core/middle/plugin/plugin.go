@@ -1,6 +1,9 @@
 package plugin
 
 import (
+	"context"
+	"github.com/nyan233/littlerpc/core/common/logger"
+	perror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"reflect"
 )
@@ -10,39 +13,86 @@ const (
 	NORMAL  = 1 ^ 8 // 按照插件的功能区分,normal代表这个插件并不支持自定义的控制参数
 )
 
+type Event int
+
+const (
+	OnOpen    Event = 1 << (5 + iota) // 连接建立
+	OnMessage                         // 收到Rpc消息
+	OnClose                           // 连接关闭
+)
+
+// Plugin
+//
+//	NOTE: 返回的(error != nil)即表示中断调用过程, 所以何时返回error是一个慎重的决定
+//	不确定是否返回时, 推荐使用pub中的Logger打印日志, 级别由严重程度决定
+type Plugin interface {
+	ClientPlugin
+	ServerPlugin
+}
+
 // ClientPlugin 指针类型的数据均不能被多个Goroutine安全的使用
 // 如果你要这么做的话，那么请将其拷贝一份
 type ClientPlugin interface {
-	//	OnCall Client.Call() | Client.SyncCall() 找到绑定的方法并完成Codec后开始
-	OnCall(msg *message.Message, args *[]interface{}) error
-	//	OnSendMessage Bytes并不能被多个Goroutine安全的使用,如果需要跨context传递
-	//	请将Bytes指向的数据拷贝一份,littlerpc内部对bytes会有内存复用的行为，所以在将其跨Goroutine传递时可能会看到
-	//	奇怪的数据
-	OnSendMessage(msg *message.Message, bytes *[]byte) error
-	// OnReceiveMessage 调用该阶段时Msg必须是Reset过的消息,该阶段在接收完服务器消息，并在使用Codec解码数据之前调用
-	// TODO 在客户端使用MsgParser时bytes并没有意义, 预计删除
-	OnReceiveMessage(msg *message.Message, bytes *[]byte) error
-	// OnResult 客户端将正确的结果返回客户端之前调用
-	// 如果服务器的返回并不是正确的结果，那么err != nil
-	OnResult(msg *message.Message, results *[]interface{}, err error)
+	ClientPlugin2
 }
 
 // ServerPlugin 指针类型的数据均不能被多个Goroutine安全的使用
 // 如果你要这么做的话，那么请将其拷贝一份
+//
+//	每个方法的触发时机, 不是所有方法在所有的时机皆可触发
+//	Api         Event         Message-Type
+//	Event4S     --> All       --> Call,Ping,Context-Cancel
+//	Receive4S   --> OnMessage --> Call,Ping,Context-Cancel
+//	Call4S      --> OnMessage --> Call
+//	AfterCall4S --> OnMessage --> Call
+//	Send4S      --> OnMessage --> Call,Ping,Context-Cancel
+//	AfterSend4S --> OnMessage --> Call,Ping,Context-Cancel
 type ServerPlugin interface {
-	// OnMessage 消息刚刚到来时的值,bytes必须为一个完整的消息帧
-	// TODO 需要改动, 现版本发现bytes并没有用
-	OnMessage(msg *message.Message, bytes *[]byte) error
-	// OnCallBefore 在经过其他组件对消息的处理完成之后，此处流程是在reflect.Call()之前调用的
-	OnCallBefore(msg *message.Message, args *[]reflect.Value, err error) error
-	OnCallResult(msg *message.Message, results *[]reflect.Value) error
-	OnReplyMessage(msg *message.Message, bytes *[]byte, err error) error
-	// OnComplete 在调用消息发送的接口完成之后调用的过程,如果消息发送失败或者完成之前调用的接口
-	// 返回了错误的话,err != nil
-	OnComplete(msg *message.Message, err error) error
+	ServerPlugin2
 }
 
-type Plugin interface {
-	ClientPlugin
-	ServerPlugin
+type ServerPlugin2 interface {
+	// Event4S 触发事件时执行, Event == OnClose时会忽略next返回值, 因为OnClose执行的操作
+	// 是回收OnOpen时创建的资源, 如果next使其能够中断的话则会造成资源泄漏
+	//	OnOpen    --> next == false --> 不会创建任何关于该新连接的资源, 同时关闭该连接
+	//	OnMessage --> next == false --> 忽略本次OnMessage操作
+	Event4S(ev Event) (next bool)
+	// Receive4S 在这个阶段不会产生错误, 这个阶段之前发生的错误都不可能正确的生成消息, 也就是说在这个阶段前
+	// 发生的错误插件无法感知
+	Receive4S(pub *Context, msg *message.Message) perror.LErrorDesc
+	// Call4S 调用之前产生的error来自于LittleRpc本身的校验过程, 参数校验失败/反序列化失败等错误
+	Call4S(pub *Context, args []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc
+	// AfterCall4S 调用之后产生的错误可能来自被调用者调用了panic()但是其自身没有处理, 导致被LittleRpc捕获到了
+	// 如果是其自身返回的错误则应该在results中
+	AfterCall4S(pub *Context, args, results []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc
+	// Send4S 发送之前产生的错误可能来自于序列化结果, 当遇到一个不可序列化的结果则会产生错误
+	Send4S(pub *Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc
+	// AfterSend4S 发送之后的错误主要来自于Writer, 写请求失败时会产生一个错误
+	AfterSend4S(pub *Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc
+}
+
+type ClientPlugin2 interface {
+	// Request4C
+	//	在这个阶段不会产生错误, 这个阶段之前发生的错误都不可能正确的生成消息, 也就是说在这个阶段前
+	//	发生的错误插件无法感知
+	Request4C(pub *Context, args []interface{}, msg *message.Message) perror.LErrorDesc
+	// Send4C 发送之前产生的错误, 主要来自于序列化, 遇到不能序列化的数据时会产生一个错误
+	Send4C(pub *Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc
+	// AfterSend4C 发送之后产生的错误主要来自于Writer, 写请求失败会产生一个错误
+	AfterSend4C(pub *Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc
+	// Receive4C 接收消息时产生的错误来自于后台负责接收处理消息的异步过程
+	Receive4C(pub *Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc
+	// AfterReceive4C 接收消息后产生的错误来自多个方面
+	//	----> LRPC-Server回传
+	//	----> LRPC-Client解析消息时产生
+	//	----> RPC Callee返回
+	AfterReceive4C(pub *Context, results []interface{}, err perror.LErrorDesc) perror.LErrorDesc
+}
+
+// Context NOTE: 不将context放在Factory内是因为LittleRpc有重启
+// 的功能, 如果放在Factory中
+type Context struct {
+	PluginContext context.Context
+	Logger        logger.LLogger
+	EHandler      perror.LErrors
 }

@@ -37,6 +37,8 @@ type Argument struct {
 	// 为true表示开启了Mux
 	OnDebug func([]byte, bool)
 	// 在消息发送完成时会调用
+	// 这个回调不应该用于调用插件的发送消息完成阶段, 一些Mux的实现可能会调用多次
+	// 这个回调, 如果想要唯一地检查应该去检查Write()的返回值
 	OnComplete func([]byte, perror.LErrorDesc)
 	EHandle    perror.LErrors
 }

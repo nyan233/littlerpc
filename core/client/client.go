@@ -182,6 +182,7 @@ func (c *Client) Request(service string, ctx context.Context, request interface{
 
 // Requests multi request and response
 func (c *Client) Requests(service string, requests []interface{}, responses []interface{}, opts ...CallOption) error {
+	// TODO: 修改检查的逻辑
 	if responses == nil || len(responses) > 0 {
 		return c.eHandle.LWarpErrorDesc(errorhandler.ErrCallArgsType, "responses length equal zero")
 	}
@@ -204,8 +205,14 @@ func (c *Client) Call(service string, args ...interface{}) ([]interface{}, error
 	return c.call(service, nil, args, nil, true)
 }
 
-func (c *Client) call(service string, opts []CallOption,
-	args []interface{}, reps []interface{}, check bool) (completeReps []interface{}, completeErr error2.LErrorDesc) {
+func (c *Client) call(
+	service string,
+	opts []CallOption,
+	args []interface{},
+	reps []interface{},
+	check bool,
+) (completeReps []interface{}, completeErr error2.LErrorDesc) {
+
 	defer func() {
 		if completeErr != nil && check && (completeReps == nil || len(completeReps) == 0) {
 			if serviceInstance, ok := c.services.LoadOk(service); ok {
@@ -221,15 +228,17 @@ func (c *Client) call(service string, opts []CallOption,
 	writeMsg := mp.Get().(*message.Message)
 	defer mp.Put(writeMsg)
 	writeMsg.Reset()
-	method, ctx, ctxId, err := c.identArgAndEncode(service, writeMsg, cs, args, !check)
-	if err != nil {
+	pCtx := c.pluginManager.GetContext()
+	defer c.pluginManager.FreeContext(pCtx)
+	if err := c.pluginManager.Request4C(pCtx, args, writeMsg); err != nil {
 		return nil, err
 	}
-	// 插件的OnCall阶段
-	if pluginErr := c.pluginManager.OnCall(writeMsg, &args); pluginErr != nil {
-		c.logger.Error("LRPC: client plugin OnCall failed: %v", pluginErr)
+	method, ctx, ctxId, err := c.identArgAndEncode(service, writeMsg, args, !check)
+	if err != nil {
+		_ = c.pluginManager.Send4C(pCtx, writeMsg, err)
+		return nil, err
 	}
-	err = c.sendCallMsg(ctxId, writeMsg, cs, false)
+	err = c.sendCallMsg(pCtx, ctxId, writeMsg, cs, false)
 	if err != nil {
 		switch err.Code() {
 		case error2.ConnectionErr:
@@ -244,8 +253,14 @@ func (c *Client) call(service string, opts []CallOption,
 			reps = make([]interface{}, method.Type().NumOut()-1)
 		}
 	}
-	reps, err = c.readMsgAndDecodeReply(ctx, writeMsg.GetMsgId(), cs, method, reps)
-	c.pluginManager.OnResult(writeMsg, &reps, err)
+	reps, err = c.readMsgAndDecodeReply(ctx, pCtx, writeMsg.GetMsgId(), cs, method, reps)
+	// 插件错误中断后续的处理
+	if err != nil && (err.Code() == errorhandler.ErrPlugin.Code()) {
+		return reps, err
+	}
+	if err := c.pluginManager.AfterReceive4C(pCtx, reps, err); err != nil {
+		return reps, err
+	}
 	if err == nil {
 		return reps, nil
 	}
@@ -266,7 +281,7 @@ func (c *Client) AsyncCall(service string, args []interface{}, callBack func(res
 		return c.eHandle.LWarpErrorDesc(errorhandler.ErrCallArgsType, "callBack is empty")
 	}
 	msg := message.New()
-	method, ctx, ctxId, err := c.identArgAndEncode(service, msg, nil, args, false)
+	method, ctx, ctxId, err := c.identArgAndEncode(service, msg, args, false)
 	if err != nil {
 		return err
 	}
@@ -277,13 +292,13 @@ func (c *Client) AsyncCall(service string, args []interface{}, callBack func(res
 			callBack(nil, err)
 			return
 		}
-		err = c.sendCallMsg(ctxId, msg, conn, false)
+		err = c.sendCallMsg(nil, ctxId, msg, conn, false)
 		if err != nil {
 			callBack(nil, err)
 			return
 		}
 		reps := make([]interface{}, method.Type().NumOut()-1)
-		reps, err = c.readMsgAndDecodeReply(ctx, msg.GetMsgId(), conn, method, reps)
+		reps, err = c.readMsgAndDecodeReply(ctx, nil, msg.GetMsgId(), conn, method, reps)
 		callBack(reps, err)
 	})
 }

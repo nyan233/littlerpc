@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	"github.com/nyan233/littlerpc/core/common/metadata"
 	msgparser2 "github.com/nyan233/littlerpc/core/common/msgparser"
 	"github.com/nyan233/littlerpc/core/common/msgwriter"
@@ -47,6 +48,9 @@ func newTestServer(nilConn transport2.ConnAdapter) (*Server, error) {
 		services: *container.NewRCUMap[string, *metadata.Process](),
 		sources:  *container.NewRCUMap[string, *metadata.Source](),
 	}
+	sc := new(Config)
+	WithDefaultServer()(sc)
+	server.config.Store(sc)
 	err := server.RegisterClass(ReflectionSource, new(LittleRpcReflection), nil)
 	if err != nil {
 		return nil, err
@@ -55,13 +59,11 @@ func newTestServer(nilConn transport2.ConnAdapter) (*Server, error) {
 		Parser: msgparser2.NewLRPCTrait(msgparser2.NewDefaultSimpleAllocTor(), 4096),
 		Writer: msgwriter.NewLRPCTrait(),
 	})
-	sc := &Config{}
-	WithDefaultServer()(sc)
 	server.eHandle = sc.ErrHandler
 	server.taskPool = pool.NewTaskPool[string](sc.PoolBufferSize, sc.PoolMinSize, sc.PoolMaxSize, nil)
 	server.logger = &testLogger{logger: sc.Logger}
 	server.pManager = &pluginManager{plugins: sc.Plugins}
-	server.config = sc
+	server.config.Store(sc)
 	return server, nil
 }
 
@@ -77,7 +79,7 @@ func TestOnMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	// open debug
-	server.config.Debug = true
+	server.config.Load().Debug = true
 	msg := message2.New()
 	for i := 0; i < obj.NumMethod(); i++ {
 		msg.SetMsgType(message2.Call)
@@ -106,6 +108,21 @@ func TestOnMessage(t *testing.T) {
 			msg.Reset()
 		}()
 	}
+	t.Run("TestOnMessageRecover", func(t *testing.T) {
+		func() {
+			defer server.recover(nc, server.connsSourceDesc.Load(nc))
+			a := make([]int, 10)
+			a[100] = 1
+		}()
+		func() {
+			defer server.recover(nc, server.connsSourceDesc.Load(nc))
+			panic("Hello world")
+		}()
+		func() {
+			defer server.recover(nc, server.connsSourceDesc.Load(nc))
+			panic(errorhandler.ContextNotFound)
+		}()
+	})
 }
 
 func baseTypeGenToJson(typ reflect.Type) ([]byte, error) {

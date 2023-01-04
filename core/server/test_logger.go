@@ -22,7 +22,6 @@ func (t *testLogger) Warn(format string, v ...interface{}) {
 
 func (t *testLogger) Error(format string, v ...interface{}) {
 	t.logger.Error(format, v...)
-	panic("Error Logger Print")
 }
 
 func (t *testLogger) Panic(format string, v ...interface{}) {

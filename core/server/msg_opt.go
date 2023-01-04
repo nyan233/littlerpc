@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc/core/common/check"
 	rContext "github.com/nyan233/littlerpc/core/common/context"
@@ -14,10 +13,12 @@ import (
 	metaDataUtil "github.com/nyan233/littlerpc/core/common/utils/metadata"
 	"github.com/nyan233/littlerpc/core/middle/codec"
 	"github.com/nyan233/littlerpc/core/middle/packer"
+	"github.com/nyan233/littlerpc/core/middle/plugin"
 	perror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/protocol/message/mux"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
+	"net"
 	"reflect"
 	"strconv"
 )
@@ -37,16 +38,26 @@ type messageOpt struct {
 	// Cancel func取消的是从context-id创建的原始context中派生的, 因此并没有context-id
 	Cancel   context.CancelFunc
 	CallArgs []reflect.Value
+	PCtx     *plugin.Context
 }
 
 func newConnDesc(s *Server, msg msgparser.ParserMessage, conn transport.ConnAdapter, desc *connSourceDesc) *messageOpt {
-	return &messageOpt{
+	opt := &messageOpt{
 		Server:  s,
 		Message: msg.Message,
 		Header:  msg.Header,
 		Conn:    conn,
 		Desc:    desc,
 	}
+	if opt.Server.pManager.Size() <= 0 {
+		opt.PCtx = nil
+	} else {
+		opt.PCtx = s.pManager.GetContext()
+		opt.PCtx.PluginContext = injectPluginContext(context.Background(), desc.localAddr, desc.remoteAddr, msg.Message.GetServiceName())
+		opt.PCtx.Logger = s.logger
+		opt.PCtx.EHandler = s.eHandle
+	}
+	return opt
 }
 
 func (c *messageOpt) SelectCodecAndEncoder() {
@@ -63,7 +74,6 @@ func (c *messageOpt) SelectCodecAndEncoder() {
 
 // RealPayload 获取真正的Payload, 如果有压缩则解压
 func (c *messageOpt) RealPayload() perror.LErrorDesc {
-	var err error
 	if c.Packer.Scheme() != "text" {
 		bytes, err := c.Packer.UnPacket(c.Message.Payloads())
 		if err != nil {
@@ -71,11 +81,8 @@ func (c *messageOpt) RealPayload() perror.LErrorDesc {
 		}
 		c.Message.SetPayloads(bytes)
 	}
-	// Plugin OnMessage
-	p := c.Message.Payloads()
-	err = c.Server.pManager.OnMessage(c.Message, (*[]byte)(&p))
-	if err != nil {
-		c.Server.logger.Error("LRPC: call plugin OnMessage failed: %v", err)
+	if err := c.Server.pManager.Receive4S(c.PCtx, c.Message); err != nil {
+		return err
 	}
 	return nil
 }
@@ -87,6 +94,15 @@ func (c *messageOpt) Free() {
 	}
 	c.freeFunc(c.Message)
 	c.Message = nil
+}
+
+func (c *messageOpt) FreePluginCtx() {
+	if c.PCtx == nil {
+		return
+	}
+	ctx := c.PCtx
+	c.PCtx = nil
+	c.Server.pManager.FreeContext(ctx)
 }
 
 func (c *messageOpt) setFreeFunc(f func(msg *message.Message)) {
@@ -109,16 +125,11 @@ func (c *messageOpt) Check() perror.LErrorDesc {
 	c.Service = service
 	// 从客户端校验并获得合法的调用参数
 	callArgs, lErr := c.checkCallArgs()
-	// 参数校验为不合法
-	if lErr != nil {
-		if err := c.Server.pManager.OnCallBefore(c.Message, &callArgs, errors.New("arguments check failed")); err != nil {
-			c.Server.logger.Error("LRPC: call plugin OnCallBefore failed: %v", err)
-		}
-		return c.Server.eHandle.LWarpErrorDesc(lErr, "arguments check failed")
+	if err := c.Server.pManager.Call4S(c.PCtx, callArgs, lErr); err != nil {
+		return c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrPlugin, err)
 	}
-	// Plugin
-	if err := c.Server.pManager.OnCallBefore(c.Message, &callArgs, nil); err != nil {
-		c.Server.logger.Error("LRPC: call plugin OnCallBefore failed: %v", err)
+	if lErr != nil {
+		return c.Server.eHandle.LWarpErrorDesc(lErr, "arguments check failed")
 	}
 	c.CallArgs = callArgs
 	return nil
@@ -224,4 +235,11 @@ func (c *messageOpt) checkContextAndStream(callArgs []reflect.Value) (offset int
 		break
 	}
 	return
+}
+
+func injectPluginContext(ctx context.Context, local, remote net.Addr, service string) context.Context {
+	ctx = rContext.WithLocalAddr(ctx, local)
+	ctx = rContext.WithRemoteAddr(ctx, remote)
+	ctx = rContext.WithService(ctx, service)
+	return ctx
 }

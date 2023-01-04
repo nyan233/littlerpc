@@ -26,7 +26,7 @@ type Process struct {
 	SupportStream bool
 	// Option中的参数都是用于定义的, 在Process中的其它控制参数用户
 	// 并不能手动控制
-	Option *ProcessOption
+	Option ProcessOption
 }
 
 type ProcessOption struct {

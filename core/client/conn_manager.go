@@ -7,6 +7,7 @@ import (
 	"github.com/nyan233/littlerpc/core/middle/loadbalance/balancer"
 	"github.com/nyan233/littlerpc/core/middle/loadbalance/resolver"
 	"github.com/nyan233/littlerpc/core/middle/loadbalance/selector"
+	"net"
 	"sync"
 	"sync/atomic"
 )
@@ -20,7 +21,9 @@ const (
 // 当conn被关闭时, 新的conn可以复用被关闭的conn, 这个对象应该直到客户端被关闭之前
 // 一直存在于池中
 type connSource struct {
-	conn transport.ConnAdapter
+	conn       transport.ConnAdapter
+	LocalAddr  net.Addr
+	RemoteAddr net.Addr
 	// 表示该连接属于哪个节点
 	node loadbalance.RpcNode
 	// message ID的起始, 开始时随机分配

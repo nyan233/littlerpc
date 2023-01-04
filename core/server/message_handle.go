@@ -5,34 +5,53 @@ import (
 	"fmt"
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	"github.com/nyan233/littlerpc/core/common/inters"
+	"github.com/nyan233/littlerpc/core/common/metadata"
 	metaDataUtil "github.com/nyan233/littlerpc/core/common/utils/metadata"
 	error2 "github.com/nyan233/littlerpc/core/protocol/error"
 	message2 "github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/utils/convert"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	"reflect"
+	"runtime"
 	"strconv"
 	"time"
 )
 
 // 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
 func (s *Server) messageKeepAlive(msgOpt *messageOpt) {
-	defer msgOpt.Free()
+	defer func() {
+		msgOpt.Free()
+		msgOpt.FreePluginCtx()
+	}()
+	if err := msgOpt.RealPayload(); err != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgOpt.Message.GetMsgId(), s.eHandle.LWarpErrorDesc(
+			err, "keep-alive get real payload failed"))
+		return
+	}
 	msgOpt.Message.SetMsgType(message2.Pong)
-	if s.config.KeepAlive {
-		err := msgOpt.Conn.SetDeadline(time.Now().Add(s.config.KeepAliveTimeout))
+	cfg := s.config.Load()
+	if cfg.KeepAlive {
+		err := msgOpt.Conn.SetDeadline(time.Now().Add(cfg.KeepAliveTimeout))
 		if err != nil {
 			s.logger.Error("LRPC: connection set deadline failed: %v", err)
 			_ = msgOpt.Conn.Close()
 			return
 		}
 	}
-	s.encodeAndSendMsg(msgOpt, msgOpt.Message)
+	s.encodeAndSendMsg(msgOpt, msgOpt.Message, nil, false)
 }
 
 // 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
 func (s *Server) messageContextCancel(msgOpt *messageOpt) {
-	defer msgOpt.Free()
+	defer func() {
+		msgOpt.Free()
+		msgOpt.FreePluginCtx()
+	}()
+	if err := msgOpt.RealPayload(); err != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgOpt.Message.GetMsgId(), s.eHandle.LWarpErrorDesc(
+			err, "context-cancel get real payload failed"))
+		return
+	}
 	ctxIdStr, ok := msgOpt.Message.MetaData.LoadOk(message2.ContextId)
 	if !ok {
 		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgOpt.Message.GetMsgId(), error2.LWarpStdError(
@@ -47,22 +66,29 @@ func (s *Server) messageContextCancel(msgOpt *messageOpt) {
 	if err != nil {
 		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgOpt.Message.GetMsgId(), error2.LWarpStdError(
 			errorhandler.ErrServer, err.Error()))
+		return
 	}
+	s.encodeAndSendMsg(msgOpt, msgOpt.Message, nil, false)
 }
 
 // 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
 func (s *Server) messageCall(msgOpt *messageOpt, desc *connSourceDesc) {
 	msgId := msgOpt.Message.GetMsgId()
-	lErr := msgOpt.RealPayload()
-	if lErr != nil {
-		msgOpt.Free()
-		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, lErr)
+	var err error
+	defer func() {
+		if err != nil {
+			msgOpt.Free()
+			msgOpt.FreePluginCtx()
+		}
+	}()
+	err = msgOpt.RealPayload()
+	if err != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, err.(error2.LErrorDesc))
 		return
 	}
-	lErr = msgOpt.Check()
-	if lErr != nil {
-		msgOpt.Free()
-		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, lErr)
+	err = msgOpt.Check()
+	if err != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, err.(error2.LErrorDesc))
 		return
 	}
 	switch {
@@ -73,11 +99,10 @@ func (s *Server) messageCall(msgOpt *messageOpt, desc *connSourceDesc) {
 			s.callHandleUnit(msgOpt)
 		}()
 	default:
-		err := s.taskPool.Push(msgOpt.Message.GetServiceName(), func() {
+		err = s.taskPool.Push(msgOpt.Message.GetServiceName(), func() {
 			s.callHandleUnit(msgOpt)
 		})
 		if err != nil {
-			msgOpt.Free()
 			s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, s.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error()))
 		}
 	}
@@ -95,18 +120,41 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt) {
 	defer func() {
 		message2.ResetMsg(msg, false, true, true, 1024)
 		messageBuffer.Put(msg)
+		msgOpt.FreePluginCtx()
 	}()
-	callResult := msgOpt.Service.Value.Call(msgOpt.CallArgs)
+	callResult, cErr := s.handleCall(msgOpt.Service, msgOpt.CallArgs)
 	// context存在时且未被取消, 则在调用结束之后取消
 	if msgOpt.Service.SupportContext && msgOpt.CallArgs[0].Interface().(context.Context).Err() == nil && msgOpt.Cancel != nil {
 		msgOpt.Cancel()
 	}
-	// TODO v0.4.x计划删除
-	// 函数在没有返回error则填充nil
-	if len(callResult) == 0 {
+
+	if cErr == nil && len(callResult) == 0 {
+		// TODO v0.4.x计划删除
+		// 函数在没有返回error则填充nil
 		callResult = append(callResult, reflect.ValueOf(nil))
 	}
-	// TODO 正确设置消息
+	err := s.pManager.AfterCall4S(msgOpt.PCtx, msgOpt.CallArgs, callResult, cErr)
+	// AfterCall4S()之后不会再被使用, 可以回收参数
+	if msgOpt.Service.Option.CompleteReUsage {
+		for i := metaDataUtil.InputOffset(msgOpt.Service); i < len(msgOpt.CallArgs); i++ {
+			msgOpt.CallArgs[i].Interface().(inters.Reset).Reset()
+		}
+		msgOpt.Service.Pool.Put(msgOpt.CallArgs)
+		// 置空, 防止放回池中时被其它goroutine重新引用而导致数据竞争, 导致难以排查
+		msgOpt.CallArgs = nil
+	}
+	if err != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, err)
+		return
+	}
+	if cErr != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, cErr)
+		return
+	}
+	s.reply(msgOpt, msg, msgId, callResult)
+}
+
+func (s *Server) reply(msgOpt *messageOpt, msg *message2.Message, msgId uint64, results []reflect.Value) {
 	msg.SetMsgType(message2.Return)
 	if msgOpt.Codec.Scheme() != message2.DefaultCodec {
 		msg.MetaData.Store(message2.CodecScheme, msgOpt.Codec.Scheme())
@@ -115,32 +163,49 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt) {
 		msg.MetaData.Store(message2.PackerScheme, msgOpt.Packer.Scheme())
 	}
 	msg.SetMsgId(msgId)
-	// OnCallResult Plugin
-	if err := s.pManager.OnCallResult(msg, &callResult); err != nil {
-		s.logger.Error("LRPC: plugin OnCallResult run failed: %v", err)
-	}
 	// 处理用户过程返回的错误，v0.30开始规定每个符合规范的API最后一个返回值是error接口
-	lErr := s.setErrResult(msg, callResult[len(callResult)-1])
+	lErr := s.setErrResult(msg, results[len(results)-1])
 	if lErr != nil {
 		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msg.GetMsgId(), lErr)
 		return
 	}
-	s.handleResult(msgOpt, msg, callResult)
-	if msgOpt.Service.Option.CompleteReUsage {
-		for i := metaDataUtil.InputOffset(msgOpt.Service); i < len(msgOpt.CallArgs); i++ {
-			msgOpt.CallArgs[i].Interface().(inters.Reset).Reset()
+	err := s.handleResult(msgOpt, msg, results)
+	s.encodeAndSendMsg(msgOpt, msg, err, true)
+}
+
+func (s *Server) handleCall(service *metadata.Process, args []reflect.Value) (results []reflect.Value, err error2.LErrorDesc) {
+	defer func() {
+		e := recover()
+		if e == nil {
+			return
 		}
-		msgOpt.Service.Pool.Put(msgOpt.CallArgs)
-		// 置空, 防止放回池中时被其它goroutine重新引用而导致数据竞争, 导致难以排查
-		// 置空则会导致data race时使用到它的其它goroutine Panic
-		msgOpt.CallArgs = nil
-	}
-	// 处理结果发送
-	s.encodeAndSendMsg(msgOpt, msg)
+		var printStr string
+		switch e.(type) {
+		case error2.LErrorDesc:
+			err = e.(error2.LErrorDesc)
+			printStr = err.Error()
+		case error:
+			iErr := e.(error)
+			err = s.eHandle.LNewErrorDesc(error2.Unknown, iErr.Error())
+			printStr = iErr.Error()
+		case string:
+			err = s.eHandle.LNewErrorDesc(error2.Unknown, e.(string))
+			printStr = e.(string)
+		default:
+			printStr = fmt.Sprintf("%v", e)
+			err = s.eHandle.LNewErrorDesc(error2.Unknown, printStr)
+		}
+		var stack [4096]byte
+		size := runtime.Stack(stack[:], false)
+		s.logger.Warn("callee panic : %s\n%s", printStr, convert.BytesToString(stack[:size]))
+	}()
+	results = service.Value.Call(args)
+	err = nil
+	return
 }
 
 // 将用户过程的返回结果集序列化为可传输的json数据
-func (s *Server) handleResult(msgOpt *messageOpt, msg *message2.Message, callResult []reflect.Value) {
+func (s *Server) handleResult(msgOpt *messageOpt, msg *message2.Message, callResult []reflect.Value) error2.LErrorDesc {
 	for _, v := range callResult[:len(callResult)-1] {
 		// NOTE : 对于指针类型或者隐含指针的类型, 他检查用户过程是否返回nil
 		// NOTE : 对于非指针的值传递类型, 它检查该类型是否是零值
@@ -156,11 +221,11 @@ func (s *Server) handleResult(msgOpt *messageOpt, msg *message2.Message, callRes
 		// 可替换的Codec已经不需要Any包装器了
 		bytes, err := msgOpt.Codec.Marshal(eface)
 		if err != nil {
-			s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msg.GetMsgId(), errorhandler.ErrServer)
-			return
+			return s.eHandle.LWarpErrorDesc(errorhandler.ErrCodecMarshalError, err.Error())
 		}
 		msg.AppendPayloads(bytes)
 	}
+	return nil
 }
 
 // 必须在其结果集中首先处理错误在处理其余结果
