@@ -9,6 +9,7 @@ import (
 	mux2 "github.com/nyan233/littlerpc/core/protocol/message/mux"
 	"github.com/nyan233/littlerpc/core/utils/random"
 	"github.com/stretchr/testify/assert"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -109,6 +110,19 @@ func TestConcurrentHalfParse(t *testing.T) {
 	}
 	go producer(consumerChannels, gen.MuxToBytes(gen.Big), CycleSize)
 	wg.Wait()
+}
+
+func TestHandler(t *testing.T) {
+	for i := uint8(0); true; i++ {
+		GetHandler(i)
+		if i == math.MaxUint8 {
+			break
+		}
+	}
+	defer func() {
+		assert.NotNil(t, recover())
+	}()
+	RegisterHandler(nil)
 }
 
 func TestJsonRPC2Parser(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"math"
 )
 
-var handlerCollect [math.MaxUint8]MessageHandler
+var handlerCollect [math.MaxUint8 + 1]MessageHandler
 
 type Action int
 type BaseLenType int
