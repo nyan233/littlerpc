@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+type statusCode struct{}
+
 type Logger struct {
 	plugin.AbstractServer
 	w io.Writer
@@ -22,32 +24,6 @@ func New(w io.Writer) plugin.ServerPlugin {
 	return &Logger{
 		w: w,
 	}
-}
-
-type timePoint struct{}
-
-type statusCode struct{}
-
-type ctxData struct {
-	Start   int64
-	MsgType string
-}
-
-func (l Logger) Receive4S(pub *plugin.Context, msg *message.Message) perror.LErrorDesc {
-	var msgType string
-	switch msg.GetMsgType() {
-	case message.Call:
-		msgType = "Call"
-	case message.Ping:
-		msgType = "Keepalive"
-	case message.ContextCancel:
-		msgType = "Context-Cancel"
-	}
-	pub.PluginContext = context.WithValue(pub.PluginContext, timePoint{}, ctxData{
-		Start:   time.Now().UnixNano(),
-		MsgType: msgType,
-	})
-	return nil
 }
 
 func (l Logger) Call4S(pub *plugin.Context, args []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
@@ -97,9 +73,9 @@ func (l Logger) printLog(pub *plugin.Context, msg *message.Message, err perror.L
 	if phase == "" {
 		phase = "Unknown"
 	}
-	data, ok := pub.PluginContext.Value(timePoint{}).(ctxData)
-	if !ok {
-		pub.Logger.Warn("logger error : start time not found")
+	data := lContext.CheckInitData(pub.PluginContext)
+	if data == nil {
+		pub.Logger.Warn("logger error : init data not found")
 		return nil
 	}
 	var status int
@@ -113,9 +89,7 @@ func (l Logger) printLog(pub *plugin.Context, msg *message.Message, err perror.L
 		status = err.Code()
 	}
 	live := time.Now()
-	service := lContext.CheckService(pub.PluginContext)
-	clientAddr := lContext.CheckRemoteAddr(pub.PluginContext)
-	interval := time.Duration(live.UnixNano() - data.Start)
+	interval := live.Sub(data.Start)
 	var msgSize uint32
 	if msg != nil {
 		msgSize = msg.GetAndSetLength()
@@ -131,15 +105,26 @@ func (l Logger) printLog(pub *plugin.Context, msg *message.Message, err perror.L
 	case msgSize/uint32(GB) < 1024:
 		size = fmt.Sprintf("%.3fGB", float64(msgSize)/GB)
 	}
+	var msgType string
+	switch data.MsgType {
+	case message.Call:
+		msgType = "Call"
+	case message.Ping:
+		msgType = "Keep-Alive"
+	case message.ContextCancel:
+		msgType = "Context-Cancel"
+	default:
+		msgType = "Unknown"
+	}
 	_, wErr := fmt.Fprintf(l.w, "[LRPC] | %-10s | %s | %7d | %10s | %10s | %-15s | %15s | \"%s\"\n",
 		phase,
 		live.Format("2006/01/02 - 15:04:05"),
 		status,
 		interval,
 		size,
-		clientAddr,
-		data.MsgType,
-		service)
+		lContext.CheckRemoteAddr(pub.PluginContext),
+		msgType,
+		data.ServiceName)
 	if wErr != nil {
 		pub.Logger.Warn("logger write data error : %v", wErr)
 	}

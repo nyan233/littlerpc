@@ -17,7 +17,11 @@ import (
 
 func TestPluginLogger(t *testing.T) {
 	l := New(os.Stdout)
-	pCtx := lContext.WithService(context.Background(), "test/api/v1.Hello")
+	pCtx := lContext.WithInitData(context.Background(), &lContext.InitData{
+		Start:       time.Now(),
+		ServiceName: "test/api/v1.Hello",
+		MsgType:     message.Call,
+	})
 	ctx := &plugin.Context{
 		PluginContext: pCtx,
 		Logger:        logger.DefaultLogger,
@@ -30,7 +34,8 @@ func TestPluginLogger(t *testing.T) {
 }
 
 func testLogger(t *testing.T, msg *message.Message, ctx *plugin.Context, l plugin.ServerPlugin, msgType uint8) {
-	msg.SetMsgType(msgType)
+	data := lContext.CheckInitData(ctx.PluginContext)
+	data.MsgType = msgType
 	assert.Nil(t, l.Receive4S(ctx, msg))
 	msg.SetServiceName("")
 	time.Sleep(time.Nanosecond * 100)

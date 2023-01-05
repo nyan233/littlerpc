@@ -18,9 +18,9 @@ import (
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/protocol/message/mux"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
-	"net"
 	"reflect"
 	"strconv"
+	"time"
 )
 
 // 该类型拥有的方法都有很多的副作用, 请谨慎
@@ -53,7 +53,7 @@ func newConnDesc(s *Server, msg msgparser.ParserMessage, conn transport.ConnAdap
 		opt.PCtx = nil
 	} else {
 		opt.PCtx = s.pManager.GetContext()
-		opt.PCtx.PluginContext = injectPluginContext(context.Background(), desc.localAddr, desc.remoteAddr, msg.Message.GetServiceName())
+		opt.PCtx.PluginContext = injectPluginContext(desc.cacheCtx, msg.Message.GetMsgType(), msg.Message.GetServiceName(), time.Now())
 		opt.PCtx.Logger = s.logger
 		opt.PCtx.EHandler = s.eHandle
 	}
@@ -237,9 +237,11 @@ func (c *messageOpt) checkContextAndStream(callArgs []reflect.Value) (offset int
 	return
 }
 
-func injectPluginContext(ctx context.Context, local, remote net.Addr, service string) context.Context {
-	ctx = rContext.WithLocalAddr(ctx, local)
-	ctx = rContext.WithRemoteAddr(ctx, remote)
-	ctx = rContext.WithService(ctx, service)
+func injectPluginContext(ctx context.Context, msgType uint8, service string, start time.Time) context.Context {
+	ctx = rContext.WithInitData(ctx, &rContext.InitData{
+		Start:       start,
+		ServiceName: service,
+		MsgType:     msgType,
+	})
 	return ctx
 }

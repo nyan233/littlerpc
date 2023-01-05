@@ -3,11 +3,17 @@ package context
 import (
 	"context"
 	"net"
+	"time"
 )
 
 type remoteAddr struct{}
 type localAddr struct{}
-type service struct{}
+type initData struct{}
+type InitData struct {
+	Start       time.Time
+	ServiceName string
+	MsgType     uint8
+}
 
 func WithRemoteAddr(ctx context.Context, addr net.Addr) context.Context {
 	return context.WithValue(ctx, remoteAddr{}, addr)
@@ -27,11 +33,11 @@ func CheckLocalAddr(ctx context.Context) net.Addr {
 	return a
 }
 
-func WithService(ctx context.Context, s string) context.Context {
-	return context.WithValue(ctx, service{}, s)
+func WithInitData(ctx context.Context, p *InitData) context.Context {
+	return context.WithValue(ctx, initData{}, p)
 }
 
-func CheckService(ctx context.Context) string {
-	a, _ := ctx.Value(service{}).(string)
+func CheckInitData(ctx context.Context) *InitData {
+	a, _ := ctx.Value(initData{}).(*InitData)
 	return a
 }

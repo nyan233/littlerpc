@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/nyan233/littlerpc/core/common/inters"
@@ -32,6 +33,7 @@ type connSourceDesc struct {
 	Writer     msgwriter.Writer
 	remoteAddr net.Addr
 	localAddr  net.Addr
+	cacheCtx   context.Context
 	ctxManager *contextManager
 }
 
