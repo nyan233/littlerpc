@@ -1,8 +1,8 @@
 package test
 
 /*
-   @Generator   : littlerpc-generator
-   @CreateTime  : 2022-12-04 17:14:08.9460343 +0800 CST m=+0.288736501
+   @Generator   : pxtor
+   @CreateTime  : 2023-01-04 15:02:14.173266 +0800 CST m=+0.592707101
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
@@ -55,14 +55,14 @@ func NewTest(b binder) TestProxy {
 }
 
 func (p testImpl) Foo(s1 string) (int, error) {
-	rep, err := p.Call("littlerpc/internal/test1.Foo", s1)
-	r0, _ := rep[0].(int)
+	reps, err := p.Call("littlerpc/internal/test1.Foo", s1)
+	r0, _ := reps[0].(int)
 	return r0, err
 }
 
 func (p testImpl) Bar(s1 string) (int, error) {
-	rep, err := p.Call("littlerpc/internal/test1.Bar", s1)
-	r0, _ := rep[0].(int)
+	reps, err := p.Call("littlerpc/internal/test1.Bar", s1)
+	r0, _ := reps[0].(int)
 	return r0, err
 }
 
@@ -82,21 +82,21 @@ func (p testImpl) ErrHandler2(s1 string) error {
 }
 
 func (p testImpl) Proxy2(s1 string, s2 int) (*Test, int64, error) {
-	rep, err := p.Call("littlerpc/internal/test1.Proxy2", s1, s2)
-	r0, _ := rep[0].(*Test)
-	r1, _ := rep[1].(int64)
+	reps, err := p.Call("littlerpc/internal/test1.Proxy2", s1, s2)
+	r0, _ := reps[0].(*Test)
+	r1, _ := reps[1].(int64)
 	return r0, r1, err
 }
 
 func (p testImpl) MapCallTest(m1 map[string]map[string]byte, m2 map[string]map[string]byte) (*Test, map[string]byte, error) {
-	rep, err := p.Call("littlerpc/internal/test1.MapCallTest", m1, m2)
-	r0, _ := rep[0].(*Test)
-	r1, _ := rep[1].(map[string]byte)
+	reps, err := p.Call("littlerpc/internal/test1.MapCallTest", m1, m2)
+	r0, _ := reps[0].(*Test)
+	r1, _ := reps[1].(map[string]byte)
 	return r0, r1, err
 }
 
 func (p testImpl) CallSlice(s1 []*Test, s2 []map[string]int) (bool, error) {
-	rep, err := p.Call("littlerpc/internal/test1.CallSlice", s1, s2)
-	r0, _ := rep[0].(bool)
+	reps, err := p.Call("littlerpc/internal/test1.CallSlice", s1, s2)
+	r0, _ := reps[0].(bool)
 	return r0, err
 }

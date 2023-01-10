@@ -10,6 +10,7 @@ import (
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"io"
 	"reflect"
+	"strings"
 	"time"
 )
 
@@ -116,13 +117,13 @@ func (l Logger) printLog(pub *plugin.Context, msg *message.Message, err perror.L
 	default:
 		msgType = "Unknown"
 	}
-	_, wErr := fmt.Fprintf(l.w, "[LRPC] | %-10s | %s | %7d | %10s | %10s | %-15s | %15s | \"%s\"\n",
+	_, wErr := fmt.Fprintf(l.w, "[LRPC] | %-10s | %s | %7d | %10s | %10s | %12s | %15s | \"%s\"\n",
 		phase,
 		live.Format("2006/01/02 - 15:04:05"),
 		status,
 		interval,
 		size,
-		lContext.CheckRemoteAddr(pub.PluginContext),
+		strings.Split(lContext.CheckRemoteAddr(pub.PluginContext).String(), ":")[0],
 		msgType,
 		data.ServiceName)
 	if wErr != nil {
