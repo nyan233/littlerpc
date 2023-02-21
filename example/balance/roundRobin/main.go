@@ -27,7 +27,7 @@ func Server() {
 	if err != nil {
 		panic(err)
 	}
-	err = server.Start()
+	err = server.Service()
 	if err != nil {
 		panic(err)
 	}
@@ -41,20 +41,21 @@ func Client() {
 		panic(err)
 	}
 	_ = c.BindFunc("Hello", &Hello{})
-	rep, err := c.Call("Hello.Hello", "Tony", 1<<20)
-	if err != nil {
-		panic(err)
-	}
-	user := rep[0].(*UserJson)
-	fmt.Println(user)
-	if err != nil {
-		panic(err)
+	for i := 0; i < 10; i++ {
+		rep, err := c.Call("Hello.Hello", nil, "Tony", 1<<20)
+		if err != nil {
+			panic(err)
+		}
+		user := rep[0].(*UserJson)
+		fmt.Println(user)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
 func main() {
 	logger.SetOpenLogger(false)
 	Server()
-	Client()
 	Client()
 }

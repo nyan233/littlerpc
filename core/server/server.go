@@ -4,11 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"reflect"
+	"sync"
+	"sync/atomic"
+
 	"github.com/nyan233/littlerpc/core/common/inters"
 	"github.com/nyan233/littlerpc/core/common/logger"
 	"github.com/nyan233/littlerpc/core/common/metadata"
 	"github.com/nyan233/littlerpc/core/common/msgparser"
 	"github.com/nyan233/littlerpc/core/common/msgwriter"
+	"github.com/nyan233/littlerpc/core/common/stream"
 	transport2 "github.com/nyan233/littlerpc/core/common/transport"
 	"github.com/nyan233/littlerpc/core/common/utils/debug"
 	metaDataUtil "github.com/nyan233/littlerpc/core/common/utils/metadata"
@@ -16,10 +22,6 @@ import (
 	lerror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/internal/pool"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
-	"net"
-	"reflect"
-	"sync"
-	"sync/atomic"
 )
 
 const (
@@ -171,26 +173,31 @@ func (s *Server) registerProcess(src *metadata.Source, process string, processVa
 	if processValue.Type().NumIn() == 0 {
 		return
 	}
+	for j := 0; j < processValue.Type().NumIn(); j++ {
+		processDesc.ArgsType = append(processDesc.ArgsType, processValue.Type().In(j))
+	}
 	jOffset := metaDataUtil.IFContextOrStream(processDesc, processValue.Type())
 	if !processDesc.Option.CompleteReUsage {
 		goto asyncCheck
 	}
 	for j := 0 + jOffset; j < processValue.Type().NumIn(); j++ {
-		if !processValue.Type().In(j).Implements(reflect.TypeOf((*inters.Reset)(nil)).Elem()) {
+		typ := processValue.Type().In(j)
+		if !typ.Implements(reflect.TypeOf((*inters.Reset)(nil)).Elem()) {
 			processDesc.Option.CompleteReUsage = false
 			goto asyncCheck
 		}
 	}
 	processDesc.Pool = sync.Pool{
 		New: func() interface{} {
-			tmp := make([]reflect.Value, jOffset, 8)
-			inputs := reflect2.FuncInputTypeList(processDesc.Value, jOffset, false, func(i int) bool {
+			inputs := reflect2.FuncInputTypeListReturnValue(processDesc.ArgsType, 0, func(i int) bool {
 				return false
-			})
-			for _, v := range inputs {
-				tmp = append(tmp, reflect.ValueOf(v))
+			}, true)
+			switch {
+			case processDesc.SupportContext && processDesc.SupportStream:
+				inputs[0] = reflect.ValueOf(context.Background())
+				inputs[1] = reflect.ValueOf(stream.LStream(nil))
 			}
-			return tmp
+			return inputs
 		},
 	}
 asyncCheck:

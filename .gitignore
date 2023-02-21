@@ -2,3 +2,5 @@
 .vscode
 ./cmd/pxtor/test/Test_proxy.go
 fuzz
+
+all.cover.out

@@ -12,7 +12,7 @@ type FileServer struct {
 	fileMap map[string][]byte
 }
 
-func NewFileServer() *FileServer {
+func New() *FileServer {
 	return &FileServer{fileMap: make(map[string][]byte)}
 }
 
@@ -36,8 +36,8 @@ func (fs *FileServer) OpenSysFile(path string) ([]byte, error) {
 
 func main() {
 	server := server.New(server.WithAddressServer(":1234"))
-	_ = server.RegisterClass("", NewFileServer(), nil)
-	err := server.Start()
+	_ = server.RegisterClass("", New(), nil)
+	err := server.Service()
 	if err != nil {
 		panic(err)
 	}
@@ -45,7 +45,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	proxy := NewFileServerProxy(client)
+	proxy := NewFileServer(client)
 	fileBytes, err := proxy.OpenSysFile("./main.go")
 	if err != nil {
 		panic(err)

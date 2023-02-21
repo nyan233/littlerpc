@@ -22,73 +22,77 @@ func RealType(value reflect.Value) reflect.Value {
 	return RealType(reflect.ValueOf(value.Interface()))
 }
 
-// FuncInputTypeList 返回函数的输入参数类型列表，空接口切片表示
-// directNew是一个过滤器回调函数, 返回true指示new的类型是其原始类型, 返回false则代表new一个非指针类型并返回其指针
-// directNew()其入参的index当(isRecv == true), 它的值相当于减去接收器的参数的长度
+// FuncInputTypeListReturnValue 返回函数的输入参数类型列表，空接口切片表示
+// directNew是一个过滤器回调函数, 返回true指示new的类型是其原始类型, 返回false则根据是否指针类型来返回不同的数据
 //
 //	Example
 //	if directNew() == true { Input(*reflect.Value) Exec -> return new(*reflect.Value)}
-//	if directNew() == false { Input(*reflect.Value) Exec -> tmp := new(reflect.Value) -> return &tmp}
-func FuncInputTypeList(value reflect.Value, start int, isRecv bool, directNew func(i int) bool) []interface{} {
-	typ := value.Type()
-	typs := make([]interface{}, 0, typ.NumIn())
-	if isRecv {
-		start++
-	}
-	if isRecv && cap(typs) <= 1 {
+//	if directNew() == false { Input(reflect.Value) Exec -> tmp := new(reflect.Value) -> return *tmp}
+//	if directNew() == false { Input(*reflect.Value) Exec -> tmp := new(reflect.Value) -> return tmp}
+func FuncInputTypeListReturnValue(tList []reflect.Type, start int, directNew func(i int) bool, skipInter bool) []reflect.Value {
+	if (tList != nil && len(tList) == 0) || start >= len(tList) {
 		return nil
 	}
-	inputIndex := -1
-	for i := start; i < cap(typs); i++ {
-		inputIndex++
-		if directNew != nil && directNew(inputIndex) {
-			typs = append(typs, reflect.New(typ.In(i)).Interface())
+	result := make([]reflect.Value, 0, len(tList)-start)
+	for index, typ := range tList {
+		if index < start {
 			continue
 		}
-		if typ.In(i).Kind() == reflect.Interface {
-			typs = append(typs, reflect.New(typ.In(i)).Interface())
+		if directNew != nil && directNew(index) {
+			result = append(result, reflect.New(typ).Elem())
+			continue
+		}
+		if typ.Kind() == reflect.Interface {
+			if skipInter {
+				result = append(result, reflect.ValueOf(nil))
+			} else {
+				result = append(result, reflect.New(typ))
+			}
 			continue
 		}
 		// 非指针的类型
-		if typ.In(i).Kind() != reflect.Ptr {
-			typs = append(typs, reflect.New(typ.In(i)).Elem().Interface())
+		if typ.Kind() != reflect.Ptr {
+			result = append(result, reflect.New(typ).Elem())
 			continue
 		}
-		typs = append(typs, reflect.New(typ.In(i).Elem()).Interface())
+		result = append(result, reflect.New(typ.Elem()))
 	}
-	return typs
+	return result
 }
 
 // FuncOutputTypeList 返回函数的返回值类型列表，空接口切片表示
-// directNew是一个过滤器回调函数, 返回true指示new的类型是其原始类型, 返回false则代表new一个非指针类型并返回其指针
-// directNew()其入参的index当(isRecv == true), 它的值相当于减去接收器的参数的长度
+// directNew是一个过滤器回调函数, 返回true指示new的类型是其原始类型, 返回false则根据是否指针类型来返回不同的数据
 //
 //	Example
 //	if directNew() == true { Input(*reflect.Value) Exec -> return new(*reflect.Value)}
-//	if directNew() == false { Input(*reflect.Value) Exec -> tmp := new(reflect.Value) -> return &tmp}
-func FuncOutputTypeList(value reflect.Value, directNew func(i int) bool) []interface{} {
-	typ := value.Type()
-	typs := make([]interface{}, 0, typ.NumOut())
-	if cap(typs) == 0 {
+//	if directNew() == false { Input(reflect.Value) Exec -> tmp := new(reflect.Value) -> return *tmp}
+//	if directNew() == false { Input(*reflect.Value) Exec -> tmp := new(reflect.Value) -> return tmp}
+func FuncOutputTypeList(tList []reflect.Type, directNew func(i int) bool, skipInter bool) []interface{} {
+	if tList != nil && len(tList) == 0 {
 		return nil
 	}
-	for i := 0; i < cap(typs); i++ {
-		if directNew != nil && directNew(i) {
-			typs = append(typs, reflect.New(typ.Out(i)).Elem().Interface())
+	result := make([]interface{}, 0, len(tList))
+	for index, typ := range tList {
+		if directNew != nil && directNew(index) {
+			result = append(result, reflect.New(typ).Elem().Interface())
 			continue
 		}
-		if typ.Out(i).Kind() == reflect.Interface {
-			typs = append(typs, reflect.New(typ.Out(i)).Interface())
+		if typ.Kind() == reflect.Interface {
+			if skipInter {
+				result = append(result, nil)
+			} else {
+				result = append(result, reflect.New(typ).Interface())
+			}
 			continue
 		}
 		// 非指针类型
-		if typ.Out(i).Kind() != reflect.Ptr {
-			typs = append(typs, reflect.New(typ.Out(i)).Elem().Interface())
+		if typ.Kind() != reflect.Ptr {
+			result = append(result, reflect.New(typ).Elem().Interface())
 			continue
 		}
-		typs = append(typs, reflect.New(typ.Out(i).Elem()).Interface())
+		result = append(result, reflect.New(typ.Elem()).Interface())
 	}
-	return typs
+	return result
 }
 
 // 将reflect.Type中携带的类型信息转换为efce的类型信息

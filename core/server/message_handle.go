@@ -229,8 +229,8 @@ func (s *Server) handleResult(msgOpt *messageOpt, msg *message2.Message, callRes
 }
 
 // 必须在其结果集中首先处理错误在处理其余结果
-func (s *Server) setErrResult(msg *message2.Message, callResult reflect.Value) error2.LErrorDesc {
-	interErr := reflect2.ToValueTypeEface(callResult)
+func (s *Server) setErrResult(msg *message2.Message, errResult reflect.Value) error2.LErrorDesc {
+	interErr := reflect2.ToValueTypeEface(errResult)
 	// 无错误
 	if interErr == error(nil) {
 		msg.MetaData.Store(message2.ErrorCode, strconv.Itoa(errorhandler.Success.Code()))

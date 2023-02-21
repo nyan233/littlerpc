@@ -9,10 +9,11 @@ import (
 func TestSliceUnique(t *testing.T) {
 	var testData Slice[uint32] = random.GenSequenceNumberOnFastRand(1000)
 	testData.AppendS(100)
+	testData.AppendSingle(101)
 	testData.Append(random.GenSequenceNumberOnMathRand(10))
 	testData.Unique()
-	assert.Equal(t, testData.Len(), 1011)
-	assert.GreaterOrEqual(t, testData.Cap(), 1011)
+	assert.Equal(t, testData.Len(), 1012)
+	assert.GreaterOrEqual(t, testData.Cap(), 1012)
 }
 
 func BenchmarkSliceUnique(b *testing.B) {

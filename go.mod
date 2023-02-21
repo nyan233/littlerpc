@@ -1,6 +1,6 @@
 module github.com/nyan233/littlerpc
 
-go 1.18
+go 1.19
 
 require (
 	github.com/lafikl/consistent v0.0.0-20220512074542-bdd3606bfc3e
@@ -8,7 +8,7 @@ require (
 	github.com/lesismal/nbio v1.3.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.1
-	github.com/zbh255/bilog v0.3.1
+	github.com/zbh255/bilog v0.3.4
 )
 
 require (

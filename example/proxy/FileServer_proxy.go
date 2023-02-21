@@ -1,49 +1,68 @@
-/*
-@Generator   : littlerpc-generator
-@CreateTime  : 2022-10-14 03:10:08.4322692 +0800 CST m=+0.004378601
-@Author      : littlerpc-generator
-@Comment     : code is auto generate do not edit
-*/
 package main
+
+/*
+   @Generator   : pxtor
+   @CreateTime  : 2023-02-19 18:08:19.5729892 +0800 CST m=+0.005759501
+   @Author      : NoAuthor
+   @Comment     : code is auto generate do not edit
+*/
 
 import (
 	"github.com/nyan233/littlerpc/core/client"
 )
 
-type FileServerInterface interface {
-	SendFile(path string, data []byte) error
-	GetFile(path string) ([]byte, bool, error)
-	OpenSysFile(path string) ([]byte, error)
+var (
+	_ binder          = new(client.Client)
+	_ caller          = new(client.Client)
+	_ FileServerProxy = new(fileServerImpl)
+)
+
+type binder interface {
+	BindFunc(source string, proxy interface{}) error
 }
 
-type FileServerProxy struct {
-	*client.Client
+type caller interface {
+	Call(service string, opts []client.CallOption, args ...interface{}) (reps []interface{}, err error)
 }
 
-func NewFileServerProxy(client *client.Client) FileServerInterface {
-	proxy := &FileServerProxy{}
-	err := client.BindFunc("FileServer", proxy)
+type FileServerProxy interface {
+	SendFile(path string, data []byte, opts ...client.CallOption) error
+	GetFile(path string, opts ...client.CallOption) ([]byte, bool, error)
+	OpenSysFile(path string, opts ...client.CallOption) ([]byte, error)
+}
+
+type fileServerImpl struct {
+	caller
+}
+
+func NewFileServer(b binder) FileServerProxy {
+	proxy := new(fileServerImpl)
+	err := b.BindFunc("main.FileServer", proxy)
 	if err != nil {
 		panic(err)
 	}
-	proxy.Client = client
+	c, ok := b.(caller)
+	if !ok {
+		panic("the argument is not implemented caller")
+	}
+	proxy.caller = c
 	return proxy
 }
 
-func (p FileServerProxy) SendFile(path string, data []byte) error {
-	_, err := p.Call("FileServer.SendFile", path, data)
+func (p fileServerImpl) SendFile(path string, data []byte, opts ...client.CallOption) error {
+	_, err := p.Call("main.FileServer.SendFile", opts, path, data)
 	return err
 }
 
-func (p FileServerProxy) GetFile(path string) ([]byte, bool, error) {
-	rep, err := p.Call("FileServer.GetFile", path)
-	r0, _ := rep[0].([]byte)
-	r1, _ := rep[1].(bool)
+func (p fileServerImpl) GetFile(path string, opts ...client.CallOption) ([]byte, bool, error) {
+	reps, err := p.Call("main.FileServer.GetFile", opts, path)
+	r0, _ := reps[0].([]byte)
+	r1, _ := reps[1].(bool)
 	return r0, r1, err
 }
 
-func (p FileServerProxy) OpenSysFile(path string) ([]byte, error) {
-	rep, err := p.Call("FileServer.OpenSysFile", path)
-	r0, _ := rep[0].([]byte)
+func (p fileServerImpl) OpenSysFile(path string, opts ...client.CallOption) ([]byte, error) {
+	reps, err := p.Call("main.FileServer.OpenSysFile", opts, path)
+	r0, _ := reps[0].([]byte)
 	return r0, err
 }

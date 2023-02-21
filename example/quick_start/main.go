@@ -20,7 +20,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	err = server.Start()
+	err = server.Service()
 	if err != nil {
 		panic(err)
 	}

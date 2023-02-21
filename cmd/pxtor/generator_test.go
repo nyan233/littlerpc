@@ -10,9 +10,12 @@ func TestFutures(t *testing.T) {
 	*receiver = "test.Test"
 	*sourceName = "littlerpc/internal/test1"
 	*style = SyncStyle
+	*generateId = true
 	for i := 0; i < 100; i++ {
 		genCode()
 	}
+	*sourceName = "Test"
+	genCode()
 }
 
 func TestGenApi(t *testing.T) {

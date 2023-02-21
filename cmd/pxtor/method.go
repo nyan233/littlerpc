@@ -35,7 +35,7 @@ func (m *Method) FormatToSync() string {
 		_, _ = fmt.Fprintf(&sb2, "%s %s,", arg.Name, arg.Type)
 		_, _ = fmt.Fprintf(&inputNames, "%s,", arg.Name)
 	}
-	_, _ = fmt.Fprintf(&sb, "(%s)", sb2.String())
+	_, _ = fmt.Fprintf(&sb, "(%sopts ...client.CallOption)", sb2.String())
 	sb2.Reset()
 	var nop string
 	if len(m.OutputList) > 1 {
@@ -60,10 +60,10 @@ func (m *Method) FormatToSync() string {
 		_, _ = fmt.Fprintf(&outNames, "r%d,", i)
 	}
 	if len(m.OutputList) == 1 {
-		_, _ = fmt.Fprintf(&sb, "{_,err := %s.Call(\"%s\",%s);%sreturn %serr}", m.Receive.Name, m.ServiceName,
+		_, _ = fmt.Fprintf(&sb, "{_,err := %s.Call(\"%s\",opts,%s);%sreturn %serr}", m.Receive.Name, m.ServiceName,
 			inputNames.String(), assertSet.String(), outNames.String())
 	} else if len(m.OutputList) > 1 {
-		_, _ = fmt.Fprintf(&sb, "{reps,err := %s.Call(\"%s\",%s);%sreturn %serr}", m.Receive.Name, m.ServiceName,
+		_, _ = fmt.Fprintf(&sb, "{reps,err := %s.Call(\"%s\",opts,%s);%sreturn %serr}", m.Receive.Name, m.ServiceName,
 			inputNames.String(), assertSet.String(), outNames.String())
 	}
 	return sb.String()

@@ -11,6 +11,7 @@ import (
 	"github.com/nyan233/littlerpc/core/common/stream"
 	"github.com/nyan233/littlerpc/core/common/transport"
 	metaDataUtil "github.com/nyan233/littlerpc/core/common/utils/metadata"
+	"github.com/nyan233/littlerpc/core/container"
 	"github.com/nyan233/littlerpc/core/middle/codec"
 	"github.com/nyan233/littlerpc/core/middle/packer"
 	"github.com/nyan233/littlerpc/core/middle/plugin"
@@ -139,14 +140,13 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 	// 去除接收者之后的输入参数长度
 	// 校验客户端传递的参数和服务端是否一致
 	iter := c.Message.PayloadsIterator()
-	serviceType := c.Service.Value.Type()
-	if nInput := serviceType.NumIn() - metaDataUtil.InputOffset(c.Service); nInput != iter.Tail() {
+	if nInput := len(c.Service.ArgsType) - metaDataUtil.InputOffset(c.Service); nInput != iter.Tail() {
 		return nil, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer,
 			"client input args number no equal server",
 			fmt.Sprintf("Client : %d", iter.Tail()), fmt.Sprintf("Server : %d", nInput))
 	}
 	// 哨兵条件, 过程不要求任何输入时即可以提前结束
-	if serviceType.NumIn() == 0 {
+	if len(c.Service.ArgsType) == 0 {
 		return
 	}
 	defer func() {
@@ -166,27 +166,21 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 				c.Service.Pool.Put(&callArgs)
 			}
 		}()
-		inputStart, err = c.checkContextAndStream(callArgs)
+		inputStart, err = c.checkContextAndStream(callArgs, true)
 		if err != nil {
 			return
 		}
 	} else {
-		callArgs = make([]reflect.Value, 0, 4)
-		inputStart, err = c.checkContextAndStream(callArgs)
-		if err != nil {
-			return
-		}
-		callArgs = callArgs[:inputStart]
-		inputTypeList := reflect2.FuncInputTypeList(c.Service.Value, inputStart, false, func(i int) bool {
+		callArgs = reflect2.FuncInputTypeListReturnValue(c.Service.ArgsType, 0, func(i int) bool {
 			if len(iter.Take()) == 0 {
 				return true
 			}
 			return false
-		})
-		for _, v := range inputTypeList {
-			callArgs = append(callArgs, reflect.ValueOf(v))
+		}, true)
+		inputStart, err = c.checkContextAndStream(callArgs, true)
+		if err != nil {
+			return
 		}
-
 	}
 	iter.Reset()
 	for i := inputStart; i < len(callArgs) && iter.Next(); i++ {
@@ -201,7 +195,7 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 	return callArgs, nil
 }
 
-func (c *messageOpt) checkContextAndStream(callArgs []reflect.Value) (offset int, err perror.LErrorDesc) {
+func (c *messageOpt) checkContextAndStream(callArgs container.Slice[reflect.Value], write bool) (offset int, err perror.LErrorDesc) {
 	ctx := context.Background()
 	ctxIdStr, ok := c.Message.MetaData.LoadOk(message.ContextId)
 	// 客户端携带context-id且对应的过程支持context时才注册context
@@ -219,17 +213,23 @@ func (c *messageOpt) checkContextAndStream(callArgs []reflect.Value) (offset int
 	}
 	ctx = rContext.WithLocalAddr(ctx, c.Desc.localAddr)
 	ctx = rContext.WithRemoteAddr(ctx, c.Desc.remoteAddr)
-	callArgs = callArgs[:0]
+	callArgs.Reset()
 	switch {
 	case c.Service.SupportContext:
 		offset = 1
-		callArgs = append(callArgs, reflect.ValueOf(ctx))
+		if write {
+			callArgs.AppendSingle(reflect.ValueOf(ctx))
+		}
 	case c.Service.SupportContext && c.Service.SupportStream:
 		offset = 2
-		callArgs = append(callArgs, reflect.ValueOf(ctx), reflect.ValueOf(*new(stream.LStream)))
+		if write {
+			callArgs.AppendS(reflect.ValueOf(ctx), reflect.ValueOf(*new(stream.LStream)))
+		}
 	case c.Service.SupportStream:
 		offset = 1
-		callArgs = append(callArgs, reflect.ValueOf(*new(stream.LStream)))
+		if write {
+			callArgs.AppendSingle(reflect.ValueOf(*new(stream.LStream)))
+		}
 	default:
 		// 不支持context&stream
 		break

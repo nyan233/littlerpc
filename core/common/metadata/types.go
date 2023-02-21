@@ -14,6 +14,12 @@ type Source struct {
 // 过程的名字更适合同时描述方法和函数
 type Process struct {
 	Value reflect.Value
+	// v0.4.6开始, 事先准备好的Args List, 避免查找元数据的开销
+	// client不包含opts -> []CallOption
+	ArgsType []reflect.Type
+	// v0.4.6开始, 实现准备好的Results List, 避免查找元数据的开销
+	// 不包含err -> error
+	ResultsType []reflect.Type
 	// 用于复用输入参数的内存池
 	Pool sync.Pool
 	// 是否为匿名函数, 匿名函数不带接收器

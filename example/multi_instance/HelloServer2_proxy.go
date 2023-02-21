@@ -1,41 +1,60 @@
-/*
-@Generator   : littlerpc-generator
-@CreateTime  : 2022-10-14 10:05:36.1459111 +0800 CST m=+0.006024801
-@Author      : littlerpc-generator
-@Comment     : code is auto generate do not edit
-*/
 package main
+
+/*
+   @Generator   : pxtor
+   @CreateTime  : 2023-02-19 18:10:25.074787 +0800 CST m=+0.005534601
+   @Author      : NoAuthor
+   @Comment     : code is auto generate do not edit
+*/
 
 import (
 	"github.com/nyan233/littlerpc/core/client"
 )
 
-type HelloServer2Interface interface {
-	Init(str string) error
-	Hello() (string, error)
+var (
+	_ binder17453203147392b81fcc375a6a22bbd8 = new(client.Client)
+	_ caller17453203147392b81fcc375a6a22bbd8 = new(client.Client)
+	_ HelloServer2Proxy                      = new(helloServer2Impl)
+)
+
+type binder17453203147392b81fcc375a6a22bbd8 interface {
+	BindFunc(source string, proxy interface{}) error
 }
 
-type HelloServer2Proxy struct {
-	*client.Client
+type caller17453203147392b81fcc375a6a22bbd8 interface {
+	Call(service string, opts []client.CallOption, args ...interface{}) (reps []interface{}, err error)
 }
 
-func NewHelloServer2Proxy(client *client.Client) HelloServer2Interface {
-	proxy := &HelloServer2Proxy{}
-	err := client.BindFunc("HelloServer2", proxy)
+type HelloServer2Proxy interface {
+	Init(str string, opts ...client.CallOption) error
+	Hello(opts ...client.CallOption) (string, error)
+}
+
+type helloServer2Impl struct {
+	caller17453203147392b81fcc375a6a22bbd8
+}
+
+func NewHelloServer2(b binder17453203147392b81fcc375a6a22bbd8) HelloServer2Proxy {
+	proxy := new(helloServer2Impl)
+	err := b.BindFunc("main.HelloServer2", proxy)
 	if err != nil {
 		panic(err)
 	}
-	proxy.Client = client
+	c, ok := b.(caller17453203147392b81fcc375a6a22bbd8)
+	if !ok {
+		panic("the argument is not implemented caller")
+	}
+	proxy.caller17453203147392b81fcc375a6a22bbd8 = c
 	return proxy
 }
 
-func (p HelloServer2Proxy) Init(str string) error {
-	_, err := p.Call("HelloServer2.Init", str)
+func (p helloServer2Impl) Init(str string, opts ...client.CallOption) error {
+	_, err := p.Call("main.HelloServer2.Init", opts, str)
 	return err
 }
 
-func (p HelloServer2Proxy) Hello() (string, error) {
-	rep, err := p.Call("HelloServer2.Hello")
-	r0, _ := rep[0].(string)
+func (p helloServer2Impl) Hello(opts ...client.CallOption) (string, error) {
+	reps, err := p.Call("main.HelloServer2.Hello", opts)
+	r0, _ := reps[0].(string)
 	return r0, err
 }

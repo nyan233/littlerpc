@@ -141,13 +141,36 @@ func (c *Client) BindFunc(sourceName string, i interface{}) error {
 	}
 	for i := 0; i < value.NumMethod(); i++ {
 		method := source.InstanceType.Method(i)
-		if method.IsExported() {
-			opt := &metadata.Process{
-				Value: value.Method(i),
-			}
-			metaDataUtil.IFContextOrStream(opt, method.Type)
-			source.ProcessSet[method.Name] = opt
+		if !method.IsExported() {
+			continue
 		}
+		// 2022/02/22 : 生成器可能直接使用/间接使用*Client作为内嵌对象
+		// 这个时候需要防止Client自己的方法被添加到列表中
+		switch method.Name {
+		case "Call", "RawCall", "Request", "Requests", "AsyncCall", "BindFunc", "Close":
+			continue
+		}
+		opt := &metadata.Process{
+			Value: value.Method(i),
+		}
+		for j := 0; j < method.Type.NumIn(); j++ {
+			// 检查输入参数的最后一项是否为(...CallOption)
+			if j == (method.Type.NumIn()-1) && method.Type.In(j) == reflect.TypeOf([]CallOption{}) {
+				break
+			}
+			opt.ArgsType = append(opt.ArgsType, method.Type.In(j))
+		}
+		for j := 0; j < method.Type.NumOut(); j++ {
+			// 检查输入参数的最后一项是否为(error)
+			// NOTE: 2022/11/22 目前没有优雅的方法比较参数列表的接口类型为什么接口
+			// 值为nil的非空接口在转换成空接口时不会将数据类型assign给空接口, 只能通过类型的指针来比较
+			if j == (method.Type.NumOut()-1) && reflect.PtrTo(method.Type.Out(j)) == reflect.TypeOf(new(error)) {
+				break
+			}
+			opt.ResultsType = append(opt.ResultsType, method.Type.Out(j))
+		}
+		metaDataUtil.IFContextOrStream(opt, method.Type)
+		source.ProcessSet[method.Name] = opt
 	}
 	kvs := make([]container2.RCUMapElement[string, *metadata.Process], 0, len(source.ProcessSet))
 	for k, v := range source.ProcessSet {
@@ -167,8 +190,8 @@ func (c *Client) BindFunc(sourceName string, i interface{}) error {
 
 // RawCall 该调用和Client.Call不同, 这个调用不会识别Method和对应的in/out list
 // 只会对除context.Context/stream.LStream外的args/reps直接序列化
-func (c *Client) RawCall(service string, args ...interface{}) ([]interface{}, error) {
-	return c.call(service, nil, args, nil, false)
+func (c *Client) RawCall(service string, opts []CallOption, args ...interface{}) ([]interface{}, error) {
+	return c.call(service, opts, args, nil, false)
 }
 
 // Request req/rep风格的RPC调用, 这要求rep必须是指针类型, 否则会返回ErrCallArgsType
@@ -201,8 +224,8 @@ func (c *Client) Requests(service string, requests []interface{}, responses []in
 // Context cancel, 但不会影响到自身的调用过程, 如果cancel之后, remote process不返回, 那么这次调用将会阻塞
 // 注册了元信息的过程返回的result数量始终等于自身结果数量-1, 因为error不包括在reps中, 不管发生了什么错误, 除非
 // 找不到注册的元信息
-func (c *Client) Call(service string, args ...interface{}) ([]interface{}, error) {
-	return c.call(service, nil, args, nil, true)
+func (c *Client) Call(service string, opts []CallOption, args ...interface{}) ([]interface{}, error) {
+	return c.call(service, opts, args, nil, true)
 }
 
 func (c *Client) call(
@@ -233,12 +256,23 @@ func (c *Client) call(
 	if err := c.pluginManager.Request4C(pCtx, args, writeMsg); err != nil {
 		return nil, err
 	}
-	method, ctx, ctxId, err := c.identArgAndEncode(service, writeMsg, args, !check)
+	cc := &callConfig{
+		Writer: c.cfg.Writer,
+		Codec:  c.cfg.Codec,
+		Packer: c.cfg.Packer,
+	}
+	if opts != nil && len(opts) > 0 {
+		for _, opt := range opts {
+			opt(cc)
+		}
+	}
+	process, ctx, ctxId, err := c.identArgAndEncode(service, cc, writeMsg, args, !check)
 	if err != nil {
 		_ = c.pluginManager.Send4C(pCtx, writeMsg, err)
 		return nil, err
 	}
-	err = c.sendCallMsg(pCtx, ctxId, writeMsg, cs, false)
+
+	err = c.sendCallMsg(pCtx, cc, ctxId, writeMsg, cs, false)
 	if err != nil {
 		switch err.Code() {
 		case error2.ConnectionErr:
@@ -250,10 +284,10 @@ func (c *Client) call(
 	}
 	if reps == nil || len(reps) == 0 {
 		if check {
-			reps = make([]interface{}, method.Type().NumOut()-1)
+			reps = make([]interface{}, len(process.ResultsType))
 		}
 	}
-	reps, err = c.readMsgAndDecodeReply(ctx, pCtx, writeMsg.GetMsgId(), cs, method, reps)
+	reps, err = c.readMsgAndDecodeReply(ctx, pCtx, cc, writeMsg.GetMsgId(), cs, process, reps)
 	// 插件错误中断后续的处理
 	if err != nil && (err.Code() == errorhandler.ErrPlugin.Code()) {
 		return reps, err
@@ -276,12 +310,23 @@ func (c *Client) call(
 // AsyncCall TODO 改进这个不合时宜的API
 // AsyncCall 该函数返回时至少数据已经经过Codec的序列化，调用者有责任检查error
 // 该函数可能会传递来自Codec和内部组件的错误，因为它在发送消息之前完成
-func (c *Client) AsyncCall(service string, args []interface{}, callBack func(results []interface{}, err error)) error {
+func (c *Client) AsyncCall(service string, opts []CallOption, args []interface{}, callBack func(results []interface{}, err error)) error {
 	if callBack == nil {
 		return c.eHandle.LWarpErrorDesc(errorhandler.ErrCallArgsType, "callBack is empty")
 	}
 	msg := message.New()
-	method, ctx, ctxId, err := c.identArgAndEncode(service, msg, args, false)
+	cc := &callConfig{
+		Writer: c.cfg.Writer,
+		Codec:  c.cfg.Codec,
+		Packer: c.cfg.Packer,
+	}
+	if opts != nil && len(opts) > 0 {
+		cc = new(callConfig)
+		for _, opt := range opts {
+			opt(cc)
+		}
+	}
+	process, ctx, ctxId, err := c.identArgAndEncode(service, cc, msg, args, false)
 	if err != nil {
 		return err
 	}
@@ -292,13 +337,13 @@ func (c *Client) AsyncCall(service string, args []interface{}, callBack func(res
 			callBack(nil, err)
 			return
 		}
-		err = c.sendCallMsg(nil, ctxId, msg, conn, false)
+		err = c.sendCallMsg(nil, cc, ctxId, msg, conn, false)
 		if err != nil {
 			callBack(nil, err)
 			return
 		}
-		reps := make([]interface{}, method.Type().NumOut()-1)
-		reps, err = c.readMsgAndDecodeReply(ctx, nil, msg.GetMsgId(), conn, method, reps)
+		reps := make([]interface{}, len(process.ResultsType))
+		reps, err = c.readMsgAndDecodeReply(ctx, nil, cc, msg.GetMsgId(), conn, process, reps)
 		callBack(reps, err)
 	})
 }

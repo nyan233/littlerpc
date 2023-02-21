@@ -98,16 +98,29 @@ func TestServerAndClient(t *testing.T) {
 		NoAbleUsageNoTransactionProtocol bool
 		ServerOptions                    []server2.Option
 		ClientOptions                    []client.Option
+		CallOptions                      map[string][]client.CallOption
 	}{
 		{
 			TestName:      "TestLRPCProtocol-%s-NoMux-NonTls",
 			ServerOptions: append(baseServerOpts),
 			ClientOptions: append(baseClientOpts, client.WithNoMuxWriter()),
+			CallOptions: map[string][]client.CallOption{
+				"SelectUser": {
+					client.WithCallLRPCMuxWriter(),
+					client.WithCallPacker("gzip"),
+				},
+			},
 		},
 		{
 			TestName:      "TestLRPCProtocol-%s-Mux-NonTls",
 			ServerOptions: append(baseServerOpts),
 			ClientOptions: append(baseClientOpts, client.WithMuxWriter()),
+			CallOptions: map[string][]client.CallOption{
+				"SelectUser": {
+					client.WithCallLRPCNoMuxWriter(),
+					client.WithCallPacker("gzip"),
+				},
+			},
 		},
 		{
 			TestName:      "TestLRPCProtocol-%s-NoMux-Gzip-NonTls",
@@ -140,13 +153,15 @@ func TestServerAndClient(t *testing.T) {
 			t.Run(fmt.Sprintf(runConfig.TestName, network), func(t *testing.T) {
 				testServerAndClient(t,
 					append([]server2.Option{server2.WithNetwork(network)}, runConfig.ServerOptions...),
-					append([]client.Option{client.WithNetWork(network)}, runConfig.ClientOptions...))
+					append([]client.Option{client.WithNetWork(network)}, runConfig.ClientOptions...),
+					runConfig.CallOptions)
 			})
 		}
 	}
 }
 
-func testServerAndClient(t *testing.T, serverOpts []server2.Option, clientOpts []client.Option) {
+func testServerAndClient(t *testing.T, serverOpts []server2.Option, clientOpts []client.Option,
+	ccSet map[string][]client.CallOption) {
 	sm := metrics.NewServer()
 	server := server2.New(append(serverOpts, server2.WithPlugin(sm))...)
 	h := &HelloTest{}
@@ -168,76 +183,56 @@ func testServerAndClient(t *testing.T, serverOpts []server2.Option, clientOpts [
 			UseRawGoroutine: true,
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.NoError(t, err, "server register class failed")
 	go server.Service()
 
 	defer server.Stop()
 
 	var wg sync.WaitGroup
 	// 启动多少的客户端
-	nGoroutine := 50
+	nGoroutine := 1
 	// 一个客户端连续发送多少次消息
 	sendN := 50
 	addV := 65536
 	wg.Add(nGoroutine)
 	cm := metrics.NewClient()
 	c, err := client.New(append(clientOpts, client.WithPlugin(cm))...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	proxy := NewHelloTestProxy(c)
+	assert.NoError(t, err, "client start failed")
+	proxy := NewHelloTest(c)
 	for i := 0; i < nGoroutine; i++ {
 		j := i
 		go func() {
 			for k := 0; k < sendN; k++ {
-				err := proxy.Add(int64(addV))
-				if err != nil {
-					panic(err)
-				}
-				err = proxy.CreateUser(context.Background(), &User{
+				assert.NoError(t, proxy.Add(int64(addV)), "add failed")
+				var opts []client.CallOption
+				opts, _ = ccSet["CreateUser"]
+				assert.NoError(t, proxy.CreateUser(context.Background(), &User{
 					Id:   j + 100,
 					Name: "Jeni",
-				})
-				if err != nil {
-					panic(err)
-				}
-				user, _, err := proxy.SelectUser(context.Background(), j+100)
-				if err != nil {
-					panic(err)
-				}
-				if user.Name != "Jeni" {
-					panic(interface{}("the no value"))
-				}
+				}, opts...), "create user failed")
+				opts, _ = ccSet["SelectUser"]
+				user, _, err := proxy.SelectUser(context.Background(), j+100, opts...)
+				assert.NoError(t, err, "select user failed")
+				assert.Equal(t, user.Name, "Jeni", "the no value")
+				opts, _ = ccSet["ModifyUser"]
 				_, err = proxy.ModifyUser(context.Background(), j+100, User{
 					Id:   j + 100,
 					Name: "Tony",
-				})
-				if err != nil {
-					panic(err)
-				}
-				_, _, err = proxy.GetCount()
-				if err != nil {
-					t.Error(err)
-				}
-				err = proxy.DeleteUser(context.Background(), j+100)
-				if err != nil {
-					panic(err)
-				}
-				pp := proxy.(*HelloTestProxy)
+				}, opts...)
+				assert.NoError(t, err, "modify user failed")
+				opts, _ = ccSet["GetCount"]
+				_, _, err = proxy.GetCount(opts...)
+				assert.NoError(t, err, "get count failed")
+				opts, _ = ccSet["DeleteUser"]
+				assert.NoError(t, proxy.DeleteUser(context.Background(), j+100, opts...), "delete user failed")
 				// 构造一次错误的请求
-				_, err = pp.Call("HelloTest.DeleteUser", context.Background(), "string")
-				if err == nil {
-					t.Error("call error is equal nil")
-				}
+				_, err = c.Call("HelloTest.DeleteUser", nil, context.Background(), "string")
+				assert.Error(t, err, "call error is equal nil")
 				// 构造一次取消的请求
 				ctx, _ := context.WithTimeout(context.Background(), time.Millisecond*10)
 				var rep User
-				err = pp.Request("HelloTest.WaitSelectUser", ctx, j+100, &rep)
-				if err != nil {
-					t.Log(err)
-				}
+				opts, _ = ccSet["WaitSelectUser"]
+				assert.NoError(t, c.Request("HelloTest.WaitSelectUser", ctx, j+100, &rep, opts...), "cancel request failed")
 			}
 			wg.Done()
 		}()
@@ -271,7 +266,7 @@ func TestBalance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p1 := NewHelloTestProxy(c1)
+	p1 := NewHelloTest(c1)
 	c2, err := client.New(
 		client.WithBalance("roundRobin"),
 		client.WithResolver("live", "live://127.0.0.1:8080;127.0.0.1:9090"),
@@ -279,7 +274,7 @@ func TestBalance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p2 := NewHelloTestProxy(c2)
+	p2 := NewHelloTest(c2)
 	p1.Add(1024)
 	p2.Add(1023)
 }

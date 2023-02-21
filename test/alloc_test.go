@@ -51,7 +51,7 @@ func BenchmarkClientAlloc(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	p1 := NewBenchAllocProxy(c1)
+	p1 := NewBenchAlloc(c1)
 	b.Run("ClientBigAlloc", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {

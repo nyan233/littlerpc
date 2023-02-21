@@ -26,7 +26,7 @@ func Server() {
 	if err != nil {
 		panic(err)
 	}
-	err = server.Start()
+	err = server.Service()
 	if err != nil {
 		panic(err)
 	}
@@ -37,7 +37,7 @@ func Client() {
 	if err != nil {
 		panic(err)
 	}
-	rep, err := c.RawCall("Hello.Hello", "Tony", 1<<20)
+	rep, err := c.RawCall("Hello.Hello", nil, "Tony", 1<<20)
 	if err != nil {
 		panic(err)
 	}

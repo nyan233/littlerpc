@@ -12,17 +12,17 @@ import (
 )
 
 var (
-    _ binder = new(client.Client)
-    _ caller = new(client.Client)
+    _ binder{{.GenId}} = new(client.Client)
+    _ caller{{.GenId}} = new(client.Client)
     _ {{.InterfaceName}} = new({{.TypeName}})
 )
 
-type binder interface {
+type binder{{.GenId}} interface {
     BindFunc(source string,proxy interface{}) error
 }
 
-type caller interface {
-    Call(service string, args ...interface{}) (reps []interface{},err error)
+type caller{{.GenId}} interface {
+    Call(service string, opts []client.CallOption,args ...interface{}) (reps []interface{},err error)
 }
 
 type {{.InterfaceName}} interface {
@@ -30,19 +30,19 @@ type {{.InterfaceName}} interface {
 }
 
 type {{.TypeName}} struct {
-    caller
+    caller{{.GenId}}
 }
 
-func New{{.RealTypeName}}(b binder) {{.InterfaceName}} {
+func New{{.RealTypeName}}(b binder{{.GenId}}) {{.InterfaceName}} {
     proxy := new({{.TypeName}})
     err := b.BindFunc("{{.SourceName}}", proxy)
     if err != nil {
         panic(err)
     }
-    c,ok := b.(caller)
+    c,ok := b.(caller{{.GenId}})
     if !ok {
         panic("the argument is not implemented caller")
     }
-    proxy.caller = c
+    proxy.caller{{.GenId}} = c
     return proxy
 }

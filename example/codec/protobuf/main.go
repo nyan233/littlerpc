@@ -36,7 +36,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	err = server.Start()
+	err = server.Service()
 	if err != nil {
 		panic(err)
 	}
@@ -50,7 +50,7 @@ func main() {
 		Male:   true,
 		Scores: []int32{20, 10, 20},
 	}
-	p1 := NewHelloProxy(client1)
+	p1 := NewHello(client1)
 	s, err := p1.SayHelloToProtoBuf(student)
 	if err != nil {
 		panic(err)
@@ -61,7 +61,7 @@ func main() {
 		panic(err)
 	}
 	student.Name = "Jeni"
-	p2 := NewHelloProxy(client2)
+	p2 := NewHello(client2)
 	s, err = p2.SayHelloToJson(student)
 	if err != nil {
 		panic(err)

@@ -11,19 +11,22 @@ type testStruct struct {
 }
 
 func TestFuncReflect(t *testing.T) {
-	testFunc := func(i1 []int, i2 *testStruct) (*int, *testStruct) {
-		return nil, nil
-	}
 	// 测试函数的参数列表
-	typs := FuncInputTypeList(reflect.ValueOf(testFunc), 0, false, nil)
-	_ = typs[0].([]int)
-	_ = typs[1].(*testStruct)
+	typs := FuncInputTypeListReturnValue([]reflect.Type{
+		reflect.TypeOf([]int(nil)),
+		reflect.TypeOf((*testStruct)(nil)),
+	}, 0, nil, false)
+	_ = typs[0].Interface().([]int)
+	_ = typs[1].Interface().(*testStruct)
 	// 测试函数的返回值列表
-	typs = FuncOutputTypeList(reflect.ValueOf(testFunc), func(i int) bool {
+	typs2 := FuncOutputTypeList([]reflect.Type{
+		reflect.TypeOf((*int)(nil)),
+		reflect.TypeOf((*testStruct)(nil)),
+	}, func(i int) bool {
 		return true
-	})
-	_ = typs[0].(*int)
-	_ = typs[1].(*testStruct)
+	}, true)
+	_ = typs2[0].(*int)
+	_ = typs2[1].(*testStruct)
 }
 
 func TestTypeTo(t *testing.T) {

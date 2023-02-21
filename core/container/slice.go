@@ -19,6 +19,10 @@ func (s *Slice[V]) Unique() {
 	*s = (*s)[:count]
 }
 
+func (s *Slice[V]) AppendSingle(v V) {
+	*s = append(*s, v)
+}
+
 func (s *Slice[V]) Append(v []V) {
 	*s = append(*s, v...)
 }

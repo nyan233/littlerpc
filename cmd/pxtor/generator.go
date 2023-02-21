@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	flag "github.com/spf13/pflag"
@@ -9,6 +11,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"math/rand"
 	"os"
 	"path"
 	"strconv"
@@ -30,6 +33,7 @@ var (
 	dir        = flag.StringP("dir", "d", "./", "解析接收器的路径: ./")
 	outName    = flag.StringP("out", "o", "", "输出的文件名，默认的格式: receiver_proxy.go")
 	sourceName = flag.StringP("source", "s", "", "SourceName Example(Hello1.Hello2) SourceName == Hello1")
+	generateId = flag.BoolP("gen_id", "i", false, "生成唯一id, 多个文件在同一个包时binder/caller不会冲突, 但对于mock场景不友好")
 	// TODO: 实现不同API风格的生成函数
 	style   = flag.StringP("gen", "g", SyncStyle, "生成的API风格, TODO")
 	fileSet *token.FileSet
@@ -41,7 +45,7 @@ func main() {
 		panic(interface{}("no receiver specified"))
 	}
 	if *sourceName == "" {
-		*sourceName = *receiver
+		*sourceName = strings.Split(*receiver, ".")[1]
 	}
 	genCode()
 }
@@ -256,6 +260,7 @@ type BeforeCodeDesc struct {
 	SourceName    string
 	TypeName      string
 	RealTypeName  string
+	GenId         string
 }
 
 // 在这里生成包注释、导入、工厂函数、各种需要的类型
@@ -281,6 +286,9 @@ func createBeforeCode(pkgName, recvName, source string, allFunc []string) string
 		TypeName:      typeName,
 		RealTypeName:  recvName,
 	}
+	if *generateId {
+		desc.GenId = getId()
+	}
 	for _, v := range allFunc {
 		// func (x receiver) Say(i int) error {...
 		methodMeta := strings.SplitN(v, ")", 2)[1]
@@ -292,6 +300,15 @@ func createBeforeCode(pkgName, recvName, source string, allFunc []string) string
 		panic(err)
 	}
 	return sb.String()
+}
+
+func getId() string {
+	after := time.Now().UnixNano()
+	rand.Seed(after)
+	before := rand.Uint64()
+	bStr := hex.EncodeToString(binary.BigEndian.AppendUint64(nil, before))
+	aStr := hex.EncodeToString(binary.BigEndian.AppendUint64(nil, uint64(after)))
+	return aStr + bStr
 }
 
 func GetTypeName(recvName string) string {
