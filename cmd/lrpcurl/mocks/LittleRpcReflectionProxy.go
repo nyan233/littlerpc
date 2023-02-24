@@ -5,6 +5,8 @@ package mocks
 import (
 	context "context"
 
+	client "github.com/nyan233/littlerpc/core/client"
+
 	mock "github.com/stretchr/testify/mock"
 
 	server "github.com/nyan233/littlerpc/core/server"
@@ -15,13 +17,20 @@ type LittleRpcReflectionProxy struct {
 	mock.Mock
 }
 
-// AllCodec provides a mock function with given fields: ctx
-func (_m *LittleRpcReflectionProxy) AllCodec(ctx context.Context) ([]string, error) {
-	ret := _m.Called(ctx)
+// AllCodec provides a mock function with given fields: ctx, opts
+func (_m *LittleRpcReflectionProxy) AllCodec(ctx context.Context, opts ...client.CallOption) ([]string, error) {
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
 
 	var r0 []string
-	if rf, ok := ret.Get(0).(func(context.Context) []string); ok {
-		r0 = rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, ...client.CallOption) []string); ok {
+		r0 = rf(ctx, opts...)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]string)
@@ -29,8 +38,8 @@ func (_m *LittleRpcReflectionProxy) AllCodec(ctx context.Context) ([]string, err
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
+	if rf, ok := ret.Get(1).(func(context.Context, ...client.CallOption) error); ok {
+		r1 = rf(ctx, opts...)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -38,13 +47,20 @@ func (_m *LittleRpcReflectionProxy) AllCodec(ctx context.Context) ([]string, err
 	return r0, r1
 }
 
-// AllInstance provides a mock function with given fields: ctx
-func (_m *LittleRpcReflectionProxy) AllInstance(ctx context.Context) (map[string]string, error) {
-	ret := _m.Called(ctx)
+// AllInstance provides a mock function with given fields: ctx, opts
+func (_m *LittleRpcReflectionProxy) AllInstance(ctx context.Context, opts ...client.CallOption) (map[string]string, error) {
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
 
 	var r0 map[string]string
-	if rf, ok := ret.Get(0).(func(context.Context) map[string]string); ok {
-		r0 = rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, ...client.CallOption) map[string]string); ok {
+		r0 = rf(ctx, opts...)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(map[string]string)
@@ -52,8 +68,8 @@ func (_m *LittleRpcReflectionProxy) AllInstance(ctx context.Context) (map[string
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
+	if rf, ok := ret.Get(1).(func(context.Context, ...client.CallOption) error); ok {
+		r1 = rf(ctx, opts...)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -61,13 +77,20 @@ func (_m *LittleRpcReflectionProxy) AllInstance(ctx context.Context) (map[string
 	return r0, r1
 }
 
-// AllPacker provides a mock function with given fields: ctx
-func (_m *LittleRpcReflectionProxy) AllPacker(ctx context.Context) ([]string, error) {
-	ret := _m.Called(ctx)
+// AllPacker provides a mock function with given fields: ctx, opts
+func (_m *LittleRpcReflectionProxy) AllPacker(ctx context.Context, opts ...client.CallOption) ([]string, error) {
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
 
 	var r0 []string
-	if rf, ok := ret.Get(0).(func(context.Context) []string); ok {
-		r0 = rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, ...client.CallOption) []string); ok {
+		r0 = rf(ctx, opts...)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]string)
@@ -75,8 +98,8 @@ func (_m *LittleRpcReflectionProxy) AllPacker(ctx context.Context) ([]string, er
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
+	if rf, ok := ret.Get(1).(func(context.Context, ...client.CallOption) error); ok {
+		r1 = rf(ctx, opts...)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -84,13 +107,20 @@ func (_m *LittleRpcReflectionProxy) AllPacker(ctx context.Context) ([]string, er
 	return r0, r1
 }
 
-// MethodArgumentType provides a mock function with given fields: ctx, serviceName
-func (_m *LittleRpcReflectionProxy) MethodArgumentType(ctx context.Context, serviceName string) ([]server.ArgumentType, error) {
-	ret := _m.Called(ctx, serviceName)
+// MethodArgumentType provides a mock function with given fields: ctx, serviceName, opts
+func (_m *LittleRpcReflectionProxy) MethodArgumentType(ctx context.Context, serviceName string, opts ...client.CallOption) ([]server.ArgumentType, error) {
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, serviceName)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
 
 	var r0 []server.ArgumentType
-	if rf, ok := ret.Get(0).(func(context.Context, string) []server.ArgumentType); ok {
-		r0 = rf(ctx, serviceName)
+	if rf, ok := ret.Get(0).(func(context.Context, string, ...client.CallOption) []server.ArgumentType); ok {
+		r0 = rf(ctx, serviceName, opts...)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]server.ArgumentType)
@@ -98,8 +128,8 @@ func (_m *LittleRpcReflectionProxy) MethodArgumentType(ctx context.Context, serv
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = rf(ctx, serviceName)
+	if rf, ok := ret.Get(1).(func(context.Context, string, ...client.CallOption) error); ok {
+		r1 = rf(ctx, serviceName, opts...)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -107,13 +137,20 @@ func (_m *LittleRpcReflectionProxy) MethodArgumentType(ctx context.Context, serv
 	return r0, r1
 }
 
-// MethodTable provides a mock function with given fields: ctx, sourceName
-func (_m *LittleRpcReflectionProxy) MethodTable(ctx context.Context, sourceName string) (*server.MethodTable, error) {
-	ret := _m.Called(ctx, sourceName)
+// MethodTable provides a mock function with given fields: ctx, sourceName, opts
+func (_m *LittleRpcReflectionProxy) MethodTable(ctx context.Context, sourceName string, opts ...client.CallOption) (*server.MethodTable, error) {
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, sourceName)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
 
 	var r0 *server.MethodTable
-	if rf, ok := ret.Get(0).(func(context.Context, string) *server.MethodTable); ok {
-		r0 = rf(ctx, sourceName)
+	if rf, ok := ret.Get(0).(func(context.Context, string, ...client.CallOption) *server.MethodTable); ok {
+		r0 = rf(ctx, sourceName, opts...)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*server.MethodTable)
@@ -121,8 +158,8 @@ func (_m *LittleRpcReflectionProxy) MethodTable(ctx context.Context, sourceName 
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = rf(ctx, sourceName)
+	if rf, ok := ret.Get(1).(func(context.Context, string, ...client.CallOption) error); ok {
+		r1 = rf(ctx, sourceName, opts...)
 	} else {
 		r1 = ret.Error(1)
 	}

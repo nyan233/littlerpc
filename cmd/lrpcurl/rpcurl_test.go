@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/nyan233/littlerpc/cmd/lrpcurl/mocks"
 	"github.com/nyan233/littlerpc/cmd/lrpcurl/proxy"
+	"github.com/nyan233/littlerpc/core/client"
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	"github.com/nyan233/littlerpc/core/server"
 	"github.com/stretchr/testify/mock"
@@ -68,38 +69,42 @@ func newMockReflectionProxy(t *testing.T) proxy.LittleRpcReflectionProxy {
 	reflectionMock := mocks.NewLittleRpcReflectionProxy(t)
 	inter := (proxy.LittleRpcReflectionProxy)(reflectionMock)
 	reflectionMock.On("AllCodec", context.Background()).Return(
-		func(ctx context.Context) []string { return []string{"json", "protobuf", "msgpack"} },
-		func(ctx context.Context) error { return nil },
+		func(ctx context.Context, opts ...client.CallOption) []string {
+			return []string{"json", "protobuf", "msgpack"}
+		},
+		func(ctx context.Context, opts ...client.CallOption) error { return nil },
 	)
 	reflectionMock.On("AllInstance", context.Background()).Return(
-		func(ctx context.Context) map[string]string {
+		func(ctx context.Context, opts ...client.CallOption) map[string]string {
 			return map[string]string{
 				"TestInstance":        "github.com/nyan233/littlerpc/1",
 				"LittleRpcReflection": "github.com/nyan233/littlerpc/1/3",
 				"TestInstance2":       "github.com/nyan233/littlerpc/1/2",
 			}
 		},
-		func(ctx context.Context) error {
+		func(ctx context.Context, opts ...client.CallOption) error {
 			return nil
 		},
 	)
 	reflectionMock.On("AllPacker", context.Background()).Return(
-		func(ctx context.Context) []string { return []string{"text", "gzip", "tar.gz"} },
-		func(ctx context.Context) error { return nil },
+		func(ctx context.Context, opts ...client.CallOption) []string {
+			return []string{"text", "gzip", "tar.gz"}
+		},
+		func(ctx context.Context, opts ...client.CallOption) error { return nil },
 	)
-	reflectionMock.On("MethodTable", context.Background(), "Hello").Return(func(ctx context.Context, sourceName string) *server.MethodTable {
+	reflectionMock.On("MethodTable", context.Background(), "Hello").Return(func(ctx context.Context, sourceName string, opts ...client.CallOption) *server.MethodTable {
 		return &server.MethodTable{
 			SourceName: sourceName,
 			Table:      []string{"Hello", "SayHelloToJson", "SayHelloToProtoBuf"},
 		}
-	}, func(ctx context.Context, sourceName string) error {
+	}, func(ctx context.Context, sourceName string, opts ...client.CallOption) error {
 		if sourceName == "" {
 			return errors.New("method table not found")
 		}
 		return nil
 	})
 	reflectionMock.On("MethodArgumentType", context.Background(), "Hello.Hello").Return(
-		func(ctx context.Context, serviceName string) []server.ArgumentType {
+		func(ctx context.Context, serviceName string, opts ...client.CallOption) []server.ArgumentType {
 			return []server.ArgumentType{
 				{
 					Kind: "string",
@@ -111,7 +116,7 @@ func newMockReflectionProxy(t *testing.T) proxy.LittleRpcReflectionProxy {
 				},
 			}
 		},
-		func(ctx context.Context, serviceName string) error {
+		func(ctx context.Context, serviceName string, opts ...client.CallOption) error {
 			if serviceName == "" {
 				return errors.New("service name not found")
 			}
@@ -123,12 +128,12 @@ func newMockReflectionProxy(t *testing.T) proxy.LittleRpcReflectionProxy {
 
 func newMockCaller(t *testing.T) Caller {
 	callerMock := mocks.NewCaller(t)
-	callerMock.On("RawCall", mock.AnythingOfType("string"),
+	callerMock.On("RawCall", mock.AnythingOfType("string"), *new([]client.CallOption),
 		context.Background(), mock.AnythingOfType("string"), mock.AnythingOfType("float64")).Return(
-		func(service string, args ...interface{}) []interface{} {
+		func(service string, opts []client.CallOption, args ...interface{}) []interface{} {
 			return args[1:]
 		},
-		func(service string, args ...interface{}) error {
+		func(service string, opts []client.CallOption, args ...interface{}) error {
 			if service != "Hello.Hello" {
 				return errors.New("service name is not found")
 			}

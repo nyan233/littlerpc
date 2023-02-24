@@ -29,7 +29,7 @@ type mockConstructorTestingTnewBinder interface {
 }
 
 // newBinder creates a new instance of binder. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
-func NewBinder(t mockConstructorTestingTnewBinder) *binder {
+func newBinder(t mockConstructorTestingTnewBinder) *binder {
 	mock := &binder{}
 	mock.Mock.Test(t)
 

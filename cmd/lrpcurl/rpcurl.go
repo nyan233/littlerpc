@@ -20,7 +20,7 @@ import (
 )
 
 type Caller interface {
-	RawCall(service string, args ...interface{}) (reps []interface{}, err error)
+	RawCall(service string, opts []client.CallOption, args ...interface{}) (reps []interface{}, err error)
 }
 
 type OutType string
@@ -239,7 +239,7 @@ func callFunc(ctx context.Context, c Caller, service string, argsBytes [][]byte,
 			log.Fatalln(err)
 		}
 	}
-	reps, err := c.RawCall(service, args...)
+	reps, err := c.RawCall(service, nil, args...)
 	reps = append(reps, err)
 	switch ot {
 	case Text:

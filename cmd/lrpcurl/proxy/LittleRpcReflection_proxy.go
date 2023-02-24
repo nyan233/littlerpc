@@ -2,7 +2,7 @@ package proxy
 
 /*
    @Generator   : pxtor
-   @CreateTime  : 2022-12-21 15:59:26.9399907 +0800 CST m=+0.011183701
+   @CreateTime  : 2023-02-19 20:28:34.1828352 +0800 CST m=+0.013563501
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
@@ -24,15 +24,15 @@ type binder interface {
 }
 
 type caller interface {
-	Call(service string, args ...interface{}) (reps []interface{}, err error)
+	Call(service string, opts []client.CallOption, args ...interface{}) (reps []interface{}, err error)
 }
 
 type LittleRpcReflectionProxy interface {
-	MethodTable(ctx context.Context, sourceName string) (*server.MethodTable, error)
-	AllInstance(ctx context.Context) (map[string]string, error)
-	AllCodec(ctx context.Context) ([]string, error)
-	AllPacker(ctx context.Context) ([]string, error)
-	MethodArgumentType(ctx context.Context, serviceName string) ([]server.ArgumentType, error)
+	MethodTable(ctx context.Context, sourceName string, opts ...client.CallOption) (*server.MethodTable, error)
+	AllInstance(ctx context.Context, opts ...client.CallOption) (map[string]string, error)
+	AllCodec(ctx context.Context, opts ...client.CallOption) ([]string, error)
+	AllPacker(ctx context.Context, opts ...client.CallOption) ([]string, error)
+	MethodArgumentType(ctx context.Context, serviceName string, opts ...client.CallOption) ([]server.ArgumentType, error)
 }
 
 type littleRpcReflectionImpl struct {
@@ -53,32 +53,32 @@ func NewLittleRpcReflection(b binder) LittleRpcReflectionProxy {
 	return proxy
 }
 
-func (p littleRpcReflectionImpl) MethodTable(ctx context.Context, sourceName string) (*server.MethodTable, error) {
-	reps, err := p.Call("littlerpc/internal/reflection.MethodTable", ctx, sourceName)
+func (p littleRpcReflectionImpl) MethodTable(ctx context.Context, sourceName string, opts ...client.CallOption) (*server.MethodTable, error) {
+	reps, err := p.Call("littlerpc/internal/reflection.MethodTable", opts, ctx, sourceName)
 	r0, _ := reps[0].(*server.MethodTable)
 	return r0, err
 }
 
-func (p littleRpcReflectionImpl) AllInstance(ctx context.Context) (map[string]string, error) {
-	reps, err := p.Call("littlerpc/internal/reflection.AllInstance", ctx)
+func (p littleRpcReflectionImpl) AllInstance(ctx context.Context, opts ...client.CallOption) (map[string]string, error) {
+	reps, err := p.Call("littlerpc/internal/reflection.AllInstance", opts, ctx)
 	r0, _ := reps[0].(map[string]string)
 	return r0, err
 }
 
-func (p littleRpcReflectionImpl) AllCodec(ctx context.Context) ([]string, error) {
-	reps, err := p.Call("littlerpc/internal/reflection.AllCodec", ctx)
+func (p littleRpcReflectionImpl) AllCodec(ctx context.Context, opts ...client.CallOption) ([]string, error) {
+	reps, err := p.Call("littlerpc/internal/reflection.AllCodec", opts, ctx)
 	r0, _ := reps[0].([]string)
 	return r0, err
 }
 
-func (p littleRpcReflectionImpl) AllPacker(ctx context.Context) ([]string, error) {
-	reps, err := p.Call("littlerpc/internal/reflection.AllPacker", ctx)
+func (p littleRpcReflectionImpl) AllPacker(ctx context.Context, opts ...client.CallOption) ([]string, error) {
+	reps, err := p.Call("littlerpc/internal/reflection.AllPacker", opts, ctx)
 	r0, _ := reps[0].([]string)
 	return r0, err
 }
 
-func (p littleRpcReflectionImpl) MethodArgumentType(ctx context.Context, serviceName string) ([]server.ArgumentType, error) {
-	reps, err := p.Call("littlerpc/internal/reflection.MethodArgumentType", ctx, serviceName)
+func (p littleRpcReflectionImpl) MethodArgumentType(ctx context.Context, serviceName string, opts ...client.CallOption) ([]server.ArgumentType, error) {
+	reps, err := p.Call("littlerpc/internal/reflection.MethodArgumentType", opts, ctx, serviceName)
 	r0, _ := reps[0].([]server.ArgumentType)
 	return r0, err
 }
