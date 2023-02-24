@@ -31,6 +31,10 @@ func (s *Slice[V]) AppendS(vs ...V) {
 	*s = append(*s, vs...)
 }
 
+func (s *Slice[V]) Available() bool {
+	return s != nil && len(*s) > 0
+}
+
 func (s *Slice[V]) Reset() {
 	*s = (*s)[:0]
 }
