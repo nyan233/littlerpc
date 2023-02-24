@@ -101,6 +101,7 @@ func applyConfig(server *Server, opts []Option) {
 	eventD.OnMessage(server.onMessage)
 	eventD.OnClose(server.onClose)
 	eventD.OnOpen(server.onOpen)
+	eventD.OnRead(server.onRead)
 	// server engine
 	server.server = builder.Server()
 	// init plugin manager

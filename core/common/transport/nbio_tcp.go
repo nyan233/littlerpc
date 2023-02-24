@@ -14,6 +14,7 @@ type NBioTcpEngine struct {
 	closed  int32
 	tlsC    *tls.Config
 	server  *nbio.Engine
+	onRead  func(conn ConnAdapter)
 	onMsg   func(conn ConnAdapter, bytes []byte)
 	onClose func(conn ConnAdapter, err error)
 	onOpen  func(conn ConnAdapter)
@@ -64,6 +65,9 @@ func NewNBioTcpServer(config NetworkServerConfig) ServerBuilder {
 	server.onClose = func(conn ConnAdapter, err error) {
 		return
 	}
+	server.onRead = func(conn ConnAdapter) {
+		return
+	}
 	return server
 }
 
@@ -88,6 +92,10 @@ func (engine *NBioTcpEngine) Client() ClientEngine {
 
 func (engine *NBioTcpEngine) Server() ServerEngine {
 	return engine
+}
+
+func (engine *NBioTcpEngine) OnRead(f func(conn ConnAdapter)) {
+	engine.onRead = f
 }
 
 func (engine *NBioTcpEngine) OnMessage(f func(conn ConnAdapter, data []byte)) {
@@ -127,6 +135,9 @@ func (engine *NBioTcpEngine) Start() error {
 				engine.onOpen(tlsConn)
 			}),
 		)
+		server.OnRead(func(c *nbio.Conn) {
+			engine.onOpen(c)
+		})
 		server.OnData(ntls.WrapData(func(c *nbio.Conn, tlsConn *ntls.Conn, data []byte) {
 			engine.onMsg(tlsConn, data)
 		}))

@@ -190,7 +190,7 @@ func testServerAndClient(t *testing.T, serverOpts []server2.Option, clientOpts [
 
 	var wg sync.WaitGroup
 	// 启动多少的客户端
-	nGoroutine := 1
+	nGoroutine := 50
 	// 一个客户端连续发送多少次消息
 	sendN := 50
 	addV := 65536

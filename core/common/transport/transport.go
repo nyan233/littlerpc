@@ -46,6 +46,7 @@ type ClientBuilder interface {
 
 // EventDriveInter 适用于Client&Server的事件驱动接口
 type EventDriveInter interface {
+	OnRead(func(conn ConnAdapter))
 	OnMessage(func(conn ConnAdapter, data []byte))
 	OnOpen(func(conn ConnAdapter))
 	OnClose(func(conn ConnAdapter, err error))

@@ -10,7 +10,15 @@ import (
 	"math"
 )
 
+func (c *Client) onRead(conn transport.ConnAdapter) {
+	c.parseMessageAndHandle(conn, nil, false)
+}
+
 func (c *Client) onMessage(conn transport.ConnAdapter, bytes []byte) {
+	c.parseMessageAndHandle(conn, bytes, true)
+}
+
+func (c *Client) parseMessageAndHandle(conn transport.ConnAdapter, data []byte, prepared bool) {
 	desc, ok := c.connSourceSet.LoadOk(conn)
 	if !ok {
 		c.logger.Error("LRPC: OnMessage lookup conn failed")
@@ -20,7 +28,13 @@ func (c *Client) onMessage(conn transport.ConnAdapter, bytes []byte) {
 		}
 		return
 	}
-	allMsg, err := desc.parser.Parse(bytes)
+	var allMsg []msgparser.ParserMessage
+	var err error
+	if prepared {
+		allMsg, err = desc.parser.Parse(data)
+	} else {
+		allMsg, err = desc.parser.ParseOnReader(msgparser.DefaultReader(conn))
+	}
 	if err != nil {
 		c.logger.Error("LRPC: parse message failed: %v", err)
 		err := conn.Close()

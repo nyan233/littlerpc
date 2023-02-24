@@ -16,9 +16,10 @@ const (
 type Event int
 
 const (
-	OnOpen    Event = 1 << (5 + iota) // 连接建立
-	OnMessage                         // 收到Rpc消息
-	OnClose                           // 连接关闭
+	OnOpen Event = 1 << (5 + iota) // 连接建立
+	OnMessage
+	OnRead  // 收到读事件// 收到Rpc消息
+	OnClose // 连接关闭
 )
 
 // Plugin

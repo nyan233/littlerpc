@@ -2,6 +2,7 @@ package msgparser
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/nyan233/littlerpc/core/common/jsonrpc2"
 	"github.com/nyan233/littlerpc/core/container"
 	message2 "github.com/nyan233/littlerpc/core/protocol/message"
@@ -9,6 +10,7 @@ import (
 	mux2 "github.com/nyan233/littlerpc/core/protocol/message/mux"
 	"github.com/nyan233/littlerpc/core/utils/random"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 	"math"
 	"strconv"
 	"strings"
@@ -16,48 +18,81 @@ import (
 	"testing"
 )
 
-func TestParser(t *testing.T) {
-	parser := Get(DefaultParser)(NewDefaultSimpleAllocTor(), 4096)
-	msg := message2.New()
-	msg.SetMsgId(uint64(random.FastRand()))
-	msg.SetServiceName("TestParser/LocalTest")
-	msg.MetaData.Store("Key", "Value")
-	msg.MetaData.Store("Key2", "Value2")
-	msg.MetaData.Store("Key3", "Value3")
-	msg.AppendPayloads([]byte("hello world"))
-	msg.AppendPayloads([]byte("65536"))
-	msg.Length()
-	var marshalBytes []byte
-	err := message2.Marshal(msg, (*container.Slice[byte])(&marshalBytes))
-	if err != nil {
-		return
-	}
-	muxBlock := mux2.Block{
-		Flags:    mux2.Enabled,
-		StreamId: random.FastRand(),
-		MsgId:    uint64(random.FastRand()),
-	}
-	muxBlock.SetPayloads(marshalBytes)
-	var muxMarshalBytes []byte
-	mux2.Marshal(&muxBlock, (*container.Slice[byte])(&muxMarshalBytes))
-	marshalBytes = append(marshalBytes, muxMarshalBytes...)
-	_, err = parser.Parse(marshalBytes[:11])
-	if err != nil {
-		t.Fatal(err)
-	}
-	allMasg, err := parser.Parse(marshalBytes[11:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Equal(t, len(allMasg), 2)
+type ParserFullTest struct {
+	parser Parser
+	suite.Suite
 }
 
-func TestConcurrentHalfParse(t *testing.T) {
+func TestParser(t *testing.T) {
+	suite.Run(t, new(ParserFullTest))
+}
+
+func (f *ParserFullTest) SetupTest() {
+	f.parser = Get(DefaultParser)(NewDefaultSimpleAllocTor(), 4096).(*lRPCTrait)
+}
+
+func (f *ParserFullTest) TestLRPCParser() {
+	t := f.T()
+	t.Run("ParseOnData", testParser(f.parser.(*lRPCTrait), func(data []byte) ([]ParserMessage, error) {
+		return f.parser.Parse(data)
+	}))
+	t.Run("ParseOnReader", testParser(f.parser.(*lRPCTrait), func(data []byte) ([]ParserMessage, error) {
+		var read bool
+		return f.parser.ParseOnReader(func(bytes []byte) (n int, err error) {
+			if read {
+				return -1, errors.New("already read")
+			}
+			read = true
+			return copy(bytes, data), nil
+		})
+	}))
+}
+
+func testParser(p *lRPCTrait, parseFunc func(data []byte) ([]ParserMessage, error)) func(t *testing.T) {
+	return func(t *testing.T) {
+		msg := message2.New()
+		msg.SetMsgId(uint64(random.FastRand()))
+		msg.SetServiceName("TestParser/LocalTest")
+		msg.MetaData.Store("Key", "Value")
+		msg.MetaData.Store("Key2", "Value2")
+		msg.MetaData.Store("Key3", "Value3")
+		msg.AppendPayloads([]byte("hello world"))
+		msg.AppendPayloads([]byte("65536"))
+		msg.Length()
+		var marshalBytes []byte
+		err := message2.Marshal(msg, (*container.Slice[byte])(&marshalBytes))
+		assert.NoError(t, err)
+		muxBlock := mux2.Block{
+			Flags:    mux2.Enabled,
+			StreamId: random.FastRand(),
+			MsgId:    uint64(random.FastRand()),
+		}
+		muxBlock.SetPayloads(marshalBytes)
+		var muxMarshalBytes []byte
+		mux2.Marshal(&muxBlock, (*container.Slice[byte])(&muxMarshalBytes))
+		marshalBytes = append(marshalBytes, muxMarshalBytes...)
+		_, err = parseFunc(marshalBytes[:11])
+		assert.NoError(t, err)
+		allMasg, err := parseFunc(marshalBytes[11 : msg.Length()+20])
+		assert.NoError(t, err)
+		assert.Equal(t, len(allMasg), 1)
+		allMasg, err = parseFunc(marshalBytes[msg.Length()+20:])
+		assert.NoError(t, err)
+		assert.Equal(t, len(allMasg), 1)
+		assert.Equal(t, len(p.halfBuffer), 0)
+		assert.Equal(t, p.startOffset, 0)
+		assert.Equal(t, p.endOffset, 0)
+		assert.Equal(t, p.clickInterval, 1)
+	}
+}
+
+func (f *ParserFullTest) TestConcurrentHalfParse() {
 	const (
 		ConsumerSize   = 16
 		ChanBufferSize = 8
 		CycleSize      = 1000
 	)
+	t := f.T()
 	producer := func(channels []chan []byte, data []byte, cycleSize int) {
 		for i := 0; i < cycleSize; i++ {
 			tmpData := data
@@ -112,20 +147,8 @@ func TestConcurrentHalfParse(t *testing.T) {
 	wg.Wait()
 }
 
-func TestHandler(t *testing.T) {
-	for i := uint8(0); true; i++ {
-		GetHandler(i)
-		if i == math.MaxUint8 {
-			break
-		}
-	}
-	defer func() {
-		assert.NotNil(t, recover())
-	}()
-	RegisterHandler(nil)
-}
-
-func TestJsonRPC2Parser(t *testing.T) {
+func (f *ParserFullTest) TestJsonRPC2Parser() {
+	t := f.T()
 	request := new(jsonrpc2.Request)
 	request.Version = jsonrpc2.Version
 	request.MessageType = int(message2.Call)
@@ -139,17 +162,8 @@ func TestJsonRPC2Parser(t *testing.T) {
 	request.Id = uint64(random.FastRand())
 	request.Params = []byte("[1203,\"hello world\",3563]")
 	bytes, err := json.Marshal(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	allocTor := &SimpleAllocTor{
-		SharedPool: &sync.Pool{
-			New: func() interface{} {
-				return message2.New()
-			},
-		},
-	}
-	parser := Get(DefaultParser)(allocTor, 4096)
+	assert.NoError(t, err)
+	parser := f.parser
 	msg, err := parser.Parse(bytes)
 	assert.Nil(t, err, err)
 	assert.Equal(t, len(msg), 1)
@@ -176,6 +190,19 @@ func TestJsonRPC2Parser(t *testing.T) {
 	assert.Nil(t, err, err)
 	msg, err = parser.Parse(bytes)
 	assert.NotNil(t, err, "input error data but marshal able")
+}
+
+func TestHandler(t *testing.T) {
+	for i := uint8(0); true; i++ {
+		GetHandler(i)
+		if i == math.MaxUint8 {
+			break
+		}
+	}
+	defer func() {
+		assert.NotNil(t, recover())
+	}()
+	RegisterHandler(nil)
 }
 
 func parserOnBytes(s string) []byte {

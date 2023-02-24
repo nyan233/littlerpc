@@ -67,6 +67,7 @@ func New(opts ...Option) (*Client, error) {
 	eventD.OnOpen(client.onOpen)
 	eventD.OnMessage(client.onMessage)
 	eventD.OnClose(client.onClose)
+	eventD.OnRead(client.onRead)
 	err := client.engine.Client().Start()
 	if err != nil {
 		return nil, err

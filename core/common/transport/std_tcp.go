@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"syscall"
 )
 
 const (
@@ -17,6 +18,7 @@ type StdNetTcpEngine struct {
 	// 指示是客户端模式还是服务器
 	mode      int
 	onOpen    func(conn ConnAdapter)
+	onRead    func(conn ConnAdapter)
 	onMessage func(conn ConnAdapter, data []byte)
 	onClose   func(conn ConnAdapter, err error)
 	addrs     []string
@@ -62,8 +64,7 @@ func (s *StdNetTcpEngine) NewConn(config NetworkClientConfig) (ConnAdapter, erro
 	if err != nil {
 		return nil, err
 	}
-	defer s.connService(conn)
-	return conn, nil
+	return s.connService(conn), nil
 }
 
 func (s *StdNetTcpEngine) Server() ServerEngine {
@@ -116,27 +117,42 @@ func (s *StdNetTcpEngine) Start() error {
 	return nil
 }
 
-func (s *StdNetTcpEngine) connService(conn net.Conn) {
-	s.onOpen(conn)
+func (s *StdNetTcpEngine) connService(conn net.Conn) *nioConn {
+	nc := &nioConn{conn}
+	s.onOpen(nc)
 	go func() {
+		var (
+			buf = make([]byte, 0)
+		)
 		for {
 			if atomic.LoadInt32(&s.closed) == 1 {
-				s.onClose(conn, errors.New("eventLoop already closed"))
-				_ = conn.Close()
+				s.onClose(nc, errors.New("eventLoop already closed"))
+				_ = nc.Close()
 				break
+			}
+			if s.onRead != nil {
+				_, err := conn.Read(buf)
+				if err != nil {
+					s.onClose(nc, err)
+					_ = nc.Close()
+					break
+				}
+				s.onRead(nc)
+				continue
 			}
 			readBuf := s.readBuf.Get().(*[]byte)
 			readN, err := conn.Read(*readBuf)
 			if err != nil {
 				s.readBuf.Put(readBuf)
-				s.onClose(conn, err)
-				_ = conn.Close()
+				s.onClose(nc, err)
+				_ = nc.Close()
 				break
 			}
-			s.onMessage(conn, (*readBuf)[:readN])
+			s.onMessage(nc, (*readBuf)[:readN])
 			s.readBuf.Put(readBuf)
 		}
 	}()
+	return nc
 }
 
 func (s *StdNetTcpEngine) Stop() error {
@@ -151,6 +167,10 @@ func (s *StdNetTcpEngine) Stop() error {
 	return nil
 }
 
+func (s *StdNetTcpEngine) OnRead(f func(conn ConnAdapter)) {
+	s.onRead = f
+}
+
 func (s *StdNetTcpEngine) OnMessage(f func(conn ConnAdapter, data []byte)) {
 	s.onMessage = f
 }
@@ -161,4 +181,17 @@ func (s *StdNetTcpEngine) OnOpen(f func(conn ConnAdapter)) {
 
 func (s *StdNetTcpEngine) OnClose(f func(conn ConnAdapter, err error)) {
 	s.onClose = f
+}
+
+type nioConn struct {
+	net.Conn
+}
+
+// 保证OnRead只调用一次Read
+func (c nioConn) Read(p []byte) (n int, err error) {
+	readN, err := c.Conn.Read(p)
+	if err != nil {
+		return readN, err
+	}
+	return readN, syscall.EWOULDBLOCK
 }

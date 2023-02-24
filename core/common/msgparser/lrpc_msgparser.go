@@ -3,11 +3,10 @@ package msgparser
 import (
 	"errors"
 	"fmt"
+	"github.com/nyan233/littlerpc/core/container"
 	message2 "github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/utils"
 	"sync"
-
-	"github.com/nyan233/littlerpc/internal/reflect"
 )
 
 type readyBuffer struct {
@@ -30,12 +29,16 @@ type lRPCTrait struct {
 	// 当前parser选中的handler
 	handler MessageHandler
 	// 当前在状态机中处于的状态
-	state         int
+	state int
+	// 单次解析数据的起始偏移量
+	startOffset int
+	// 单次解析数据的结束偏移量
+	endOffset     int
 	noReadyBuffer map[uint64]readyBuffer
 	// 存储半包数据的缓冲区, 只有在读完了一个完整的payload的消息的数据包
 	// 才会被直接提升到noReadyBuffer中, noMux类型的数据包则不会被提升到
 	// noReadyBuffer中, 将完整的消息读取完毕后直接触发onComplete
-	halfBuffer []byte
+	halfBuffer container.ByteSlice
 }
 
 func NewLRPCTrait(allocTor AllocTor, bufSize uint32) Parser {
@@ -53,6 +56,29 @@ func NewLRPCTrait(allocTor AllocTor, bufSize uint32) Parser {
 	}
 }
 
+func (h *lRPCTrait) ParseOnReader(reader func([]byte) (n int, err error)) (msgs []ParserMessage, err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	currentLen := len(h.halfBuffer)
+	currentCap := cap(h.halfBuffer)
+	h.halfBuffer = h.halfBuffer[:currentCap]
+	for i := 0; i < 16; i++ {
+		readN, err := reader(h.halfBuffer[currentLen:currentCap])
+		if readN > 0 {
+			currentLen += readN
+		}
+		// read full
+		if currentLen == currentCap {
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+	h.halfBuffer = h.halfBuffer[:currentLen]
+	return h.parseFromHalfBuffer(nil)
+}
+
 // Parse io.Reader主要用来标识一个读取到半包的连接, 并不会真正去调用他的方法
 func (h *lRPCTrait) Parse(data []byte) (msgs []ParserMessage, err error) {
 	h.mu.Lock()
@@ -60,6 +86,10 @@ func (h *lRPCTrait) Parse(data []byte) (msgs []ParserMessage, err error) {
 	if h.clickInterval == 1 && len(data) == 0 {
 		return nil, errors.New("data length == 0")
 	}
+	return h.parseFromHalfBuffer(data)
+}
+
+func (h *lRPCTrait) parseFromHalfBuffer(prepare container.ByteSlice) (msgs []ParserMessage, err error) {
 	allMsg := make([]ParserMessage, 0, 4)
 	defer func() {
 		if err != nil {
@@ -72,78 +102,127 @@ func (h *lRPCTrait) Parse(data []byte) (msgs []ParserMessage, err error) {
 			}
 		}
 	}()
+	var buf container.ByteSlice
+	switch {
+	case len(h.halfBuffer) <= 0:
+		if prepare.Available() {
+			buf = prepare
+		}
+	case len(h.halfBuffer) > 0:
+		buf = h.halfBuffer
+		if prepare.Available() {
+			buf.Append(prepare)
+		}
+	}
 	for {
-		if len(data) == 0 {
+		if len(buf) == h.endOffset {
+			h.halfBuffer.Reset()
+			h.startOffset = 0
+			h.endOffset = 0
+			return allMsg, nil
+		}
+		if (len(buf) - h.startOffset) < h.clickInterval {
+			h.halfBuffer = h.halfBuffer[:len(buf)-h.startOffset]
+			copy(h.halfBuffer, buf[h.startOffset:])
+			h.endOffset = h.endOffset - h.startOffset
+			h.startOffset = 0
 			return allMsg, nil
 		}
 		switch h.state {
 		case _ScanInit:
-			h.halfBuffer = append(h.halfBuffer, data[0])
-			data = data[1:]
-			if handler := GetHandler(h.halfBuffer[0]); handler != nil {
-				h.handler = handler
-			} else {
-				return nil, errors.New(fmt.Sprintf("MagicNumber no MessageHandler -> %d", data[0]))
+			err := h.handleScanInit(&buf, &h.startOffset, &h.endOffset, &allMsg)
+			if err != nil {
+				return nil, err
 			}
-			h.state = _ScanMsgParse1
-			opt, baseLen := h.handler.BaseLen()
-			if opt == SingleRequest {
-				msg := h.allocTor.AllocMessage()
-				msg.Reset()
-				defer func() {
-					if err != nil {
-						h.allocTor.FreeMessage(msg)
-					}
-					h.ResetScan()
-				}()
-				action, err := h.handler.Unmarshal(reflect.SliceBackSpace(data, 1).([]byte), msg)
-				if err != nil {
-					return nil, err
-				}
-				err = h.handleAction(action, msg, &allMsg, nil)
-				if err != nil {
-					return nil, err
-				}
-				return allMsg, nil
-			}
-			h.clickInterval = baseLen - 1
 		case _ScanMsgParse1:
-			readN, readData := utils.ReadFromData(h.clickInterval, data)
-			h.halfBuffer = append(h.halfBuffer, readData...)
-			data = data[readN:]
-			if readN < h.clickInterval {
-				h.clickInterval -= readN
+			next, err := h.handleScanParse1(&buf, &h.startOffset, &h.endOffset, &allMsg)
+			if err != nil {
+				return nil, err
+			}
+			if !next {
 				continue
 			}
-			_, baseLen := h.handler.BaseLen()
-			h.clickInterval = h.handler.MessageLength(h.halfBuffer) - baseLen
-			h.state = _ScanMsgParse2
 		case _ScanMsgParse2:
-			readN, readData := utils.ReadFromData(h.clickInterval, data)
-			h.halfBuffer = append(h.halfBuffer, readData...)
-			if readN == -1 {
-				return nil, errors.New("no read data")
-			}
-			data = data[readN:]
-			h.clickInterval -= readN
-			if h.clickInterval > 0 {
-				continue
-			}
-			msg := h.allocTor.AllocMessage()
-			msg.Reset()
-			action, err := h.handler.Unmarshal(h.halfBuffer, msg)
+			_, err := h.handleScanParse2(&buf, &h.startOffset, &h.endOffset, &allMsg)
 			if err != nil {
-				h.allocTor.FreeMessage(msg)
 				return nil, err
 			}
-			err = h.handleAction(action, msg, &allMsg, readData)
-			if err != nil {
-				h.allocTor.FreeMessage(msg)
-				return nil, err
-			}
-			h.ResetScan()
 		}
 	}
+}
+
+func (h *lRPCTrait) handleScanInit(buf *container.ByteSlice, start, end *int, allMsg *[]ParserMessage) (err error) {
+	if handler := GetHandler((*buf)[*start]); handler != nil {
+		h.handler = handler
+	} else {
+		return errors.New(fmt.Sprintf("MagicNumber no MessageHandler -> %d", (*buf)[0]))
+	}
+	h.state = _ScanMsgParse1
+	opt, baseLen := h.handler.BaseLen()
+	if opt == SingleRequest {
+		msg := h.allocTor.AllocMessage()
+		msg.Reset()
+		defer func() {
+			if err != nil {
+				h.allocTor.FreeMessage(msg)
+			}
+			h.ResetScan()
+		}()
+		action, err := h.handler.Unmarshal(*buf, msg)
+		if err != nil {
+			return err
+		}
+		*end = len(*buf)
+		err = h.handleAction(action, *buf, msg, allMsg, nil)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	h.clickInterval = baseLen - 1
+	*end++
+	return nil
+}
+
+func (h *lRPCTrait) handleScanParse1(buf *container.ByteSlice, start, end *int, allMsg *[]ParserMessage) (next bool, err error) {
+	readN, _ := utils.ReadFromData(h.clickInterval, (*buf)[*start:])
+	*end += readN
+	if readN < h.clickInterval {
+		h.clickInterval -= readN
+		return
+	}
+	_, baseLen := h.handler.BaseLen()
+	h.clickInterval = h.handler.MessageLength((*buf)[*start:*end]) - baseLen
+	h.state = _ScanMsgParse2
+	next = true
+	return
+}
+
+func (h *lRPCTrait) handleScanParse2(buf *container.ByteSlice, start, end *int, allMsg *[]ParserMessage) (next bool, err error) {
+	readN, readData := utils.ReadFromData(h.clickInterval, (*buf)[*start:])
+	if readN == -1 {
+		return false, errors.New("no read buf")
+	}
+	*end += readN
+	h.clickInterval -= readN
+	if h.clickInterval > 0 {
+		return
+	}
+	msg := h.allocTor.AllocMessage()
+	msg.Reset()
+	action, err := h.handler.Unmarshal((*buf)[*start:*end], msg)
+	if err != nil {
+		h.allocTor.FreeMessage(msg)
+		return false, err
+	}
+	err = h.handleAction(action, *buf, msg, allMsg, readData)
+	if err != nil {
+		h.allocTor.FreeMessage(msg)
+		return false, err
+	}
+	h.ResetScan()
+	*start = *end
+	return
 }
 
 func (h *lRPCTrait) Free(msg *message2.Message) {
@@ -156,7 +235,6 @@ func (h *lRPCTrait) Reset() {
 
 func (h *lRPCTrait) ResetScan() {
 	h.handler = nil
-	h.halfBuffer = h.halfBuffer[:0]
 	h.clickInterval = 1
 	h.state = _ScanInit
 }
@@ -174,7 +252,7 @@ func (h *lRPCTrait) State() (int, int, int) {
 	return h.clickInterval, h.state, len(h.halfBuffer)
 }
 
-func (h *lRPCTrait) handleAction(action Action, msg *message2.Message, allMsg *[]ParserMessage, readData []byte) error {
+func (h *lRPCTrait) handleAction(action Action, buf container.ByteSlice, msg *message2.Message, allMsg *[]ParserMessage, readData []byte) error {
 	switch action {
 	case UnmarshalBase:
 		buf, ok := h.noReadyBuffer[msg.GetMsgId()]
@@ -201,7 +279,7 @@ func (h *lRPCTrait) handleAction(action Action, msg *message2.Message, allMsg *[
 	case UnmarshalComplete:
 		*allMsg = append(*allMsg, ParserMessage{
 			Message: msg,
-			Header:  h.halfBuffer[0],
+			Header:  buf[h.startOffset],
 		})
 	}
 	return nil

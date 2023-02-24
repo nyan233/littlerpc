@@ -5,11 +5,15 @@ import (
 	"github.com/nyan233/littlerpc/core/container"
 	message2 "github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/protocol/message/gen"
+	"io"
 	"testing"
 )
 
 func BenchmarkParser(b *testing.B) {
-	parser := Get(DefaultParser)(NewDefaultSimpleAllocTor(), MaxBufferSize)
+	const (
+		UsageParseOnReader = false
+	)
+	parser := Get(DefaultParser)(NewDefaultSimpleAllocTor(), MaxBufferSize*32)
 	for i := 1; i <= (1 << 10); i *= 4 {
 		b.Run(fmt.Sprintf("LRPCProtocol-OneParse-%dMessage", i), func(b *testing.B) {
 			b.StopTimer()
@@ -43,7 +47,15 @@ func BenchmarkParser(b *testing.B) {
 			b.StartTimer()
 			b.ReportAllocs()
 			for j := 0; j < b.N; j++ {
-				parseMsgs, err := parser.Parse(messages)
+				var parseMsgs []ParserMessage
+				var err error
+				if UsageParseOnReader {
+					parseMsgs, err = parser.ParseOnReader(func(bytes []byte) (n int, err error) {
+						return copy(bytes, messages), io.EOF
+					})
+				} else {
+					parseMsgs, err = parser.Parse(messages)
+				}
 				if err != nil {
 					_, err = parser.Parse(messages)
 					b.Fatal(j, err)

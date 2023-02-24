@@ -9,7 +9,6 @@ import (
 	"github.com/nyan233/littlerpc/core/middle/plugin"
 	lerror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
-	"github.com/nyan233/littlerpc/core/protocol/message/analysis"
 	"github.com/nyan233/littlerpc/core/utils/convert"
 	"math"
 	"runtime"
@@ -35,9 +34,20 @@ func (s *Server) onClose(conn transport.ConnAdapter, err error) {
 	s.connsSourceDesc.Delete(conn)
 }
 
+func (s *Server) onRead(c transport.ConnAdapter) {
+	s.parseMessageAndHandle(c, nil, false)
+}
+
 func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
-	if !s.pManager.Event4S(plugin.OnMessage) {
+	s.parseMessageAndHandle(c, data, true)
+}
+
+func (s *Server) parseMessageAndHandle(c transport.ConnAdapter, data []byte, prepared bool) {
+	if prepared && !s.pManager.Event4S(plugin.OnMessage) {
 		s.logger.Info("LRPC: plugin interrupted onMessage")
+		return
+	} else if !prepared && !s.pManager.Event4S(plugin.OnRead) {
+		s.logger.Info("LRPC: plugin interrupted onRead")
 		return
 	}
 	desc, ok := s.connsSourceDesc.LoadOk(c)
@@ -46,11 +56,15 @@ func (s *Server) onMessage(c transport.ConnAdapter, data []byte) {
 		_ = c.Close()
 		return
 	}
-	if s.config.Load().Debug {
-		s.logger.Debug(analysis.NoMux(data).String())
-	}
+	// 2023/02/22 : 删除Debug Message相关的代码
 	defer s.recover(c, desc)
-	traitMsgs, err := desc.Parser.Parse(data)
+	var traitMsgs []msgparser2.ParserMessage
+	var err error
+	if prepared {
+		traitMsgs, err = desc.Parser.Parse(data)
+	} else {
+		traitMsgs, err = desc.Parser.ParseOnReader(msgparser2.DefaultReader(c))
+	}
 	if err != nil {
 		// 错误处理过程会在严重错误时关闭连接, 所以msgId == math.MaxUint64也没有关系
 		// 设为0有可能和客户端生成的MessageId冲突

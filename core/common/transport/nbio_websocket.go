@@ -118,6 +118,10 @@ func (engine *NBioWebSocketEngine) EventDriveInter() EventDriveInter {
 	return engine
 }
 
+func (engine *NBioWebSocketEngine) OnRead(f func(conn ConnAdapter)) {
+	return
+}
+
 func (engine *NBioWebSocketEngine) OnMessage(f func(conn ConnAdapter, data []byte)) {
 	engine.onMsg = f
 }
