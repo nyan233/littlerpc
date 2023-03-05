@@ -2,7 +2,7 @@ package test
 
 /*
    @Generator   : pxtor
-   @CreateTime  : 2023-02-22 01:48:34.9317811 +0800 CST m=+3.407529701
+   @CreateTime  : 2023-02-24 11:24:56.4462275 +0800 CST m=+1.735420301
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
@@ -12,46 +12,63 @@ import (
 )
 
 var (
-	_ binder1745e82cb23acdec3ff41244e0ed2e71 = new(client.Client)
-	_ caller1745e82cb23acdec3ff41244e0ed2e71 = new(client.Client)
+	_ binder1746a4c977bb342c1ede509d1e42cd35 = new(client.Client)
+	_ caller1746a4c977bb342c1ede509d1e42cd35 = new(client.Client)
 	_ TestProxy                              = new(testImpl)
 )
 
-type binder1745e82cb23acdec3ff41244e0ed2e71 interface {
+type binder1746a4c977bb342c1ede509d1e42cd35 interface {
 	BindFunc(source string, proxy interface{}) error
 }
 
-type caller1745e82cb23acdec3ff41244e0ed2e71 interface {
+type caller1746a4c977bb342c1ede509d1e42cd35 interface {
 	Call(service string, opts []client.CallOption, args ...interface{}) (reps []interface{}, err error)
 }
 
 type TestProxy interface {
+	Foo(s1 string, opts ...client.CallOption) (int, error)
+	Bar(s1 string, opts ...client.CallOption) (int, error)
+	NoReturnValue(i int, opts ...client.CallOption) error
 	ErrHandler(s1 string, opts ...client.CallOption) error
 	ErrHandler2(s1 string, opts ...client.CallOption) error
 	Proxy2(s1 string, s2 int, opts ...client.CallOption) (*Test, int64, error)
 	MapCallTest(m1 map[string]map[string]byte, m2 map[string]map[string]byte, opts ...client.CallOption) (*Test, map[string]byte, error)
 	CallSlice(s1 []*Test, s2 []map[string]int, opts ...client.CallOption) (bool, error)
-	Foo(s1 string, opts ...client.CallOption) (int, error)
-	Bar(s1 string, opts ...client.CallOption) (int, error)
-	NoReturnValue(i int, opts ...client.CallOption) error
 }
 
 type testImpl struct {
-	caller1745e82cb23acdec3ff41244e0ed2e71
+	caller1746a4c977bb342c1ede509d1e42cd35
 }
 
-func NewTest(b binder1745e82cb23acdec3ff41244e0ed2e71) TestProxy {
+func NewTest(b binder1746a4c977bb342c1ede509d1e42cd35) TestProxy {
 	proxy := new(testImpl)
 	err := b.BindFunc("Test", proxy)
 	if err != nil {
 		panic(err)
 	}
-	c, ok := b.(caller1745e82cb23acdec3ff41244e0ed2e71)
+	c, ok := b.(caller1746a4c977bb342c1ede509d1e42cd35)
 	if !ok {
 		panic("the argument is not implemented caller")
 	}
-	proxy.caller1745e82cb23acdec3ff41244e0ed2e71 = c
+	proxy.caller1746a4c977bb342c1ede509d1e42cd35 = c
 	return proxy
+}
+
+func (p testImpl) Foo(s1 string, opts ...client.CallOption) (int, error) {
+	reps, err := p.Call("Test.Foo", opts, s1)
+	r0, _ := reps[0].(int)
+	return r0, err
+}
+
+func (p testImpl) Bar(s1 string, opts ...client.CallOption) (int, error) {
+	reps, err := p.Call("Test.Bar", opts, s1)
+	r0, _ := reps[0].(int)
+	return r0, err
+}
+
+func (p testImpl) NoReturnValue(i int, opts ...client.CallOption) error {
+	_, err := p.Call("Test.NoReturnValue", opts, i)
+	return err
 }
 
 func (p testImpl) ErrHandler(s1 string, opts ...client.CallOption) error {
@@ -82,21 +99,4 @@ func (p testImpl) CallSlice(s1 []*Test, s2 []map[string]int, opts ...client.Call
 	reps, err := p.Call("Test.CallSlice", opts, s1, s2)
 	r0, _ := reps[0].(bool)
 	return r0, err
-}
-
-func (p testImpl) Foo(s1 string, opts ...client.CallOption) (int, error) {
-	reps, err := p.Call("Test.Foo", opts, s1)
-	r0, _ := reps[0].(int)
-	return r0, err
-}
-
-func (p testImpl) Bar(s1 string, opts ...client.CallOption) (int, error) {
-	reps, err := p.Call("Test.Bar", opts, s1)
-	r0, _ := reps[0].(int)
-	return r0, err
-}
-
-func (p testImpl) NoReturnValue(i int, opts ...client.CallOption) error {
-	_, err := p.Call("Test.NoReturnValue", opts, i)
-	return err
 }
