@@ -107,3 +107,33 @@ func sliceBench(b *testing.B, name string, inter SliceTester) {
 		}
 	})
 }
+
+func BenchmarkSlice(b *testing.B) {
+	b.Run("Append", func(b *testing.B) {
+		b.ReportAllocs()
+		buf1 := make([]byte, 0, 4096)
+		buf2 := make([]byte, 4096)
+		for i := 0; i < b.N; i++ {
+			buf1 = append(buf1, buf2...)
+			buf1 = buf1[:0]
+		}
+	})
+	b.Run("Copy", func(b *testing.B) {
+		b.ReportAllocs()
+		buf1 := make([]byte, 0, 4096)
+		buf2 := make([]byte, 4096)
+		for i := 0; i < b.N; i++ {
+			buf1 = buf1[:len(buf2)]
+			copy(buf1, buf2)
+		}
+	})
+	b.Run("AppendOnGeneric", func(b *testing.B) {
+		b.ReportAllocs()
+		var buf1 Slice[byte] = make([]byte, 0, 4096)
+		buf2 := make([]byte, 4096)
+		for i := 0; i < b.N; i++ {
+			buf1.Append(buf2)
+			buf1.Reset()
+		}
+	})
+}
