@@ -86,21 +86,31 @@ func (s *Server) messageCall(msgOpt *messageOpt, desc *connSourceDesc) {
 		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, err.(error2.LErrorDesc))
 		return
 	}
-	err = msgOpt.Check()
+	err = msgOpt.checkService()
 	if err != nil {
 		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, err.(error2.LErrorDesc))
 		return
 	}
+	callHandler := s.callHandleUnit
+	if msgOpt.Hijack() {
+		callHandler = s.hijackCall
+	} else {
+		err = msgOpt.Check()
+		if err != nil {
+			s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, err.(error2.LErrorDesc))
+			return
+		}
+	}
 	switch {
 	case msgOpt.Service.Option.SyncCall:
-		s.callHandleUnit(msgOpt)
+		callHandler(msgOpt)
 	case msgOpt.Service.Option.UseRawGoroutine:
 		go func() {
-			s.callHandleUnit(msgOpt)
+			callHandler(msgOpt)
 		}()
 	default:
 		err = s.taskPool.Push(msgOpt.Message.GetServiceName(), func() {
-			s.callHandleUnit(msgOpt)
+			callHandler(msgOpt)
 		})
 		if err != nil {
 			s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, s.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error()))
@@ -114,7 +124,7 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt) {
 	msgId := msgOpt.Message.GetMsgId()
 	msgOpt.Free()
 
-	messageBuffer := sharedPool.TakeMessagePool()
+	messageBuffer := s.pool.TakeMessagePool()
 	msg := messageBuffer.Get().(*message2.Message)
 	msg.Reset()
 	defer func() {
@@ -154,15 +164,47 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt) {
 	s.reply(msgOpt, msg, msgId, callResult)
 }
 
+func (s *Server) hijackCall(msgOpt *messageOpt) {
+	defer msgOpt.Free()
+	msgId := msgOpt.Message.GetMsgId()
+	ctx, err := msgOpt.getContext()
+	if err != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, err)
+		return
+	}
+	localPool := s.pool.TakeMessagePool()
+	replyMsg := localPool.Get().(*message2.Message)
+	replyMsg.Reset()
+	stub := &Stub{
+		opt:     msgOpt,
+		reply:   replyMsg,
+		Context: ctx,
+	}
+	defer localPool.Put(replyMsg)
+	err = s.handleCallOnHijack(msgOpt.Service, stub)
+	if err != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, err)
+		return
+	}
+	if msgOpt.Service.SupportContext && stub.Context.Err() == nil && msgOpt.Cancel != nil {
+		msgOpt.Cancel()
+	}
+	err = s.pManager.AfterCall4S(msgOpt.PCtx, nil, []reflect.Value{reflect.ValueOf(stub.callErr)}, nil)
+	if err != nil {
+		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, err)
+		return
+	}
+	s.replyOnHijack(msgOpt, replyMsg, msgId, stub.callErr)
+}
+
+func (s *Server) replyOnHijack(msgOpt *messageOpt, msg *message2.Message, msgId uint64, callErr error) {
+	msgOpt.initReplyMsg(msg, msgId)
+	err := s.setErr(msg, callErr)
+	s.encodeAndSendMsg(msgOpt, msg, err, true)
+}
+
 func (s *Server) reply(msgOpt *messageOpt, msg *message2.Message, msgId uint64, results []reflect.Value) {
-	msg.SetMsgType(message2.Return)
-	if msgOpt.Codec.Scheme() != message2.DefaultCodec {
-		msg.MetaData.Store(message2.CodecScheme, msgOpt.Codec.Scheme())
-	}
-	if msgOpt.Packer.Scheme() != message2.DefaultPacker {
-		msg.MetaData.Store(message2.PackerScheme, msgOpt.Packer.Scheme())
-	}
-	msg.SetMsgId(msgId)
+	msgOpt.initReplyMsg(msg, msgId)
 	// 处理用户过程返回的错误，v0.30开始规定每个符合规范的API最后一个返回值是error接口
 	lErr := s.setErrResult(msg, results[len(results)-1])
 	if lErr != nil {
@@ -174,33 +216,43 @@ func (s *Server) reply(msgOpt *messageOpt, msg *message2.Message, msgId uint64, 
 }
 
 func (s *Server) handleCall(service *metadata.Process, args []reflect.Value) (results []reflect.Value, err error2.LErrorDesc) {
-	defer func() {
-		e := recover()
-		if e == nil {
-			return
-		}
-		var printStr string
-		switch e.(type) {
-		case error2.LErrorDesc:
-			err = e.(error2.LErrorDesc)
-			printStr = err.Error()
-		case error:
-			iErr := e.(error)
-			err = s.eHandle.LNewErrorDesc(error2.Unknown, iErr.Error())
-			printStr = iErr.Error()
-		case string:
-			err = s.eHandle.LNewErrorDesc(error2.Unknown, e.(string))
-			printStr = e.(string)
-		default:
-			printStr = fmt.Sprintf("%v", e)
-			err = s.eHandle.LNewErrorDesc(error2.Unknown, printStr)
-		}
-		var stack [4096]byte
-		size := runtime.Stack(stack[:], false)
-		s.logger.Warn("callee panic : %s\n%s", printStr, convert.BytesToString(stack[:size]))
-	}()
+	defer s.processCallRecover(&err)
 	results = service.Value.Call(args)
-	err = nil
+	return
+}
+
+func (s *Server) handleCallOnHijack(service *metadata.Process, stub *Stub) (err error2.LErrorDesc) {
+	defer s.processCallRecover(&err)
+	fun := *(*func(stub *Stub))(service.Hijacker)
+	stub.setup()
+	fun(stub)
+	return nil
+}
+
+func (s *Server) processCallRecover(err *error2.LErrorDesc) {
+	e := recover()
+	if e == nil {
+		return
+	}
+	var printStr string
+	switch e.(type) {
+	case error2.LErrorDesc:
+		*err = e.(error2.LErrorDesc)
+		printStr = (*err).Error()
+	case error:
+		iErr := e.(error)
+		*err = s.eHandle.LNewErrorDesc(error2.Unknown, iErr.Error())
+		printStr = iErr.Error()
+	case string:
+		*err = s.eHandle.LNewErrorDesc(error2.Unknown, e.(string))
+		printStr = e.(string)
+	default:
+		printStr = fmt.Sprintf("%v", e)
+		*err = s.eHandle.LNewErrorDesc(error2.Unknown, printStr)
+	}
+	var stack [4096]byte
+	size := runtime.Stack(stack[:], false)
+	s.logger.Warn("callee panic : %s\n%s", printStr, convert.BytesToString(stack[:size]))
 	return
 }
 
@@ -230,7 +282,12 @@ func (s *Server) handleResult(msgOpt *messageOpt, msg *message2.Message, callRes
 
 // 必须在其结果集中首先处理错误在处理其余结果
 func (s *Server) setErrResult(msg *message2.Message, errResult reflect.Value) error2.LErrorDesc {
-	interErr := reflect2.ToValueTypeEface(errResult)
+	val := reflect2.ToValueTypeEface(errResult)
+	interErr, _ := val.(error)
+	return s.setErr(msg, interErr)
+}
+
+func (s *Server) setErr(msg *message2.Message, interErr error) error2.LErrorDesc {
 	// 无错误
 	if interErr == error(nil) {
 		msg.MetaData.Store(message2.ErrorCode, strconv.Itoa(errorhandler.Success.Code()))

@@ -24,7 +24,7 @@ func (s *Server) encodeAndSendMsg(msgOpt *messageOpt, msg *message.Message, befo
 		Message: msg,
 		Conn:    msgOpt.Conn,
 		Encoder: msgOpt.Packer,
-		Pool:    sharedPool.TakeBytesPool(),
+		Pool:    s.pool.TakeBytesPool(),
 		OnDebug: debug.MessageDebug(s.logger, s.config.Load().Debug),
 		EHandle: s.eHandle,
 	}, msgOpt.Header)
@@ -37,7 +37,7 @@ func (s *Server) encodeAndSendMsg(msgOpt *messageOpt, msg *message.Message, befo
 // Update: LittleRpc现在的错误返回统一使用NoMux类型的消息
 // writer == nil时从msgwriter选择一个Writer, 默认选择NoMux Write
 func (s *Server) handleError(conn transport.ConnAdapter, writer msgwriter.Writer, msgId uint64, errNo error2.LErrorDesc) {
-	bytesBuffer := sharedPool.TakeBytesPool()
+	bytesBuffer := s.pool.TakeBytesPool()
 	cfg := s.config.Load()
 	if writer == nil {
 		writer = cfg.WriterFactory()

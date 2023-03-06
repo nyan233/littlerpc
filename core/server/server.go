@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nyan233/littlerpc/core/common/sharedpool"
 	"net"
 	"reflect"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/nyan233/littlerpc/core/common/inters"
 	"github.com/nyan233/littlerpc/core/common/logger"
@@ -64,10 +66,12 @@ type Server struct {
 	opts []Option
 	// 用于原子更新
 	config atomic.Pointer[Config]
+	pool   *sharedpool.SharedPool
 }
 
 func New(opts ...Option) *Server {
 	server := new(Server)
+	server.pool = sharedpool.NewSharedPool()
 	applyConfig(server, opts)
 	server.ev = newEvent()
 	server.services = *container.NewRCUMap[string, *metadata.Process]()
@@ -101,7 +105,9 @@ func applyConfig(server *Server, opts []Option) {
 	eventD.OnMessage(server.onMessage)
 	eventD.OnClose(server.onClose)
 	eventD.OnOpen(server.onOpen)
-	eventD.OnRead(server.onRead)
+	if sc.RegisterMPOnRead {
+		eventD.OnRead(server.onRead)
+	}
 	// server engine
 	server.server = builder.Server()
 	// init plugin manager
@@ -119,6 +125,12 @@ func applyConfig(server *Server, opts []Option) {
 }
 
 func (s *Server) RegisterClass(source string, i interface{}, custom map[string]metadata.ProcessOption) error {
+	type Setup func(ptr unsafe.Pointer)
+	type SetupMethod struct {
+		typ  unsafe.Pointer
+		data Setup
+	}
+
 	if i == nil {
 		return errors.New("register elem is nil")
 	}
@@ -137,10 +149,29 @@ func (s *Server) RegisterClass(source string, i interface{}, custom map[string]m
 	}
 	// init map
 	src.ProcessSet = make(map[string]*metadata.Process, src.InstanceType.NumMethod())
+	rsType, rsIndex := s.scanRpcServer(src.InstanceType)
+	var setup Setup
 	for i := 0; i < src.InstanceType.NumMethod(); i++ {
 		method := src.InstanceType.Method(i)
 		if !method.IsExported() {
 			continue
+		}
+		// 检查是否重写了RpcServer.Setup方法
+		if rsType != nil {
+			switch method.Name {
+			case "Setup":
+				// setup = value.Method(i).Interface().(func())
+				// 如果使用以上方法设置setup func的debug时就看不见真正的执行代码
+				// reflect.Value.Interface()在遇到Func类型时会使用makeMethodValue构造一个满足匿名函数定义的函数
+				// 返回的函数不包含接收器, 可当成普通函数来使用, 运行时调用methodValueCall
+				// debug RegisterClass时就会看不见原始函数的代码
+				// 使用以下方式则不会, 因为获得的是原始的函数类型
+				setupFun := *(*SetupMethod)(unsafe.Pointer(&method.Func))
+				setup = setupFun.data
+				continue
+			case "HijackProcess":
+				continue
+			}
 		}
 		option, ok := custom[method.Name]
 		if !ok {
@@ -148,6 +179,16 @@ func (s *Server) RegisterClass(source string, i interface{}, custom map[string]m
 		} else {
 			s.registerProcess(src, method.Name, value.Method(i), &option)
 		}
+	}
+	eValue := value
+	for eValue.Kind() == reflect.Ptr {
+		eValue = eValue.Elem()
+	}
+	if rsType != nil && eValue.Field(rsIndex).CanSet() {
+		eValue.Field(rsIndex).Set(reflect.ValueOf(RpcServer{
+			Prefix: source,
+			s:      s,
+		}))
 	}
 	s.sources.Store(source, src)
 	kvs := make([]container.RCUMapElement[string, *metadata.Process], 0, len(src.ProcessSet))
@@ -158,6 +199,11 @@ func (s *Server) RegisterClass(source string, i interface{}, custom map[string]m
 		})
 	}
 	s.services.StoreMulti(kvs)
+	if setup != nil {
+		// offset := eValue.Type().Field(rsIndex).Offset
+		// setup(unsafe.Pointer(uintptr(value.UnsafePointer()) + offset))
+		setup(value.UnsafePointer())
+	}
 	return nil
 }
 
@@ -206,6 +252,25 @@ asyncCheck:
 		// TODO nop
 	}
 	return
+}
+
+func (s *Server) scanRpcServer(typ reflect.Type) (reflect.Type, int) {
+	for typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if !field.Anonymous {
+			continue
+		}
+		if field.Type.Kind() != reflect.Struct {
+			continue
+		}
+		if field.Type == reflect.TypeOf(RpcServer{}) {
+			return field.Type, i
+		}
+	}
+	return nil, -1
 }
 
 func (s *Server) RegisterAnonymousFunc(service string, fn interface{}, option *metadata.ProcessOption) error {

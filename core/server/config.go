@@ -31,8 +31,13 @@ type Config struct {
 	Debug           bool
 	ParserFactory   msgparser.Factory
 	WriterFactory   msgwriter.Factory
+	// Max 4GB, because low-level type is uint32
+	ReadBufferSize  int
+	WriteBufferSize int
 	// 是否开启反射服务
 	OpenReflection bool
 	// 默认的Service配置
 	DefaultProcessOption metadata.ProcessOption
+	//
+	RegisterMPOnRead bool
 }

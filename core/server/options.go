@@ -43,6 +43,8 @@ func WithDefaultServer() Option {
 		WithTraitMessageWriter()(config)
 		WithTaskPool()(config)
 		WithDefaultProcessOption(metadata.ProcessOption{})(config)
+		WithReadBufferSize(64 * (1 << 10))(config) // 64KB
+		WithWriteBufferSize(1 * (1 << 20))(config) // 1MB
 	}
 }
 
@@ -156,5 +158,23 @@ func WithReflection() Option {
 func WithDefaultProcessOption(opt metadata.ProcessOption) Option {
 	return func(config *Config) {
 		config.DefaultProcessOption = opt
+	}
+}
+
+func WithReadBufferSize(size int) Option {
+	return func(config *Config) {
+		config.ReadBufferSize = size
+	}
+}
+
+func WithWriteBufferSize(size int) Option {
+	return func(config *Config) {
+		config.WriteBufferSize = size
+	}
+}
+
+func WithMessageParserOnRead() Option {
+	return func(config *Config) {
+		config.RegisterMPOnRead = true
 	}
 }

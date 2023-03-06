@@ -17,9 +17,9 @@ import (
 
 func (s *Server) onClose(conn transport.ConnAdapter, err error) {
 	if err != nil {
-		s.logger.Warn("LRPC: Close Connection: %s:%s err: %v", conn.LocalAddr(), conn.RemoteAddr(), err)
+		s.logger.Warn("LRPC: Close Connection: %s -> %s err: %v", conn.RemoteAddr(), conn.LocalAddr(), err)
 	} else {
-		s.logger.Info("LRPC: Close Connection: %s:%s", conn.LocalAddr(), conn.RemoteAddr())
+		s.logger.Info("LRPC: Close Connection: %s -> %s", conn.RemoteAddr(), conn.LocalAddr())
 	}
 	if !s.pManager.Event4S(plugin.OnClose) {
 		s.logger.Warn("LRPC: plugin entry interrupted onClose")
@@ -57,7 +57,7 @@ func (s *Server) parseMessageAndHandle(c transport.ConnAdapter, data []byte, pre
 		return
 	}
 	// 2023/02/22 : 删除Debug Message相关的代码
-	defer s.recover(c, desc)
+	defer s.eventLoopTopRecover(c, desc)
 	var traitMsgs []msgparser2.ParserMessage
 	var err error
 	if prepared {
@@ -108,8 +108,8 @@ func (s *Server) onOpen(conn transport.ConnAdapter) {
 	cfg := s.config.Load()
 	desc := &connSourceDesc{}
 	desc.Parser = cfg.ParserFactory(
-		&msgparser2.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()},
-		msgparser2.DefaultBufferSize*16,
+		&msgparser2.SimpleAllocTor{SharedPool: s.pool.TakeMessagePool()},
+		uint32(s.config.Load().ReadBufferSize),
 	)
 	desc.Writer = cfg.WriterFactory()
 	desc.ctxManager = newContextManager()
@@ -127,7 +127,7 @@ func (s *Server) onOpen(conn transport.ConnAdapter) {
 	}
 }
 
-func (s *Server) recover(c transport.ConnAdapter, desc *connSourceDesc) {
+func (s *Server) eventLoopTopRecover(c transport.ConnAdapter, desc *connSourceDesc) {
 	e := recover()
 	if e == nil {
 		return
@@ -144,5 +144,5 @@ func (s *Server) recover(c transport.ConnAdapter, desc *connSourceDesc) {
 	}
 	var buf [4096]byte
 	length := runtime.Stack(buf[:], false)
-	s.logger.Panic("LRPC: recover panic : %v\n%s", e, convert.BytesToString(buf[:length]))
+	s.logger.Panic("LRPC: eventLoopTopRecover panic : %v\n%s", e, convert.BytesToString(buf[:length]))
 }

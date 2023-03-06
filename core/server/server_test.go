@@ -110,16 +110,16 @@ func TestOnMessage(t *testing.T) {
 	}
 	t.Run("TestOnMessageRecover", func(t *testing.T) {
 		func() {
-			defer server.recover(nc, server.connsSourceDesc.Load(nc))
+			defer server.eventLoopTopRecover(nc, server.connsSourceDesc.Load(nc))
 			a := make([]int, 10)
 			a[100] = 1
 		}()
 		func() {
-			defer server.recover(nc, server.connsSourceDesc.Load(nc))
+			defer server.eventLoopTopRecover(nc, server.connsSourceDesc.Load(nc))
 			panic("Hello world")
 		}()
 		func() {
-			defer server.recover(nc, server.connsSourceDesc.Load(nc))
+			defer server.eventLoopTopRecover(nc, server.connsSourceDesc.Load(nc))
 			panic(errorhandler.ContextNotFound)
 		}()
 	})

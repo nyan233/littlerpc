@@ -110,20 +110,20 @@ func (c *messageOpt) setFreeFunc(f func(msg *message.Message)) {
 	c.freeFunc = f
 }
 
+func (c *messageOpt) Hijack() bool {
+	return c.Service.Hijack
+}
+
 // UseMux TODO: 计划删除, 这样做并不能判断是否使用了Mux
 func (c *messageOpt) UseMux() bool {
 	return c.Message.First() == mux.Enabled
 }
 
 func (c *messageOpt) Check() perror.LErrorDesc {
-	// 序列化完之后才确定调用名
-	// MethodName : Hello.Hello : receiver:methodName
-	service, ok := c.Server.services.LoadOk(c.Message.GetServiceName())
-	if !ok {
-		return c.Server.eHandle.LWarpErrorDesc(
-			errorhandler.ServiceNotfound, c.Message.GetServiceName())
+	err := c.checkService()
+	if err != nil {
+		return err
 	}
-	c.Service = service
 	// 从客户端校验并获得合法的调用参数
 	callArgs, lErr := c.checkCallArgs()
 	if err := c.Server.pManager.Call4S(c.PCtx, callArgs, lErr); err != nil {
@@ -133,6 +133,21 @@ func (c *messageOpt) Check() perror.LErrorDesc {
 		return c.Server.eHandle.LWarpErrorDesc(lErr, "arguments check failed")
 	}
 	c.CallArgs = callArgs
+	return nil
+}
+
+func (c *messageOpt) checkService() perror.LErrorDesc {
+	if c.Service != nil {
+		return nil
+	}
+	// 序列化完之后才确定调用名
+	// MethodName : Hello.Hello : receiver:methodName
+	service, ok := c.Server.services.LoadOk(c.Message.GetServiceName())
+	if !ok {
+		return c.Server.eHandle.LWarpErrorDesc(
+			errorhandler.ServiceNotfound, c.Message.GetServiceName())
+	}
+	c.Service = service
 	return nil
 }
 
@@ -195,7 +210,7 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 	return callArgs, nil
 }
 
-func (c *messageOpt) checkContextAndStream(callArgs container.Slice[reflect.Value], write bool) (offset int, err perror.LErrorDesc) {
+func (c *messageOpt) getContext() (context.Context, perror.LErrorDesc) {
 	ctx := context.Background()
 	ctxIdStr, ok := c.Message.MetaData.LoadOk(message.ContextId)
 	// 客户端携带context-id且对应的过程支持context时才注册context
@@ -203,16 +218,24 @@ func (c *messageOpt) checkContextAndStream(callArgs container.Slice[reflect.Valu
 	if ok && c.Service.SupportContext {
 		ctxId, err := strconv.ParseUint(ctxIdStr, 10, 64)
 		if err != nil {
-			return 0, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
+			return nil, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
 		}
 		rawCtx, _ := c.Desc.ctxManager.RegisterContextCancel(ctxId)
 		ctx, c.Cancel = context.WithCancel(rawCtx)
 		if err != nil {
-			return 0, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
+			return nil, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
 		}
 	}
 	ctx = rContext.WithLocalAddr(ctx, c.Desc.localAddr)
 	ctx = rContext.WithRemoteAddr(ctx, c.Desc.remoteAddr)
+	return ctx, nil
+}
+
+func (c *messageOpt) checkContextAndStream(callArgs container.Slice[reflect.Value], write bool) (offset int, err perror.LErrorDesc) {
+	ctx, err := c.getContext()
+	if err != nil {
+		return 0, err
+	}
 	callArgs.Reset()
 	switch {
 	case c.Service.SupportContext:
@@ -235,6 +258,17 @@ func (c *messageOpt) checkContextAndStream(callArgs container.Slice[reflect.Valu
 		break
 	}
 	return
+}
+
+func (c *messageOpt) initReplyMsg(msg *message.Message, msgId uint64) {
+	msg.SetMsgType(message.Return)
+	msg.SetMsgId(msgId)
+	if c.Codec.Scheme() != message.DefaultCodec {
+		msg.MetaData.Store(message.CodecScheme, c.Codec.Scheme())
+	}
+	if c.Packer.Scheme() != message.DefaultPacker {
+		msg.MetaData.Store(message.PackerScheme, c.Packer.Scheme())
+	}
 }
 
 func injectPluginContext(ctx context.Context, msgType uint8, service string, start time.Time) context.Context {
