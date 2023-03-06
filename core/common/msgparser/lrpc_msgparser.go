@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/nyan233/littlerpc/core/container"
 	message2 "github.com/nyan233/littlerpc/core/protocol/message"
-	"github.com/nyan233/littlerpc/core/utils"
 	"sync"
 )
 
@@ -32,8 +31,13 @@ type lRPCTrait struct {
 	state int
 	// 单次解析数据的起始偏移量
 	startOffset int
+	// 行内指针, 指示在start-end中目前的解析处于哪个位置
+	linePtr int
 	// 单次解析数据的结束偏移量
-	endOffset     int
+	endOffset int
+	// 消息的最小解析长度, 包括1Byte的Header
+	msgBaseLen int
+	// 用于存储未完成的消息, 用于mux
 	noReadyBuffer map[uint64]readyBuffer
 	// 存储半包数据的缓冲区, 只有在读完了一个完整的payload的消息的数据包
 	// 才会被直接提升到noReadyBuffer中, noMux类型的数据包则不会被提升到
@@ -59,8 +63,8 @@ func NewLRPCTrait(allocTor AllocTor, bufSize uint32) Parser {
 func (h *lRPCTrait) ParseOnReader(reader func([]byte) (n int, err error)) (msgs []ParserMessage, err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	currentLen := len(h.halfBuffer)
-	currentCap := cap(h.halfBuffer)
+	currentLen := h.halfBuffer.Len()
+	currentCap := h.halfBuffer.Cap()
 	h.halfBuffer = h.halfBuffer[:currentCap]
 	for i := 0; i < 16; i++ {
 		readN, err := reader(h.halfBuffer[currentLen:currentCap])
@@ -76,7 +80,7 @@ func (h *lRPCTrait) ParseOnReader(reader func([]byte) (n int, err error)) (msgs 
 		}
 	}
 	h.halfBuffer = h.halfBuffer[:currentLen]
-	return h.parseFromHalfBuffer(nil)
+	return h.parseFromHalfBuffer()
 }
 
 // Parse io.Reader主要用来标识一个读取到半包的连接, 并不会真正去调用他的方法
@@ -86,10 +90,18 @@ func (h *lRPCTrait) Parse(data []byte) (msgs []ParserMessage, err error) {
 	if h.clickInterval == 1 && len(data) == 0 {
 		return nil, errors.New("data length == 0")
 	}
-	return h.parseFromHalfBuffer(data)
+	h.halfBuffer.Append(data)
+	return h.parseFromHalfBuffer()
 }
 
-func (h *lRPCTrait) parseFromHalfBuffer(prepare container.ByteSlice) (msgs []ParserMessage, err error) {
+func (h *lRPCTrait) memSwap() {
+	if !(h.startOffset+h.clickInterval > h.halfBuffer.Cap()) {
+		return
+	}
+
+}
+
+func (h *lRPCTrait) parseFromHalfBuffer() (msgs []ParserMessage, err error) {
 	allMsg := make([]ParserMessage, 0, 4)
 	defer func() {
 		if err != nil {
@@ -102,60 +114,70 @@ func (h *lRPCTrait) parseFromHalfBuffer(prepare container.ByteSlice) (msgs []Par
 			}
 		}
 	}()
-	var buf container.ByteSlice
-	switch {
-	case len(h.halfBuffer) <= 0:
-		if prepare.Available() {
-			buf = prepare
-		}
-	case len(h.halfBuffer) > 0:
-		buf = h.halfBuffer
-		if prepare.Available() {
-			buf.Append(prepare)
-		}
-	}
+	var ableParse bool
+	var parseInterrupt bool
 	for {
-		if len(buf) == h.endOffset {
+		if parseInterrupt {
+			break
+		}
+		if ableParse && h.clickInterval > h.halfBuffer.Len()-h.startOffset {
+			break
+		}
+		// scan all
+		if h.halfBuffer.Len() == h.endOffset {
 			h.halfBuffer.Reset()
 			h.startOffset = 0
 			h.endOffset = 0
-			return allMsg, nil
-		}
-		if (len(buf) - h.startOffset) < h.clickInterval {
-			h.halfBuffer = h.halfBuffer[:len(buf)-h.startOffset]
-			copy(h.halfBuffer, buf[h.startOffset:])
-			h.endOffset = h.endOffset - h.startOffset
-			h.startOffset = 0
+			h.linePtr = 0
+			h.msgBaseLen = 0
 			return allMsg, nil
 		}
 		switch h.state {
 		case _ScanInit:
-			err := h.handleScanInit(&buf, &h.startOffset, &h.endOffset, &allMsg)
+			err := h.handleScanInit(&allMsg)
 			if err != nil {
 				return nil, err
 			}
 		case _ScanMsgParse1:
-			next, err := h.handleScanParse1(&buf, &h.startOffset, &h.endOffset, &allMsg)
+			next, err := h.handleScanParse1(&allMsg)
 			if err != nil {
 				return nil, err
 			}
 			if !next {
-				continue
+				parseInterrupt = true
+			} else {
+				ableParse = true
 			}
 		case _ScanMsgParse2:
-			_, err := h.handleScanParse2(&buf, &h.startOffset, &h.endOffset, &allMsg)
+			next, err := h.handleScanParse2(&allMsg)
 			if err != nil {
 				return nil, err
 			}
+			if !next {
+				parseInterrupt = true
+			} else {
+				ableParse = true
+			}
 		}
 	}
+	// 最后的数据不满足长度要求则可以搬迁数据, 至少要经过一次完整的解析
+	if ableParse && (h.halfBuffer.Len()-h.startOffset < h.clickInterval) && h.startOffset > 0 {
+		oldBuffer := h.halfBuffer
+		h.halfBuffer = h.halfBuffer[:h.halfBuffer.Len()-h.startOffset]
+		copy(h.halfBuffer, oldBuffer[h.startOffset:])
+		h.endOffset = h.endOffset - h.startOffset
+		h.startOffset = 0
+		h.linePtr = h.endOffset
+		h.msgBaseLen = 0
+	}
+	return allMsg, nil
 }
 
-func (h *lRPCTrait) handleScanInit(buf *container.ByteSlice, start, end *int, allMsg *[]ParserMessage) (err error) {
-	if handler := GetHandler((*buf)[*start]); handler != nil {
+func (h *lRPCTrait) handleScanInit(allMsg *[]ParserMessage) (err error) {
+	if handler := GetHandler(h.halfBuffer[h.startOffset]); handler != nil {
 		h.handler = handler
 	} else {
-		return errors.New(fmt.Sprintf("MagicNumber no MessageHandler -> %d", (*buf)[0]))
+		return errors.New(fmt.Sprintf("MagicNumber no MessageHandler -> %d", (h.halfBuffer)[0]))
 	}
 	h.state = _ScanMsgParse1
 	opt, baseLen := h.handler.BaseLen()
@@ -168,60 +190,71 @@ func (h *lRPCTrait) handleScanInit(buf *container.ByteSlice, start, end *int, al
 			}
 			h.ResetScan()
 		}()
-		action, err := h.handler.Unmarshal(*buf, msg)
+		action, err := h.handler.Unmarshal(h.halfBuffer, msg)
 		if err != nil {
 			return err
 		}
-		*end = len(*buf)
-		err = h.handleAction(action, *buf, msg, allMsg, nil)
+		h.linePtr = h.halfBuffer.Len()
+		h.endOffset = h.halfBuffer.Len()
+		err = h.handleAction(action, h.halfBuffer, msg, allMsg, nil)
 		if err != nil {
 			return err
 		}
 		return nil
 	}
+	h.msgBaseLen = baseLen
 	h.clickInterval = baseLen - 1
-	*end++
+	h.endOffset++
+	h.linePtr++
 	return nil
 }
 
-func (h *lRPCTrait) handleScanParse1(buf *container.ByteSlice, start, end *int, allMsg *[]ParserMessage) (next bool, err error) {
-	readN, _ := utils.ReadFromData(h.clickInterval, (*buf)[*start:])
-	*end += readN
-	if readN < h.clickInterval {
-		h.clickInterval -= readN
-		return
+func (h *lRPCTrait) handleScanParse1(allMsg *[]ParserMessage) (next bool, err error) {
+	interval := h.halfBuffer.Len() - h.linePtr
+	if interval < 0 {
+		return false, errors.New("no read buf")
 	}
+	if interval < h.clickInterval {
+		return false, nil
+	}
+	interval = h.clickInterval
+	h.linePtr += interval
+	h.endOffset += interval
+	h.clickInterval = 0
 	_, baseLen := h.handler.BaseLen()
-	h.clickInterval = h.handler.MessageLength((*buf)[*start:*end]) - baseLen
+	h.clickInterval = h.handler.MessageLength(h.halfBuffer[h.startOffset:h.endOffset]) - baseLen
 	h.state = _ScanMsgParse2
 	next = true
 	return
 }
 
-func (h *lRPCTrait) handleScanParse2(buf *container.ByteSlice, start, end *int, allMsg *[]ParserMessage) (next bool, err error) {
-	readN, readData := utils.ReadFromData(h.clickInterval, (*buf)[*start:])
-	if readN == -1 {
+func (h *lRPCTrait) handleScanParse2(allMsg *[]ParserMessage) (next bool, err error) {
+	interval := h.halfBuffer.Len() - h.linePtr
+	if interval < 0 {
 		return false, errors.New("no read buf")
 	}
-	*end += readN
-	h.clickInterval -= readN
-	if h.clickInterval > 0 {
-		return
+	if interval < h.clickInterval {
+		return false, nil
 	}
+	interval = h.clickInterval
+	h.linePtr += interval
+	h.endOffset += interval
+	h.clickInterval = 0
 	msg := h.allocTor.AllocMessage()
 	msg.Reset()
-	action, err := h.handler.Unmarshal((*buf)[*start:*end], msg)
+	action, err := h.handler.Unmarshal(h.halfBuffer[h.startOffset:h.endOffset], msg)
 	if err != nil {
 		h.allocTor.FreeMessage(msg)
 		return false, err
 	}
-	err = h.handleAction(action, *buf, msg, allMsg, readData)
+	err = h.handleAction(action, h.halfBuffer, msg, allMsg, h.halfBuffer[h.startOffset+h.msgBaseLen:h.endOffset])
 	if err != nil {
 		h.allocTor.FreeMessage(msg)
 		return false, err
 	}
 	h.ResetScan()
-	*start = *end
+	h.startOffset = h.endOffset
+	next = true
 	return
 }
 
@@ -255,27 +288,33 @@ func (h *lRPCTrait) State() (int, int, int) {
 func (h *lRPCTrait) handleAction(action Action, buf container.ByteSlice, msg *message2.Message, allMsg *[]ParserMessage, readData []byte) error {
 	switch action {
 	case UnmarshalBase:
-		buf, ok := h.noReadyBuffer[msg.GetMsgId()]
+		readBuf, ok := h.noReadyBuffer[msg.GetMsgId()]
 		if !ok {
-			h.noReadyBuffer[msg.GetMsgId()] = readyBuffer{
+			readBuf = readyBuffer{
 				MsgId:         msg.GetMsgId(),
 				PayloadLength: msg.Length(),
-				RawBytes:      h.halfBuffer,
+				RawBytes:      buf,
 			}
+		} else {
+			readBuf.RawBytes = append(readBuf.RawBytes, readData...)
 		}
-		buf.RawBytes = append(buf.RawBytes, readData...)
-		if uint32(len(buf.RawBytes)) == buf.PayloadLength {
+		if uint32(len(readBuf.RawBytes)) == readBuf.PayloadLength {
 			defer h.deleteNoReadyBuffer(msg.GetMsgId())
 			msg.Reset()
-			err := message2.Unmarshal(buf.RawBytes, msg)
+			err := message2.Unmarshal(readBuf.RawBytes, msg)
 			if err != nil {
 				return err
 			}
 			*allMsg = append(*allMsg, ParserMessage{
 				Message: msg,
-				Header:  buf.RawBytes[0],
+				Header:  readBuf.RawBytes[0],
 			})
+		} else if !ok {
+			readBuf.RawBytes = append([]byte{}, readData...)
+			// mux中的消息不能一次性序列化完成则释放预分配的msg
+			h.allocTor.FreeMessage(msg)
 		}
+		h.noReadyBuffer[msg.GetMsgId()] = readBuf
 	case UnmarshalComplete:
 		*allMsg = append(*allMsg, ParserMessage{
 			Message: msg,

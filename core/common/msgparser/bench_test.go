@@ -11,7 +11,7 @@ import (
 
 func BenchmarkParser(b *testing.B) {
 	const (
-		UsageParseOnReader = false
+		UsageParseOnReader = true
 	)
 	parser := Get(DefaultParser)(NewDefaultSimpleAllocTor(), MaxBufferSize*32)
 	for i := 1; i <= (1 << 10); i *= 4 {
@@ -44,6 +44,7 @@ func BenchmarkParser(b *testing.B) {
 				}
 				point += length
 			}
+			buf2 := make([]byte, len(messages))
 			b.StartTimer()
 			b.ReportAllocs()
 			for j := 0; j < b.N; j++ {
@@ -54,7 +55,9 @@ func BenchmarkParser(b *testing.B) {
 						return copy(bytes, messages), io.EOF
 					})
 				} else {
-					parseMsgs, err = parser.Parse(messages)
+					// 模拟网络框架的拷贝
+					copy(buf2, messages)
+					parseMsgs, err = parser.Parse(buf2)
 				}
 				if err != nil {
 					_, err = parser.Parse(messages)

@@ -91,6 +91,7 @@ func (f *ParserFullTest) TestConcurrentHalfParse() {
 		ConsumerSize   = 16
 		ChanBufferSize = 8
 		CycleSize      = 1000
+		OnePushMax     = 20
 	)
 	t := f.T()
 	producer := func(channels []chan []byte, data []byte, cycleSize int) {
@@ -98,8 +99,8 @@ func (f *ParserFullTest) TestConcurrentHalfParse() {
 			tmpData := data
 			for len(tmpData) > 0 {
 				var readN int
-				if len(tmpData) >= 20 {
-					readN = 20
+				if len(tmpData) >= OnePushMax {
+					readN = OnePushMax
 				} else {
 					readN = len(tmpData)
 				}
@@ -141,9 +142,9 @@ func (f *ParserFullTest) TestConcurrentHalfParse() {
 	var wg sync.WaitGroup
 	wg.Add(ConsumerSize)
 	for _, v := range consumerChannels {
-		go consumer(NewLRPCTrait(NewDefaultSimpleAllocTor(), 4096), v, message2.MagicNumber, &wg)
+		go consumer(NewLRPCTrait(NewDefaultSimpleAllocTor(), MaxBufferSize), v, message2.MagicNumber, &wg)
 	}
-	go producer(consumerChannels, gen.MuxToBytes(gen.Big), CycleSize)
+	go producer(consumerChannels, gen.NoMuxToBytes(gen.Big), CycleSize)
 	wg.Wait()
 }
 

@@ -63,9 +63,9 @@ func Get(scheme string) Factory {
 }
 
 func DefaultReader(reader io.Reader) func(p []byte) (n int, err error) {
-	// 非阻塞系统调用最多执行16次
+	// 非阻塞系统调用最多执行8次
 	const (
-		SyscallLimit = 16
+		SyscallLimit = 8
 	)
 	var (
 		ErrLimit = errors.New("syscall limit out of range 16")
