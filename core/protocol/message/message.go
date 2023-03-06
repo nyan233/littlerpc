@@ -73,7 +73,7 @@ func New() *Message {
 		MetaData:      container2.NewSliceMap[string, string](4),
 		scope:         [2]uint8{MagicNumber},
 		payloadLayout: make([]uint32, 0, 2),
-		payloads:      nil,
+		payloads:      make([]byte, 0, 1024),
 	}
 }
 
