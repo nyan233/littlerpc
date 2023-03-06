@@ -3,6 +3,7 @@ package metadata
 import (
 	"reflect"
 	"sync"
+	"unsafe"
 )
 
 type Source struct {
@@ -33,6 +34,10 @@ type Process struct {
 	// Option中的参数都是用于定义的, 在Process中的其它控制参数用户
 	// 并不能手动控制
 	Option ProcessOption
+	// 过程是否被劫持, 被劫持的过程会直接调用劫持器
+	Hijack bool
+	// type -> *func(stub *server.Stub)
+	Hijacker unsafe.Pointer
 }
 
 type ProcessOption struct {
