@@ -2,7 +2,7 @@ package main
 
 /*
    @Generator   : pxtor
-   @CreateTime  : 2023-02-19 18:38:08.5503144 +0800 CST m=+0.006680001
+   @CreateTime  : 2023-02-28 11:48:33.7228998 +0800 CST m=+0.026818101
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
@@ -36,7 +36,7 @@ type helloImpl struct {
 
 func NewHello(b binder) HelloProxy {
 	proxy := new(helloImpl)
-	err := b.BindFunc("main.Hello", proxy)
+	err := b.BindFunc("Hello", proxy)
 	if err != nil {
 		panic(err)
 	}
@@ -49,13 +49,13 @@ func NewHello(b binder) HelloProxy {
 }
 
 func (p helloImpl) SayHelloToProtoBuf(pb *Student, opts ...client.CallOption) (*Student, error) {
-	reps, err := p.Call("main.Hello.SayHelloToProtoBuf", opts, pb)
+	reps, err := p.Call("Hello.SayHelloToProtoBuf", opts, pb)
 	r0, _ := reps[0].(*Student)
 	return r0, err
 }
 
 func (p helloImpl) SayHelloToJson(jn *Student, opts ...client.CallOption) (*Student, error) {
-	reps, err := p.Call("main.Hello.SayHelloToJson", opts, jn)
+	reps, err := p.Call("Hello.SayHelloToJson", opts, jn)
 	r0, _ := reps[0].(*Student)
 	return r0, err
 }

@@ -29,17 +29,15 @@ func (h *Hello) SayHelloToJson(jn *Student) (*Student, error) {
 }
 
 func main() {
-	logger.SetOpenLogger(false)
+	logger.SetOpenLogger(true)
 	codec.Register(new(ProtoBufCodec))
 	server := server.New(server.WithAddressServer(":1234"))
 	err := server.RegisterClass("", new(Hello), nil)
 	if err != nil {
 		panic(err)
 	}
-	err = server.Service()
-	if err != nil {
-		panic(err)
-	}
+	defer server.Stop()
+	go server.Service()
 	client1, err := client.New(client.WithAddress(":1234"),
 		client.WithCodec("protobuf"), client.WithPacker("text"))
 	if err != nil {
