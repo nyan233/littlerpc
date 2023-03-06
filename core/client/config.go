@@ -59,4 +59,6 @@ type Config struct {
 	ParserFactory   msgparser.Factory
 	// 是否启用调试模式
 	Debug bool
+	// 是否注册MessageParser-OnRead接口
+	RegisterMPOnRead bool
 }

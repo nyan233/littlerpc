@@ -101,9 +101,10 @@ readStart:
 	}
 }
 
+// bind 是否直接使用reps中的值作为反序列化的目标
 func (c *Client) readMsgAndDecodeReply(ctx context.Context, pCtx *plugin.Context,
 	cc *callConfig, msgId uint64, lc *connSource, p *cMatadata.Process,
-	reps []interface{}) ([]interface{}, error2.LErrorDesc) {
+	reps []interface{}, bind bool) ([]interface{}, error2.LErrorDesc) {
 	msg, err := c.readMsg(ctx, pCtx, cc, msgId, lc)
 	if err != nil {
 		return nil, err
@@ -112,21 +113,14 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, pCtx *plugin.Context
 	// 没有参数布局则表示该过程之后一个error类型的返回值
 	// 但error是不在返回值列表中处理的
 	iter := msg.PayloadsIterator()
-	// 主要针对没有绑定到Client的Service, 没有途径知道Service的input/output argument type
+	// 主要针对没有绑定到Client的Service且不是通过Request系列接口输入了需要绑定数据的响应
+	// 没有途径知道Service的input/output argument type
 	// 用于查找type的reflect.Value为nil证明客户端使用了RawCall, 因为没法知道参数的类型和参数的
 	// 个数, 只能用保守的方法估算, 有多少算多少
-	if p == nil {
+	if p == nil && len(reps) <= 0 {
 		reps = make([]interface{}, 0, iter.Tail())
-		for iter.Next() {
-			rep, err := check.UnMarshalFromUnsafe(cc.Codec, iter.Take(), nil)
-			if err != nil {
-				return reps, c.eHandle.LWarpErrorDesc(errorhandler.ErrCodecUnMarshalError, "UnMarshalFromUnsafe failed", err.Error())
-			}
-			reps = append(reps, rep)
-		}
-		return reps, c.handleReturnError(msg)
 	}
-	if iter.Tail() > 0 {
+	if iter.Tail() > 0 && p != nil && !bind {
 		// 处理结果再处理错误, 因为调用过程可能因为某种原因失败返回错误, 但也会返回处理到一定
 		// 进度的结果, 这个时候检查到错误就激进地抛弃结果是不可取的
 		if len(p.ResultsType) != iter.Tail() {
@@ -152,6 +146,21 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, pCtx *plugin.Context
 				fmt.Sprintf("Server=%d", iter.Tail()),
 				fmt.Sprintf("Client=%d", len(outputList)))
 		}
+	}
+	// RawCall即使存在对应的Service, 也不使用Service中描述的返回结果类型
+	// Request的reps的初始值已经被提前确定, 只需要根据每个result slot进行反序列化即可
+	for i := 0; i < len(reps) && iter.Next(); i++ {
+		var rep interface{}
+		var err error
+		if bind {
+			rep, err = check.UnMarshalFromUnsafe(cc.Codec, iter.Take(), reps[i])
+		} else {
+			rep, err = check.UnMarshalFromUnsafe(cc.Codec, iter.Take(), nil)
+		}
+		if err != nil {
+			return reps, c.eHandle.LWarpErrorDesc(errorhandler.ErrCodecUnMarshalError, "UnMarshalFromUnsafe failed", err.Error())
+		}
+		reps[i] = rep
 	}
 	return reps, c.handleReturnError(msg)
 }

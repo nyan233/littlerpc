@@ -240,3 +240,9 @@ func WithOrderSelector() Option {
 		config.SelectorFactory = selector.Get("order")
 	}
 }
+
+func WithMessageParserOnRead() Option {
+	return func(config *Config) {
+		config.RegisterMPOnRead = true
+	}
+}

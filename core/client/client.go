@@ -67,7 +67,9 @@ func New(opts ...Option) (*Client, error) {
 	eventD.OnOpen(client.onOpen)
 	eventD.OnMessage(client.onMessage)
 	eventD.OnClose(client.onClose)
-	eventD.OnRead(client.onRead)
+	if config.RegisterMPOnRead {
+		eventD.OnRead(client.onRead)
+	}
 	err := client.engine.Client().Start()
 	if err != nil {
 		return nil, err
@@ -192,7 +194,7 @@ func (c *Client) BindFunc(sourceName string, i interface{}) error {
 // RawCall 该调用和Client.Call不同, 这个调用不会识别Method和对应的in/out list
 // 只会对除context.Context/stream.LStream外的args/reps直接序列化
 func (c *Client) RawCall(service string, opts []CallOption, args ...interface{}) ([]interface{}, error) {
-	return c.call(service, opts, args, nil, false)
+	return c.call(service, opts, args, nil, false, false)
 }
 
 // Request req/rep风格的RPC调用, 这要求rep必须是指针类型, 否则会返回ErrCallArgsType
@@ -200,7 +202,7 @@ func (c *Client) Request(service string, ctx context.Context, request interface{
 	if response == nil {
 		return c.eHandle.LWarpErrorDesc(errorhandler.ErrCallArgsType, "response pointer equal nil")
 	}
-	_, err := c.call(service, opts, []interface{}{ctx, request}, []interface{}{response}, false)
+	_, err := c.call(service, opts, []interface{}{ctx, request}, []interface{}{response}, false, true)
 	return err
 }
 
@@ -215,7 +217,7 @@ func (c *Client) Requests(service string, requests []interface{}, responses []in
 			return c.eHandle.LWarpErrorDesc(errorhandler.ErrCallArgsType, "response pointer equal nil")
 		}
 	}
-	_, err := c.call(service, opts, requests, responses, false)
+	_, err := c.call(service, opts, requests, responses, false, true)
 	return err
 }
 
@@ -226,7 +228,7 @@ func (c *Client) Requests(service string, requests []interface{}, responses []in
 // 注册了元信息的过程返回的result数量始终等于自身结果数量-1, 因为error不包括在reps中, 不管发生了什么错误, 除非
 // 找不到注册的元信息
 func (c *Client) Call(service string, opts []CallOption, args ...interface{}) ([]interface{}, error) {
-	return c.call(service, opts, args, nil, true)
+	return c.call(service, opts, args, nil, true, false)
 }
 
 func (c *Client) call(
@@ -235,6 +237,7 @@ func (c *Client) call(
 	args []interface{},
 	reps []interface{},
 	check bool,
+	bind bool,
 ) (completeReps []interface{}, completeErr error2.LErrorDesc) {
 
 	defer func() {
@@ -267,7 +270,7 @@ func (c *Client) call(
 			opt(cc)
 		}
 	}
-	process, ctx, ctxId, err := c.identArgAndEncode(service, cc, writeMsg, args, !check)
+	process, ctx, ctxId, err := c.identArgAndEncode(service, cc, writeMsg, args, bind)
 	if err != nil {
 		_ = c.pluginManager.Send4C(pCtx, writeMsg, err)
 		return nil, err
@@ -283,12 +286,12 @@ func (c *Client) call(
 			return nil, err
 		}
 	}
-	if reps == nil || len(reps) == 0 {
+	if len(reps) == 0 {
 		if check {
 			reps = make([]interface{}, len(process.ResultsType))
 		}
 	}
-	reps, err = c.readMsgAndDecodeReply(ctx, pCtx, cc, writeMsg.GetMsgId(), cs, process, reps)
+	reps, err = c.readMsgAndDecodeReply(ctx, pCtx, cc, writeMsg.GetMsgId(), cs, process, reps, !check)
 	// 插件错误中断后续的处理
 	if err != nil && (err.Code() == errorhandler.ErrPlugin.Code()) {
 		return reps, err
@@ -344,7 +347,7 @@ func (c *Client) AsyncCall(service string, opts []CallOption, args []interface{}
 			return
 		}
 		reps := make([]interface{}, len(process.ResultsType))
-		reps, err = c.readMsgAndDecodeReply(ctx, nil, cc, msg.GetMsgId(), conn, process, reps)
+		reps, err = c.readMsgAndDecodeReply(ctx, nil, cc, msg.GetMsgId(), conn, process, reps, false)
 		callBack(reps, err)
 	})
 }
