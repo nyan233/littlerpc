@@ -2,26 +2,28 @@ package test
 
 /*
    @Generator   : pxtor
-   @CreateTime  : 2023-02-24 11:24:56.4462275 +0800 CST m=+1.735420301
+   @CreateTime  : 2023-03-07 10:47:45.1592292 +0800 CST m=+0.025307901
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
 
 import (
+	"context"
 	"github.com/nyan233/littlerpc/core/client"
+	"github.com/nyan233/littlerpc/core/container"
 )
 
 var (
-	_ binder1746a4c977bb342c1ede509d1e42cd35 = new(client.Client)
-	_ caller1746a4c977bb342c1ede509d1e42cd35 = new(client.Client)
+	_ binder174a0324330e8f10f394211729f9f684 = new(client.Client)
+	_ caller174a0324330e8f10f394211729f9f684 = new(client.Client)
 	_ TestProxy                              = new(testImpl)
 )
 
-type binder1746a4c977bb342c1ede509d1e42cd35 interface {
+type binder174a0324330e8f10f394211729f9f684 interface {
 	BindFunc(source string, proxy interface{}) error
 }
 
-type caller1746a4c977bb342c1ede509d1e42cd35 interface {
+type caller174a0324330e8f10f394211729f9f684 interface {
 	Call(service string, opts []client.CallOption, args ...interface{}) (reps []interface{}, err error)
 }
 
@@ -31,26 +33,28 @@ type TestProxy interface {
 	NoReturnValue(i int, opts ...client.CallOption) error
 	ErrHandler(s1 string, opts ...client.CallOption) error
 	ErrHandler2(s1 string, opts ...client.CallOption) error
+	ImportTest(l1 container.ByteSlice, opts ...client.CallOption) error
+	ImportTest2(ctx context.Context, l1 container.ByteSlice, l2 *container.ByteSlice, opts ...client.CallOption) error
 	Proxy2(s1 string, s2 int, opts ...client.CallOption) (*Test, int64, error)
 	MapCallTest(m1 map[string]map[string]byte, m2 map[string]map[string]byte, opts ...client.CallOption) (*Test, map[string]byte, error)
 	CallSlice(s1 []*Test, s2 []map[string]int, opts ...client.CallOption) (bool, error)
 }
 
 type testImpl struct {
-	caller1746a4c977bb342c1ede509d1e42cd35
+	caller174a0324330e8f10f394211729f9f684
 }
 
-func NewTest(b binder1746a4c977bb342c1ede509d1e42cd35) TestProxy {
+func NewTest(b binder174a0324330e8f10f394211729f9f684) TestProxy {
 	proxy := new(testImpl)
 	err := b.BindFunc("Test", proxy)
 	if err != nil {
 		panic(err)
 	}
-	c, ok := b.(caller1746a4c977bb342c1ede509d1e42cd35)
+	c, ok := b.(caller174a0324330e8f10f394211729f9f684)
 	if !ok {
 		panic("the argument is not implemented caller")
 	}
-	proxy.caller1746a4c977bb342c1ede509d1e42cd35 = c
+	proxy.caller174a0324330e8f10f394211729f9f684 = c
 	return proxy
 }
 
@@ -78,6 +82,16 @@ func (p testImpl) ErrHandler(s1 string, opts ...client.CallOption) error {
 
 func (p testImpl) ErrHandler2(s1 string, opts ...client.CallOption) error {
 	_, err := p.Call("Test.ErrHandler2", opts, s1)
+	return err
+}
+
+func (p testImpl) ImportTest(l1 container.ByteSlice, opts ...client.CallOption) error {
+	_, err := p.Call("Test.ImportTest", opts, l1)
+	return err
+}
+
+func (p testImpl) ImportTest2(ctx context.Context, l1 container.ByteSlice, l2 *container.ByteSlice, opts ...client.CallOption) error {
+	_, err := p.Call("Test.ImportTest2", opts, ctx, l1, l2)
 	return err
 }
 

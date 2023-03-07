@@ -76,12 +76,13 @@ func genCode() {
 	default:
 		panic("no support gen style")
 	}
+	usageImportNameAndPath := make(map[string]string)
 	for k, v := range pkgDir.Files {
 		rawFile, err := os.Open(path.Dir(*dir) + "/" + k)
 		if err != nil {
 			panic(interface{}(err))
 		}
-		tmp := getAllFunc(v, rawFile, *sourceName, genFn, func(recvT string) bool {
+		tmp := getAllFunc(v, rawFile, usageImportNameAndPath, *sourceName, genFn, func(recvT string) bool {
 			if recvT == recvName {
 				return true
 			}
@@ -89,7 +90,7 @@ func genCode() {
 		})
 		funcStrs = append(funcStrs, tmp...)
 	}
-	fileBuffer.WriteString(createBeforeCode(pkgName, recvName, *sourceName, funcStrs))
+	fileBuffer.WriteString(createBeforeCode(pkgName, recvName, *sourceName, funcStrs, usageImportNameAndPath))
 	for _, v := range funcStrs {
 		fileBuffer.WriteString("\n\n")
 		fileBuffer.WriteString(v)
@@ -114,8 +115,9 @@ func genCode() {
 	}
 }
 
-func getAllFunc(file *ast.File, rawFile *os.File, sourceName string, genFunc GenMethod, filter func(recvT string) bool) []string {
+func getAllFunc(file *ast.File, rawFile *os.File, usageImportNameAndPath map[string]string, sourceName string, genFunc GenMethod, filter func(recvT string) bool) []string {
 	funcStrs := make([]string, 0)
+	importNamePathMapping := buildImportNameAndPath(file.Imports)
 	for _, v := range file.Decls {
 		funcDecl, ok := v.(*ast.FuncDecl)
 		if !ok {
@@ -153,15 +155,33 @@ func getAllFunc(file *ast.File, rawFile *os.File, sourceName string, genFunc Gen
 		// 处理参数的序列化
 		for _, pv := range funcDecl.Type.Params.List {
 			for _, pvName := range pv.Names {
-				inputList = append(inputList, Argument{
+				arg := Argument{
 					Name: pvName.Name,
 					Type: handleAstType(pv.Type, rawFile),
-				})
+				}
+				inputList = append(inputList, arg)
+				// usage import ?
+				if !strings.Contains(arg.Type, ".") {
+					continue
+				}
+				typeName := strings.Trim(arg.Type, "*")
+				importName := strings.SplitN(typeName, ".", 2)[0]
+				usageImportNameAndPath[importName] = importNamePathMapping[importName]
 			}
 		}
 		// 找出所有的返回值类型
 		for _, rv := range funcDecl.Type.Results.List {
-			outputList = append(outputList, Argument{Type: handleAstType(rv.Type, rawFile)})
+			res := Argument{
+				Type: handleAstType(rv.Type, rawFile),
+			}
+			outputList = append(outputList, res)
+			// usage import ?
+			if !strings.Contains(res.Type, ".") {
+				continue
+			}
+			typeName := strings.Trim(res.Type, "*")
+			importName := strings.SplitN(typeName, ".", 2)[0]
+			usageImportNameAndPath[importName] = importNamePathMapping[importName]
 		}
 		after, err := genFunc(Argument{
 			Name: "p",
@@ -173,6 +193,21 @@ func getAllFunc(file *ast.File, rawFile *os.File, sourceName string, genFunc Gen
 		funcStrs = append(funcStrs, after())
 	}
 	return funcStrs
+}
+
+func buildImportNameAndPath(imports []*ast.ImportSpec) map[string]string {
+	result := make(map[string]string, len(imports))
+	for _, v := range imports {
+		// 没有别名
+		pathVal := strings.Trim(v.Path.Value, "\"")
+		if v.Name == nil {
+			tmp := strings.Split(pathVal, "/")
+			result[tmp[len(tmp)-1]] = pathVal
+			continue
+		}
+		result[v.Name.Name] = pathVal
+	}
+	return result
 }
 
 // 生成同步调用的Api
@@ -249,12 +284,17 @@ func genAsyncApi(recvName, source, service string, inNameList, inTypeList, outLi
 	return
 }
 
+type ImportDesc struct {
+	Name string
+	Path string
+}
+
 type BeforeCodeDesc struct {
 	PackageName   string
 	GeneratorName string
 	CreateTime    time.Time
 	Author        string
-	ImportList    []string
+	ImportList    []ImportDesc
 	InterfaceName string
 	MethodList    []string
 	SourceName    string
@@ -264,7 +304,7 @@ type BeforeCodeDesc struct {
 }
 
 // 在这里生成包注释、导入、工厂函数、各种需要的类型
-func createBeforeCode(pkgName, recvName, source string, allFunc []string) string {
+func createBeforeCode(pkgName, recvName, source string, allFunc []string, usageImportNameAndPath map[string]string) string {
 	interfaceName := recvName + "Proxy"
 	typeName := GetTypeName(recvName)
 	t, err := template.New("BeforeCodeDesc").Parse(BeforeCodeTemplate)
@@ -278,13 +318,23 @@ func createBeforeCode(pkgName, recvName, source string, allFunc []string) string
 		GeneratorName: "pxtor",
 		CreateTime:    time.Now(),
 		Author:        "NoAuthor",
-		ImportList: []string{
-			"github.com/nyan233/littlerpc/core/client",
+		ImportList: []ImportDesc{
+			{
+				Path: "github.com/nyan233/littlerpc/core/client",
+			},
 		},
 		InterfaceName: interfaceName,
 		SourceName:    source,
 		TypeName:      typeName,
 		RealTypeName:  recvName,
+	}
+	for importName, importPath := range usageImportNameAndPath {
+		// 未使用别名
+		if strings.HasSuffix(importPath, importName) {
+			desc.ImportList = append(desc.ImportList, ImportDesc{Path: importPath})
+			continue
+		}
+		desc.ImportList = append(desc.ImportList, ImportDesc{importName, importPath})
 	}
 	if *generateId {
 		desc.GenId = getId()

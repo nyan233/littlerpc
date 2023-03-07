@@ -44,5 +44,5 @@ func TestCreateBeforeCode(t *testing.T) {
 		"func(h *Hello1)Mehtod1(ctx context.Context) error",
 		"func(h *Hello1)Mehtod2(ctx context.Context) error",
 		"func(h *Hello1)Mehtod3(ctx context.Context) error",
-	})
+	}, nil)
 }

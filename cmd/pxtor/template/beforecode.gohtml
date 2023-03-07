@@ -8,7 +8,7 @@ package {{.PackageName}}
 */
 
 import (
-    {{range .ImportList}}"{{.}}"%s{{end}}
+    {{range .ImportList}}{{.Name}} "{{.Path}}"%s{{end}}
 )
 
 var (
