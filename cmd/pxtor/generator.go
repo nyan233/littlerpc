@@ -77,6 +77,7 @@ func genCode() {
 		panic("no support gen style")
 	}
 	usageImportNameAndPath := make(map[string]string)
+	ignoreSetup := ignoreSetup(pkgDir.Files, *receiver)
 	for k, v := range pkgDir.Files {
 		rawFile, err := os.Open(path.Dir(*dir) + "/" + k)
 		if err != nil {
@@ -87,7 +88,7 @@ func genCode() {
 				return true
 			}
 			return false
-		})
+		}, ignoreSetup)
 		funcStrs = append(funcStrs, tmp...)
 	}
 	fileBuffer.WriteString(createBeforeCode(pkgName, recvName, *sourceName, funcStrs, usageImportNameAndPath))
@@ -115,7 +116,8 @@ func genCode() {
 	}
 }
 
-func getAllFunc(file *ast.File, rawFile *os.File, usageImportNameAndPath map[string]string, sourceName string, genFunc GenMethod, filter func(recvT string) bool) []string {
+func getAllFunc(file *ast.File, rawFile *os.File, usageImportNameAndPath map[string]string, sourceName string,
+	genFunc GenMethod, filter func(recvT string) bool, ignoreSetup bool) []string {
 	funcStrs := make([]string, 0)
 	importNamePathMapping := buildImportNameAndPath(file.Imports)
 	for _, v := range file.Decls {
@@ -150,6 +152,9 @@ func getAllFunc(file *ast.File, rawFile *os.File, usageImportNameAndPath map[str
 		recvName := receiver.Name
 		// 被代理对应持有的方法名
 		funName := funcDecl.Name.Name
+		if funName == "Setup" && ignoreSetup {
+			continue
+		}
 		inputList := make([]Argument, 0, 4)
 		outputList := make([]Argument, 0, 4)
 		// 处理参数的序列化
@@ -193,6 +198,48 @@ func getAllFunc(file *ast.File, rawFile *os.File, usageImportNameAndPath map[str
 		funcStrs = append(funcStrs, after())
 	}
 	return funcStrs
+}
+
+func ignoreSetup(astFiles map[string]*ast.File, receive string) (ignore bool) {
+	for _, astFile := range astFiles {
+		for _, decl := range astFile.Decls {
+			genDecl, ok := decl.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			typeSpec, ok := genDecl.Specs[0].(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
+			targetTypeName := strings.Split(receive, ".")[1]
+			if typeSpec.Name.Name != targetTypeName {
+				continue
+			}
+			// 只有Struct类型才能内嵌RpcServer
+			structType, ok := typeSpec.Type.(*ast.StructType)
+			if !ok {
+				continue
+			}
+			for _, field := range structType.Fields.List {
+				se, ok := field.Type.(*ast.SelectorExpr)
+				if !ok {
+					continue
+				}
+				if se.Sel.Name != "RpcServer" {
+					continue
+				}
+				ident, ok := se.X.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				if ident.Name != "server" {
+					continue
+				}
+				return true
+			}
+		}
+	}
+	return
 }
 
 func buildImportNameAndPath(imports []*ast.ImportSpec) map[string]string {

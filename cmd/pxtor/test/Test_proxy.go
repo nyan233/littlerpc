@@ -2,7 +2,7 @@ package test
 
 /*
    @Generator   : pxtor
-   @CreateTime  : 2023-03-07 10:47:45.1592292 +0800 CST m=+0.025307901
+   @CreateTime  : 2023-03-07 21:18:00.1704618 +0800 CST m=+0.039838201
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
@@ -14,16 +14,16 @@ import (
 )
 
 var (
-	_ binder174a0324330e8f10f394211729f9f684 = new(client.Client)
-	_ caller174a0324330e8f10f394211729f9f684 = new(client.Client)
+	_ binder174a2588b15e5a68bcb18c800d03825b = new(client.Client)
+	_ caller174a2588b15e5a68bcb18c800d03825b = new(client.Client)
 	_ TestProxy                              = new(testImpl)
 )
 
-type binder174a0324330e8f10f394211729f9f684 interface {
+type binder174a2588b15e5a68bcb18c800d03825b interface {
 	BindFunc(source string, proxy interface{}) error
 }
 
-type caller174a0324330e8f10f394211729f9f684 interface {
+type caller174a2588b15e5a68bcb18c800d03825b interface {
 	Call(service string, opts []client.CallOption, args ...interface{}) (reps []interface{}, err error)
 }
 
@@ -41,20 +41,20 @@ type TestProxy interface {
 }
 
 type testImpl struct {
-	caller174a0324330e8f10f394211729f9f684
+	caller174a2588b15e5a68bcb18c800d03825b
 }
 
-func NewTest(b binder174a0324330e8f10f394211729f9f684) TestProxy {
+func NewTest(b binder174a2588b15e5a68bcb18c800d03825b) TestProxy {
 	proxy := new(testImpl)
 	err := b.BindFunc("Test", proxy)
 	if err != nil {
 		panic(err)
 	}
-	c, ok := b.(caller174a0324330e8f10f394211729f9f684)
+	c, ok := b.(caller174a2588b15e5a68bcb18c800d03825b)
 	if !ok {
 		panic("the argument is not implemented caller")
 	}
-	proxy.caller174a0324330e8f10f394211729f9f684 = c
+	proxy.caller174a2588b15e5a68bcb18c800d03825b = c
 	return proxy
 }
 
