@@ -1,0 +1,18 @@
+goos: windows
+goarch: amd64
+pkg: github.com/nyan233/littlerpc/core/common/msgparser
+cpu: Intel(R) Core(TM) i7-8705G CPU @ 3.10GHz
+BenchmarkParser
+BenchmarkParser/LRPCProtocol-OneParse-1Message
+BenchmarkParser/LRPCProtocol-OneParse-1Message-8         	  422565	      2928 ns/op	 149.59 MB/s	    422565 RunCount	     416 B/op	      11 allocs/op
+BenchmarkParser/LRPCProtocol-OneParse-4Message
+BenchmarkParser/LRPCProtocol-OneParse-4Message-8         	  191997	      5531 ns/op	 361.94 MB/s	    191997 RunCount	    1336 B/op	      45 allocs/op
+BenchmarkParser/LRPCProtocol-OneParse-16Message
+BenchmarkParser/LRPCProtocol-OneParse-16Message-8        	   76582	     16000 ns/op	 491.74 MB/s	     76582 RunCount	    5891 B/op	     193 allocs/op
+BenchmarkParser/LRPCProtocol-OneParse-64Message
+BenchmarkParser/LRPCProtocol-OneParse-64Message-8        	   22477	     48587 ns/op	 620.41 MB/s	     22477 RunCount	   21861 B/op	     721 allocs/op
+BenchmarkParser/LRPCProtocol-OneParse-256Message
+BenchmarkParser/LRPCProtocol-OneParse-256Message-8       	    5613	    191600 ns/op	 616.57 MB/s	      5613 RunCount	   86905 B/op	    2899 allocs/op
+BenchmarkParser/LRPCProtocol-OneParse-1024Message
+BenchmarkParser/LRPCProtocol-OneParse-1024Message-8      	    1509	    756886 ns/op	 620.23 MB/s	      1509 RunCount	  363333 B/op	   11531 allocs/op
+PASS
