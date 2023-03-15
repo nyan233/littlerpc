@@ -49,7 +49,7 @@ func TestAllMap(t *testing.T) {
 		case 3:
 			iMap = &SyncMap118[string, int]{}
 		case 4:
-			iMap = NewRCUMap[string, int]()
+			iMap = NewRCUMap[string, int](128)
 		}
 		genData := make([]gen, KeyNum)
 		now := time.Now()

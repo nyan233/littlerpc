@@ -202,6 +202,7 @@ func getAllFunc(file *ast.File, rawFile *os.File, usageImportNameAndPath map[str
 
 func ignoreSetup(astFiles map[string]*ast.File, receive string) (ignore bool) {
 	for _, astFile := range astFiles {
+		importNameAndPath := buildImportNameAndPath(astFile.Imports)
 		for _, decl := range astFile.Decls {
 			genDecl, ok := decl.(*ast.GenDecl)
 			if !ok {
@@ -232,7 +233,8 @@ func ignoreSetup(astFiles map[string]*ast.File, receive string) (ignore bool) {
 				if !ok {
 					continue
 				}
-				if ident.Name != "server" {
+				importPath := importNameAndPath[ident.Name]
+				if importPath != "github.com/nyan233/littlerpc/core/server" {
 					continue
 				}
 				return true

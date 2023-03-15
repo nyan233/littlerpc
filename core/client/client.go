@@ -4,19 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nyan233/littlerpc/core/client/loadbalance"
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	"github.com/nyan233/littlerpc/core/common/logger"
 	"github.com/nyan233/littlerpc/core/common/metadata"
 	transport2 "github.com/nyan233/littlerpc/core/common/transport"
 	metaDataUtil "github.com/nyan233/littlerpc/core/common/utils/metadata"
 	container2 "github.com/nyan233/littlerpc/core/container"
-	"github.com/nyan233/littlerpc/core/middle/loadbalance"
 	error2 "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/utils/random"
 	"github.com/nyan233/littlerpc/internal/pool"
 	"reflect"
-	"time"
 )
 
 type Complete struct {
@@ -29,7 +28,7 @@ type Complete struct {
 type Client struct {
 	cfg *Config
 	// 用于连接管理
-	cm *connManager
+	balancer loadbalance.Balancer
 	// 客户端的事件驱动引擎
 	engine transport2.ClientBuilder
 	// 为每个连接分配的资源
@@ -39,7 +38,7 @@ type Client struct {
 	contextInitId uint64
 	// services 可以支持不同实例的调用
 	// 所有的操作都是线程安全的
-	services container2.RCUMap[string, *metadata.Process]
+	services *container2.RCUMap[string, *metadata.Process]
 	// 用于keepalive
 	logger logger.LLogger
 	// 用于超时管理和异步调用模拟的goroutine池
@@ -75,28 +74,8 @@ func New(opts ...Option) (*Client, error) {
 		return nil, err
 	}
 	// 初始化负载均衡功能
-	client.connSourceSet = &container2.RWMutexMap[transport2.ConnAdapter, *connSource]{}
-	client.cm = new(connManager)
-	client.cm.cfg = config
-	if config.BalancerFactory != nil {
-		client.cm.balancer = config.BalancerFactory()
-	}
-	client.cm.selector = config.SelectorFactory(
-		config.MuxConnection,
-		func(node loadbalance.RpcNode) (transport2.ConnAdapter, error) {
-			return client.engine.Client().NewConn(transport2.NetworkClientConfig{
-				ServerAddr: node.Address,
-				KeepAlive:  config.KeepAlive,
-				Dialer:     nil,
-			})
-		},
-	)
-	if config.ResolverFactory != nil {
-		client.cm.resolver, err = config.ResolverFactory(config.ResolverParseUrl, client.cm.balancer, time.Second)
-		if err != nil {
-			return nil, err
-		}
-	}
+	client.connSourceSet = new(container2.RWMutexMap[transport2.ConnAdapter, *connSource])
+	defer client.initBalancer(config)()
 	// init goroutine pool
 	if config.PoolSize <= 0 {
 		// 关闭Async模式
@@ -117,11 +96,59 @@ func New(opts ...Option) (*Client, error) {
 	// init ErrHandler
 	client.eHandle = config.ErrHandler
 	// init service map
-	client.services = *container2.NewRCUMap[string, *metadata.Process]()
+	client.services = container2.NewRCUMap[string, *metadata.Process](64)
 	// init context manager
 	client.contextM = newContextManager()
 	client.contextInitId = uint64(random.FastRand())
 	return client, nil
+}
+
+func (c *Client) initBalancer(config *Config) (afterStart func()) {
+	bConfig := new(loadbalance.Config)
+	bConfig.Logger = c.logger
+	bConfig.MuxConnSize = config.MuxConnection
+	bConfig.ConnectionFactory = func(node loadbalance.RpcNode) (transport2.ConnAdapter, error) {
+		conn, err := c.engine.Client().NewConn(transport2.NetworkClientConfig{
+			ServerAddr: node.Address,
+			KeepAlive:  config.KeepAlive,
+			Dialer:     nil,
+		})
+		if err != nil {
+			return nil, err
+		}
+		connSrc := newConnSource(c.cfg.ParserFactory, conn, node)
+		c.connSourceSet.Store(conn, connSrc)
+		return connSrc, nil
+	}
+	bConfig.CloseFunc = func(conn transport2.ConnAdapter) {
+		connSrc, ok := conn.(*connSource)
+		if !ok {
+			panic("closeFunc the conn type is not *connSource")
+		}
+		ableRelease, err := connSrc.halfClose()
+		if err != nil {
+			c.logger.Warn(err.Error())
+			return
+		}
+		if ableRelease {
+			c.logger.Debug("LRPC: balancer click CloseFunc : %v", connSrc.ConnAdapter.Close())
+		}
+	}
+	if !config.OpenLoadBalance {
+		bConfig.Resolver = func() ([]loadbalance.RpcNode, error) {
+			return []loadbalance.RpcNode{
+				{Address: config.ServerAddr},
+			}, nil
+		}
+		bConfig.ResolverUpdateInterval = -1
+		bConfig.Scheme = "scheme"
+	} else {
+		bConfig.Resolver = config.BalancerResolverFunc
+		bConfig.ResolverUpdateInterval = config.ResolverUpdateInterval
+	}
+	return func() {
+		c.balancer = config.BalancerFactory(*bConfig)
+	}
 }
 
 func (c *Client) BindFunc(sourceName string, i interface{}) error {
@@ -275,8 +302,8 @@ func (c *Client) call(
 		_ = c.pluginManager.Send4C(pCtx, writeMsg, err)
 		return nil, err
 	}
-
-	err = c.sendCallMsg(pCtx, cc, ctxId, writeMsg, cs, false)
+	var notifyChannel chan Complete
+	notifyChannel, err = c.sendCallMsg(pCtx, cc, ctxId, writeMsg, cs, false)
 	if err != nil {
 		switch err.Code() {
 		case error2.ConnectionErr:
@@ -291,7 +318,7 @@ func (c *Client) call(
 			reps = make([]interface{}, len(process.ResultsType))
 		}
 	}
-	reps, err = c.readMsgAndDecodeReply(ctx, pCtx, cc, writeMsg.GetMsgId(), cs, process, reps, !check)
+	reps, err = c.readMsgAndDecodeReply(ctx, notifyChannel, pCtx, cc, writeMsg.GetMsgId(), cs, process, reps, !check)
 	// 插件错误中断后续的处理
 	if err != nil && (err.Code() == errorhandler.ErrPlugin.Code()) {
 		return reps, err
@@ -341,25 +368,23 @@ func (c *Client) AsyncCall(service string, opts []CallOption, args []interface{}
 			callBack(nil, err)
 			return
 		}
-		err = c.sendCallMsg(nil, cc, ctxId, msg, conn, false)
+		var notifyChannel chan Complete
+		notifyChannel, err = c.sendCallMsg(nil, cc, ctxId, msg, conn, false)
 		if err != nil {
 			callBack(nil, err)
 			return
 		}
 		reps := make([]interface{}, len(process.ResultsType))
-		reps, err = c.readMsgAndDecodeReply(ctx, nil, cc, msg.GetMsgId(), conn, process, reps, false)
+		reps, err = c.readMsgAndDecodeReply(ctx, notifyChannel, nil, cc, msg.GetMsgId(), conn, process, reps, false)
 		callBack(reps, err)
 	})
 }
 
 func (c *Client) takeConnSource(service string) (*connSource, error2.LErrorDesc) {
-	conn, err := c.cm.TakeConn(service)
-	if err != nil {
-		return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, err)
-	}
-	cs, ok := c.connSourceSet.LoadOk(conn)
+	conn := c.balancer.Target(service)
+	cs, ok := conn.(*connSource)
 	if !ok {
-		return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, "connection source not found")
+		return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, "target result is not connSource type")
 	}
 	return cs, nil
 }
@@ -374,5 +399,5 @@ func (c *Client) Close() error {
 	if err != nil {
 		return err
 	}
-	return c.cm.Exit()
+	return c.balancer.Exit()
 }

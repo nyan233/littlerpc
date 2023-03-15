@@ -3,14 +3,10 @@ github.com/cespare/xxhash v1.1.0/go.mod h1:XrSqR1VqqWfGrhpAt58auRo0WTKS1nRRg3ghf
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/lafikl/consistent v0.0.0-20220512074542-bdd3606bfc3e h1:DuhzIzxOx3aJ0j4enY7SQ9bvulrT/XjkGAqiychfavc=
-github.com/lafikl/consistent v0.0.0-20220512074542-bdd3606bfc3e/go.mod h1:JmowInJuqa6EpSut8NSMAZtlvK9uL+8Q1P7tyew5rQY=
 github.com/lesismal/llib v1.1.6 h1:/mtiOFShydKSEsO/cajK8benGD1OHgP51GrBni7rGEY=
 github.com/lesismal/llib v1.1.6/go.mod h1:3vmCrIMrpkaoA3bDu/sI+J7EyEUMPbOvmAxb7PlzilM=
 github.com/lesismal/nbio v1.3.0 h1:2rwOndTFrz+YuRabuDyzo4nE9ocJfHmACIj7FA73ZwE=
 github.com/lesismal/nbio v1.3.0/go.mod h1:11bIzMFWwJJ5WurkTKIJejOw5JPCfPP+siptchxeSr8=
-github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1 h1:lYpkrQH5ajf0OXOcUbGjvZxxijuBwbbmlSxLiuofa+g=
-github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1/go.mod h1:pD8RvIylQ358TN4wwqatJ8rNavkEINozVn9DtGI3dfQ=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2Kzu9HwQUA=

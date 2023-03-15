@@ -22,9 +22,9 @@ type RCUMap[Key comparable, Val any] struct {
 	pointer atomic.Pointer[map[Key]Val]
 }
 
-func NewRCUMap[K comparable, V any]() *RCUMap[K, V] {
+func NewRCUMap[K comparable, V any](size int) *RCUMap[K, V] {
 	m := new(RCUMap[K, V])
-	tmp := make(map[K]V, 128)
+	tmp := make(map[K]V, size)
 	m.pointer.Store(&tmp)
 	return m
 }
@@ -49,16 +49,7 @@ func (R *RCUMap[Key, Val]) Store(key Key, val Val) {
 }
 
 func (R *RCUMap[Key, Val]) StoreMulti(kvs []RCUMapElement[Key, Val]) {
-	if kvs == nil || len(kvs) == 0 {
-		return
-	}
-	R.mu.Lock()
-	defer R.mu.Unlock()
-	copyMap := R.copy()
-	for _, kv := range kvs {
-		copyMap[kv.Key] = kv.Value
-	}
-	R.pointer.Store(&copyMap)
+	R.StoreAndDeleteMulti(kvs, nil)
 }
 
 func (R *RCUMap[Key, Val]) DeleteOk(key Key) (Val, bool) {
@@ -74,14 +65,25 @@ func (R *RCUMap[Key, Val]) Delete(key Key) {
 }
 
 func (R *RCUMap[Key, Val]) DeleteMulti(keys []Key) []RCUDeleteNode[Val] {
-	if keys == nil || len(keys) == 0 {
-		return nil
+	return R.StoreAndDeleteMulti(nil, keys)
+}
+
+func (R *RCUMap[Key, Val]) StoreAndDeleteMulti(kvs []RCUMapElement[Key, Val], ks []Key) (delRes []RCUDeleteNode[Val]) {
+	if len(kvs) == 0 && len(ks) == 0 {
+		return
 	}
 	R.mu.Lock()
 	defer R.mu.Unlock()
 	copyMap := R.copy()
-	values := make([]RCUDeleteNode[Val], 0, len(keys))
-	for _, key := range keys {
+	for _, kv := range kvs {
+		copyMap[kv.Key] = kv.Value
+	}
+	if len(kvs) > 0 && len(ks) == 0 {
+		R.pointer.Store(&copyMap)
+		return
+	}
+	values := make([]RCUDeleteNode[Val], 0, len(ks))
+	for _, key := range ks {
 		val, ok := copyMap[key]
 		values = append(values, RCUDeleteNode[Val]{
 			Value: val,

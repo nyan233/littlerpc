@@ -18,7 +18,6 @@ type NBioTcpEngine struct {
 	onMsg   func(conn ConnAdapter, bytes []byte)
 	onClose func(conn ConnAdapter, err error)
 	onOpen  func(conn ConnAdapter)
-	onErr   func(err error)
 }
 
 func NewNBioTcpClient() ClientBuilder {
@@ -36,9 +35,6 @@ func NewNBioTcpClient() ClientBuilder {
 		onClose: func(conn ConnAdapter, err error) {
 			return
 		},
-		onErr: func(err error) {
-			return
-		},
 	}
 }
 
@@ -53,9 +49,6 @@ func NewNBioTcpServer(config NetworkServerConfig) ServerBuilder {
 	server := &NBioTcpEngine{}
 	server.server = eng
 	// set default function
-	server.onErr = func(err error) {
-		panic(interface{}(err))
-	}
 	server.onMsg = func(conn ConnAdapter, bytes []byte) {
 		return
 	}
@@ -63,9 +56,6 @@ func NewNBioTcpServer(config NetworkServerConfig) ServerBuilder {
 		return
 	}
 	server.onClose = func(conn ConnAdapter, err error) {
-		return
-	}
-	server.onRead = func(conn ConnAdapter) {
 		return
 	}
 	return server
@@ -115,13 +105,25 @@ func (engine *NBioTcpEngine) Start() error {
 		return errors.New("wsEngine already started")
 	}
 	server := engine.server
+	engine.bind()
+	return server.Start()
+}
+
+func (engine *NBioTcpEngine) bind() {
+	server := engine.server
 	if engine.tlsC == nil {
 		server.OnOpen(func(c *nbio.Conn) {
 			engine.onOpen(c)
 		})
-		server.OnData(func(c *nbio.Conn, data []byte) {
-			engine.onMsg(c, data)
-		})
+		if engine.onRead == nil {
+			server.OnData(func(c *nbio.Conn, data []byte) {
+				engine.onMsg(c, data)
+			})
+		} else {
+			server.OnRead(func(c *nbio.Conn) {
+				engine.onRead(c)
+			})
+		}
 		server.OnClose(func(c *nbio.Conn, err error) {
 			engine.onClose(c, err)
 		})
@@ -135,15 +137,10 @@ func (engine *NBioTcpEngine) Start() error {
 				engine.onOpen(tlsConn)
 			}),
 		)
-		server.OnRead(func(c *nbio.Conn) {
-			engine.onOpen(c)
-		})
 		server.OnData(ntls.WrapData(func(c *nbio.Conn, tlsConn *ntls.Conn, data []byte) {
 			engine.onMsg(tlsConn, data)
 		}))
 	}
-
-	return server.Start()
 }
 
 func (engine *NBioTcpEngine) Stop() error {

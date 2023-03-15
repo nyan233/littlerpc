@@ -2,13 +2,11 @@ package client
 
 import (
 	"crypto/tls"
+	"github.com/nyan233/littlerpc/core/client/loadbalance"
 	"github.com/nyan233/littlerpc/core/common/logger"
 	"github.com/nyan233/littlerpc/core/common/msgparser"
 	"github.com/nyan233/littlerpc/core/common/msgwriter"
 	"github.com/nyan233/littlerpc/core/middle/codec"
-	"github.com/nyan233/littlerpc/core/middle/loadbalance/balancer"
-	"github.com/nyan233/littlerpc/core/middle/loadbalance/resolver"
-	"github.com/nyan233/littlerpc/core/middle/loadbalance/selector"
 	"github.com/nyan233/littlerpc/core/middle/packer"
 	"github.com/nyan233/littlerpc/core/middle/plugin"
 	perror "github.com/nyan233/littlerpc/core/protocol/error"
@@ -40,14 +38,15 @@ type Config struct {
 	MuxConnection int
 	// 是否开启负载均衡
 	OpenLoadBalance bool
-	// 使用的负载均衡器
-	BalancerFactory balancer.Factory
-	// 使用的地址解析器
-	ResolverFactory resolver.Factory
-	// 负责维护节点连接的选择器
-	SelectorFactory selector.Factory
-	// 地址解析器解析地址时需要用到的Url
-	ResolverParseUrl string
+	// 负载均衡规则, 默认可选hash/roundRobin/random/consistentHash
+	BalancerScheme string
+	// 地址解析器, 默认提供http/file/live
+	BalancerResolverFunc loadbalance.ResolverFunc
+	// 负载均衡器的附加配置, 实现第三方的负载均衡器时可能需要此配置
+	BalancerTailConfig interface{}
+	// 负载均衡器的地址列表更新间隔, 默认120s
+	ResolverUpdateInterval time.Duration
+	BalancerFactory        func(config loadbalance.Config) loadbalance.Balancer
 	// 安装的插件
 	Plugins []plugin.ClientPlugin
 	// 可以生成自定义错误的工厂回调函数

@@ -34,6 +34,27 @@ type HelloTest struct {
 	count int64
 	// 社区旗下的一些用户
 	userMap sync.Map
+	t       *testing.T
+	server2.RpcServer
+}
+
+func (t *HelloTest) Setup() {
+	err := t.HijackProcess("GetCount", func(stub *server2.Stub) {
+		assert.NoError(t.t, stub.Write(atomic.LoadInt64(&t.count)))
+		assert.NoError(t.t, stub.Write(nil))
+		assert.NoError(t.t, stub.WriteErr(nil))
+	})
+	assert.NoError(t.t, err)
+	err = t.HijackProcess("WaitSelectUserHijack", func(stub *server2.Stub) {
+		var uid int
+		assert.NoError(t.t, stub.Read(&uid))
+		// wait
+		<-stub.Done()
+		user, _, err := t.SelectUser(stub, uid)
+		assert.NoError(t.t, stub.Write(&user))
+		assert.NoError(t.t, stub.WriteErr(err))
+	})
+	assert.NoError(t.t, err)
 }
 
 func (t *HelloTest) GetCount() (int64, *User, error) {
@@ -74,6 +95,10 @@ func (t *HelloTest) WaitSelectUser(ctx context.Context, uid int) (*User, error) 
 	return &user, err
 }
 
+func (t *HelloTest) WaitSelectUserHijack(ctx context.Context, uid int) (*User, error) {
+	return nil, nil
+}
+
 func TestServerAndClient(t *testing.T) {
 	go func() {
 		log.Println(http.ListenAndServe("127.0.0.1:7878", nil))
@@ -83,10 +108,12 @@ func TestServerAndClient(t *testing.T) {
 	baseServerOpts := []server2.Option{
 		server2.WithAddressServer(":1234"),
 		server2.WithStackTrace(),
-		server2.WithLogger(logger.New(bilog.NewLogger(os.Stdout, bilog.PANIC))),
+		server2.WithLogger(logger.New(bilog.NewLogger(os.Stdout, bilog.PANIC,
+			bilog.WithLowBuffer(0), bilog.WithTopBuffer(0)))),
 		server2.WithOpenLogger(false),
 		server2.WithDebug(false),
-		//server2.WithPlugin(pLogger.New(os.Stdout)),
+		// server2.WithMessageParserOnRead(),
+		// server2.WithPlugin(pLogger.New(os.Stdout)),
 	}
 	baseClientOpts := []client.Option{
 		client.WithAddress(":1234"),
@@ -164,7 +191,9 @@ func testServerAndClient(t *testing.T, serverOpts []server2.Option, clientOpts [
 	ccSet map[string][]client.CallOption) {
 	sm := metrics.NewServer()
 	server := server2.New(append(serverOpts, server2.WithPlugin(sm))...)
-	h := &HelloTest{}
+	h := &HelloTest{
+		t: t,
+	}
 	err := server.RegisterClass("", h, map[string]metadata.ProcessOption{
 		"SelectUser": {
 			SyncCall:        true,
@@ -229,10 +258,14 @@ func testServerAndClient(t *testing.T, serverOpts []server2.Option, clientOpts [
 				_, err = c.Call("HelloTest.DeleteUser", nil, context.Background(), "string")
 				assert.Error(t, err, "call error is equal nil")
 				// 构造一次取消的请求
-				ctx, _ := context.WithTimeout(context.Background(), time.Millisecond*10)
+				ctx, _ := context.WithTimeout(context.Background(), time.Millisecond)
 				var rep User
 				opts, _ = ccSet["WaitSelectUser"]
 				assert.NoError(t, c.Request("HelloTest.WaitSelectUser", ctx, j+100, &rep, opts...), "cancel request failed")
+				// test hijack context
+				ctx, _ = context.WithTimeout(context.Background(), time.Millisecond)
+				_, err = proxy.WaitSelectUserHijack(ctx, 10)
+				assert.NoError(t, err, "cancel request failed")
 			}
 			wg.Done()
 		}()
@@ -258,18 +291,21 @@ func TestBalance(t *testing.T) {
 		t.Fatal(err)
 	}
 	go server.Service()
+	time.Sleep(time.Second)
 	defer server.Stop()
 	c1, err := client.New(
-		client.WithBalance("roundRobin"),
-		client.WithResolver("live", "live://127.0.0.1:8080;127.0.0.1:9090"),
+		client.WithBalancerScheme("roundRobin"),
+		client.WithOpenLoadBalance(),
+		client.WithLiveResolver("127.0.0.1:8080;127.0.0.1:9090"),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p1 := NewHelloTest(c1)
 	c2, err := client.New(
-		client.WithBalance("roundRobin"),
-		client.WithResolver("live", "live://127.0.0.1:8080;127.0.0.1:9090"),
+		client.WithBalancerScheme("roundRobin"),
+		client.WithOpenLoadBalance(),
+		client.WithLiveResolver("127.0.0.1:8080;127.0.0.1:9090"),
 	)
 	if err != nil {
 		t.Fatal(err)

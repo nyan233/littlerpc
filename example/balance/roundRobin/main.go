@@ -35,8 +35,8 @@ func Server() {
 
 func Client() {
 	// 根据规则开启负载均衡
-	c, err := client.New(client.WithResolver("live", "live://127.0.0.1:8080;127.0.0.1:9090"),
-		client.WithBalance("roundRobin"))
+	c, err := client.New(client.WithLiveResolver("127.0.0.1:8080;127.0.0.1:9090"),
+		client.WithBalancerScheme("roundRobin"))
 	if err != nil {
 		panic(err)
 	}

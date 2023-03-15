@@ -37,7 +37,7 @@ func (l *lRPCNoMux) Write(arg Argument, header byte) (err perror.LErrorDesc) {
 	}()
 	if wErr != nil {
 		return arg.EHandle.LWarpErrorDesc(errorhandler.ErrConnection,
-			fmt.Sprintf("Write NoMuxMessage failed, bytes len : %v", len(*bp)))
+			fmt.Sprintf("Write NoMuxMessage failed, bytes len : %v, err = %v", len(*bp), wErr))
 	}
 	if writeN != bp.Len() {
 		return arg.EHandle.LWarpErrorDesc(errorhandler.ErrConnection,

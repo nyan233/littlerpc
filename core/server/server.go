@@ -44,16 +44,16 @@ type connSourceDesc struct {
 type Server struct {
 	//	Server 提供的所有服务, 一个服务即一个API
 	//	比如: /littlerpc/internal/reflection.GetHandler --> func (l *LittleRpcReflection) GetHandler(source string) MethodTable
-	services container.RCUMap[string, *metadata.Process]
+	services *container.RCUMap[string, *metadata.Process]
 	// Server 提供的所有资源, 一个资源即一组服务的集合
 	// 主要供reflection使用
-	sources container.RCUMap[string, *metadata.Source]
+	sources *container.RCUMap[string, *metadata.Source]
 	// Server Engine
 	server transport2.ServerEngine
 	// 任务池
 	taskPool pool.TaskPool[string]
 	// 管理的连接与其拥有的资源
-	connsSourceDesc container.RWMutexMap[transport2.ConnAdapter, *connSourceDesc]
+	connsSourceDesc *container.RWMutexMap[transport2.ConnAdapter, *connSourceDesc]
 	// logger
 	logger logger.LLogger
 	// 注册的插件的管理器
@@ -74,8 +74,9 @@ func New(opts ...Option) *Server {
 	server.pool = sharedpool.NewSharedPool()
 	applyConfig(server, opts)
 	server.ev = newEvent()
-	server.services = *container.NewRCUMap[string, *metadata.Process]()
-	server.sources = *container.NewRCUMap[string, *metadata.Source]()
+	server.services = container.NewRCUMap[string, *metadata.Process](128)
+	server.sources = container.NewRCUMap[string, *metadata.Source](128)
+	server.connsSourceDesc = new(container.RWMutexMap[transport2.ConnAdapter, *connSourceDesc])
 	// init reflection service
 	err := server.RegisterClass(ReflectionSource, &LittleRpcReflection{server}, nil)
 	if err != nil {

@@ -42,10 +42,11 @@ func (stub *Stub) Read(p interface{}) error {
 	return nil
 }
 
+var (
+	NullBytes = make([]byte, 0)
+)
+
 func (stub *Stub) Write(p interface{}) error {
-	var (
-		NullBytes = make([]byte, 0)
-	)
 	switch p.(type) {
 	case nil:
 		stub.reply.AppendPayloads(NullBytes)

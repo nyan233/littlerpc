@@ -44,7 +44,7 @@ func BenchmarkMap(b *testing.B) {
 	for index, opt := range testOption {
 		var rcuMap *RCUMap[string, int]
 		if index == 0 {
-			rcuMap = NewRCUMap[string, int]()
+			rcuMap = NewRCUMap[string, int](128)
 			opt.Factory = func() MapOnTest[string, int] {
 				return nil
 			}

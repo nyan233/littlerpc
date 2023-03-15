@@ -2,7 +2,7 @@ package main
 
 /*
    @Generator   : pxtor
-   @CreateTime  : 2023-02-19 21:39:06.4972719 +0800 CST m=+0.006529601
+   @CreateTime  : 2023-03-07 22:09:36.4284803 +0800 CST m=+0.007060501
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
@@ -13,16 +13,16 @@ import (
 )
 
 var (
-	_ binder17453d667364085c0c5abdd2f045b605 = new(client.Client)
-	_ caller17453d667364085c0c5abdd2f045b605 = new(client.Client)
+	_ binder174a285998ba572c13bb9a3256a6b5f2 = new(client.Client)
+	_ caller174a285998ba572c13bb9a3256a6b5f2 = new(client.Client)
 	_ HelloTestProxy                         = new(helloTestImpl)
 )
 
-type binder17453d667364085c0c5abdd2f045b605 interface {
+type binder174a285998ba572c13bb9a3256a6b5f2 interface {
 	BindFunc(source string, proxy interface{}) error
 }
 
-type caller17453d667364085c0c5abdd2f045b605 interface {
+type caller174a285998ba572c13bb9a3256a6b5f2 interface {
 	Call(service string, opts []client.CallOption, args ...interface{}) (reps []interface{}, err error)
 }
 
@@ -34,23 +34,24 @@ type HelloTestProxy interface {
 	SelectUser(ctx context.Context, uid int, opts ...client.CallOption) (User, bool, error)
 	ModifyUser(ctx context.Context, uid int, user User, opts ...client.CallOption) (bool, error)
 	WaitSelectUser(ctx context.Context, uid int, opts ...client.CallOption) (*User, error)
+	WaitSelectUserHijack(ctx context.Context, uid int, opts ...client.CallOption) (*User, error)
 }
 
 type helloTestImpl struct {
-	caller17453d667364085c0c5abdd2f045b605
+	caller174a285998ba572c13bb9a3256a6b5f2
 }
 
-func NewHelloTest(b binder17453d667364085c0c5abdd2f045b605) HelloTestProxy {
+func NewHelloTest(b binder174a285998ba572c13bb9a3256a6b5f2) HelloTestProxy {
 	proxy := new(helloTestImpl)
 	err := b.BindFunc("HelloTest", proxy)
 	if err != nil {
 		panic(err)
 	}
-	c, ok := b.(caller17453d667364085c0c5abdd2f045b605)
+	c, ok := b.(caller174a285998ba572c13bb9a3256a6b5f2)
 	if !ok {
 		panic("the argument is not implemented caller")
 	}
-	proxy.caller17453d667364085c0c5abdd2f045b605 = c
+	proxy.caller174a285998ba572c13bb9a3256a6b5f2 = c
 	return proxy
 }
 
@@ -91,6 +92,12 @@ func (p helloTestImpl) ModifyUser(ctx context.Context, uid int, user User, opts 
 
 func (p helloTestImpl) WaitSelectUser(ctx context.Context, uid int, opts ...client.CallOption) (*User, error) {
 	reps, err := p.Call("HelloTest.WaitSelectUser", opts, ctx, uid)
+	r0, _ := reps[0].(*User)
+	return r0, err
+}
+
+func (p helloTestImpl) WaitSelectUserHijack(ctx context.Context, uid int, opts ...client.CallOption) (*User, error) {
+	reps, err := p.Call("HelloTest.WaitSelectUserHijack", opts, ctx, uid)
 	r0, _ := reps[0].(*User)
 	return r0, err
 }

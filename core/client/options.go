@@ -2,14 +2,12 @@ package client
 
 import (
 	"crypto/tls"
+	"github.com/nyan233/littlerpc/core/client/loadbalance"
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	"github.com/nyan233/littlerpc/core/common/logger"
 	"github.com/nyan233/littlerpc/core/common/msgparser"
 	msgwriter2 "github.com/nyan233/littlerpc/core/common/msgwriter"
 	"github.com/nyan233/littlerpc/core/middle/codec"
-	"github.com/nyan233/littlerpc/core/middle/loadbalance/balancer"
-	"github.com/nyan233/littlerpc/core/middle/loadbalance/resolver"
-	"github.com/nyan233/littlerpc/core/middle/loadbalance/selector"
 	"github.com/nyan233/littlerpc/core/middle/packer"
 	"github.com/nyan233/littlerpc/core/middle/plugin"
 	perror "github.com/nyan233/littlerpc/core/protocol/error"
@@ -42,7 +40,8 @@ func WithDefault() Option {
 		WithPoolSize(0)(config)
 		WithNoMuxWriter()(config)
 		WithTraitMessageParser()(config)
-		WithOrderSelector()(config)
+		WithBalancerFactory(loadbalance.New)(config)
+		WithResolverUpdateInterval(time.Second * 120)(config)
 	}
 }
 
@@ -74,28 +73,51 @@ func WithKeepAlive(timeOut time.Duration) Option {
 	}
 }
 
-func WithResolver(bScheme, url string) Option {
+func WithResolver(r loadbalance.ResolverFunc) Option {
 	return func(config *Config) {
-		config.ResolverFactory = resolver.Get(bScheme)
-		config.ResolverParseUrl = url
+		config.BalancerResolverFunc = r
 	}
 }
 
 func WithHttpResolver(url string) Option {
-	return WithResolver("http", url)
+	return WithResolver(loadbalance.DefaultHttpResolver(url))
 }
 
-func WithLiveResolver(url string) Option {
-	return WithResolver("live", url)
+func WithLiveResolver(splitAddr string) Option {
+	return WithResolver(loadbalance.DefaultLiveResolver(splitAddr))
 }
 
-func WithFileResolver(url string) Option {
-	return WithResolver("file", url)
+func WithFileResolver(path string) Option {
+	return WithResolver(loadbalance.DefaultFileResolver(path))
 }
 
-func WithBalance(scheme string) Option {
+func WithOpenLoadBalance() Option {
 	return func(config *Config) {
-		config.BalancerFactory = balancer.Get(scheme)
+		config.OpenLoadBalance = true
+	}
+}
+
+func WithBalancerScheme(scheme string) Option {
+	return func(config *Config) {
+		config.BalancerScheme = scheme
+	}
+}
+
+func WithBalancerTailConfig(config interface{}) Option {
+	return func(config *Config) {
+		config.BalancerTailConfig = config
+	}
+}
+
+func WithResolverUpdateInterval(updateInterval time.Duration) Option {
+	return func(config *Config) {
+		config.ResolverUpdateInterval = updateInterval
+	}
+}
+
+func WithBalancerFactory(fn func(loadbalance.Config) loadbalance.Balancer) Option {
+	return func(config *Config) {
+		config.BalancerFactory = fn
 	}
 }
 
@@ -206,39 +228,19 @@ func WithJsonRpc2Writer() Option {
 }
 
 func WithHashLoadBalance() Option {
-	return func(config *Config) {
-		config.BalancerFactory = balancer.Get("hash")
-	}
+	return WithBalancerScheme("hash")
 }
 
 func WithRoundRobinBalance() Option {
-	return func(config *Config) {
-		config.BalancerFactory = balancer.Get("roundRobin")
-	}
+	return WithBalancerScheme("roundRobin")
 }
 
 func WithRandomBalance() Option {
-	return func(config *Config) {
-		config.BalancerFactory = balancer.Get("random")
-	}
+	return WithBalancerScheme("random")
 }
 
 func WithConsistentHashBalance() Option {
-	return func(config *Config) {
-		config.BalancerFactory = balancer.Get("consistentHash")
-	}
-}
-
-func WithRandomSelector() Option {
-	return func(config *Config) {
-		config.SelectorFactory = selector.Get("random")
-	}
-}
-
-func WithOrderSelector() Option {
-	return func(config *Config) {
-		config.SelectorFactory = selector.Get("order")
-	}
+	return WithBalancerScheme("consistentHash")
 }
 
 func WithMessageParserOnRead() Option {

@@ -17,6 +17,10 @@ import (
 	"time"
 )
 
+var (
+	hijackResultCache = []reflect.Value{reflect.ValueOf(errorhandler.Success)}
+)
+
 // 过程中的副作用会导致msgOpt.Message在调用结束之前被放回pasrser中
 func (s *Server) messageKeepAlive(msgOpt *messageOpt) {
 	defer func() {
@@ -189,7 +193,13 @@ func (s *Server) hijackCall(msgOpt *messageOpt) {
 	if msgOpt.Service.SupportContext && stub.Context.Err() == nil && msgOpt.Cancel != nil {
 		msgOpt.Cancel()
 	}
-	err = s.pManager.AfterCall4S(msgOpt.PCtx, nil, []reflect.Value{reflect.ValueOf(stub.callErr)}, nil)
+	var hijackResults []reflect.Value
+	if stub.callErr == nil {
+		hijackResults = hijackResultCache
+	} else {
+		hijackResults = []reflect.Value{reflect.ValueOf(stub.callErr)}
+	}
+	err = s.pManager.AfterCall4S(msgOpt.PCtx, nil, hijackResults, nil)
 	if err != nil {
 		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, err)
 		return

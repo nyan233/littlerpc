@@ -6,6 +6,7 @@ import (
 	"github.com/nyan233/littlerpc/core/utils/random"
 	"github.com/stretchr/testify/assert"
 	"math"
+	"net"
 	"testing"
 )
 
@@ -41,6 +42,45 @@ func testSlice(t *testing.T, inter SliceTester) {
 	assert.True(t, inter.Available())
 	inter.Reset()
 	assert.False(t, inter.Available())
+}
+
+func TestConcurrentArray(t *testing.T) {
+	a := NewConcurrentArray[net.Conn](1024)
+	var conn net.Conn = new(net.TCPConn)
+	a.Swap(100, &conn)
+	assert.NotNil(t, a.Access(100))
+}
+
+func BenchmarkConcurrentArray(b *testing.B) {
+	a := NewConcurrentArray[net.Conn](1024)
+	b.Run("Access", func(b *testing.B) {
+		b.ReportAllocs()
+		b.SetParallelism(1024)
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				a.Access(500)
+			}
+		})
+	})
+	b.Run("Swap", func(b *testing.B) {
+		b.ReportAllocs()
+		b.SetParallelism(1024)
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				a.Swap(200, nil)
+			}
+		})
+	})
+	b.Run("AccessAndSwap", func(b *testing.B) {
+		b.ReportAllocs()
+		b.SetParallelism(1024)
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				a.Swap(500, nil)
+				a.Access(500)
+			}
+		})
+	})
 }
 
 func genSeqNumOnByte(n int) []byte {

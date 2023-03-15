@@ -13,8 +13,8 @@ import (
 
 func TestReflection(t *testing.T) {
 	noneServer := &Server{
-		services: *container.NewRCUMap[string, *metadata.Process](),
-		sources:  *container.NewRCUMap[string, *metadata.Source](),
+		services: container.NewRCUMap[string, *metadata.Process](128),
+		sources:  container.NewRCUMap[string, *metadata.Source](128),
 	}
 	noneServer.config.Store(&Config{
 		DefaultProcessOption: metadata.ProcessOption{

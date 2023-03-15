@@ -51,12 +51,7 @@ func (c *Client) handleReturnError(msg *message.Message) error2.LErrorDesc {
 }
 
 // NOTE: 使用完的Message一定要放回给Parser的分配器中
-func (c *Client) readMsg(ctx context.Context, pCtx *plugin.Context, cc *callConfig, msgId uint64, lc *connSource) (msg *message.Message, err error2.LErrorDesc) {
-	done, ok := lc.LoadNotify(msgId)
-	if !ok {
-		return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrConnection, "notifySet channel not found")
-	}
-	defer lc.DeleteNotify(msgId)
+func (c *Client) readMsg(ctx context.Context, notifyChannel chan Complete, pCtx *plugin.Context, cc *callConfig, msgId uint64, lc *connSource) (msg *message.Message, err error2.LErrorDesc) {
 	defer func() {
 		if pErr := c.pluginManager.Receive4C(pCtx, msg, err); pErr != nil {
 			err = c.eHandle.LWarpErrorDesc(errorhandler.ErrPlugin, pErr)
@@ -75,14 +70,14 @@ readStart:
 		if ctxId == 0 {
 			return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, "register context but context id not found")
 		}
-		err := c.sendCallMsg(nil, cc, ctxId, cancelMsg, lc, true)
+		_, err := c.sendCallMsg(nil, cc, ctxId, cancelMsg, lc, true)
 		if err != nil {
 			return nil, err
 		}
 		// 重置ctx
 		ctx = context.Background()
 		goto readStart
-	case pMsg := <-done:
+	case pMsg := <-notifyChannel:
 		if pMsg.Error != nil {
 			return nil, pMsg.Error
 		}
@@ -102,10 +97,10 @@ readStart:
 }
 
 // bind 是否直接使用reps中的值作为反序列化的目标
-func (c *Client) readMsgAndDecodeReply(ctx context.Context, pCtx *plugin.Context,
+func (c *Client) readMsgAndDecodeReply(ctx context.Context, notifyChannel chan Complete, pCtx *plugin.Context,
 	cc *callConfig, msgId uint64, lc *connSource, p *cMatadata.Process,
 	reps []interface{}, bind bool) ([]interface{}, error2.LErrorDesc) {
-	msg, err := c.readMsg(ctx, pCtx, cc, msgId, lc)
+	msg, err := c.readMsg(ctx, notifyChannel, pCtx, cc, msgId, lc)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +227,7 @@ func (c *Client) identArgAndEncode(service string, cc *callConfig, msg *message.
 
 // direct == true表示直接发送消息, false表示sendMsg自己会将Message的类型修改为Call
 // context中保存ContextId则不管true or false都会被写入
-func (c *Client) sendCallMsg(pCtx *plugin.Context, cc *callConfig, ctxId uint64, msg *message.Message, lc *connSource, direct bool) error2.LErrorDesc {
+func (c *Client) sendCallMsg(pCtx *plugin.Context, cc *callConfig, ctxId uint64, msg *message.Message, lc *connSource, direct bool) (notifyChannel chan Complete, err error2.LErrorDesc) {
 	// init header
 	if !direct {
 		msg.SetMsgId(lc.GetMsgId())
@@ -244,39 +239,40 @@ func (c *Client) sendCallMsg(pCtx *plugin.Context, cc *callConfig, ctxId uint64,
 			msg.MetaData.Store(message.PackerScheme, cc.Packer.Scheme())
 		}
 		// 注册用于通知的Channel
-		storeOk := lc.StoreNotify(msg.GetMsgId(), make(chan Complete, 1))
-		if !storeOk {
-			return c.eHandle.LWarpErrorDesc(errorhandler.ErrConnection, "notifySet channel already release")
+		notifyChannel = make(chan Complete, 1)
+		bindOk := lc.BindNotifyChannel(msg.GetMsgId(), notifyChannel)
+		if !bindOk {
+			return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrConnection, "notifySet channel already release")
 		}
 	}
 	if ctxId > 0 {
 		msg.MetaData.Store(message.ContextId, strconv.FormatUint(ctxId, 10))
 	}
 	if err := c.pluginManager.Send4C(pCtx, msg, nil); err != nil {
-		return err
+		return nil, err
 	}
 	// 具体写入器已经提前被选定好, 客户端不需要泛写入器, 所以Header可以忽略
 	writeErr := cc.Writer.Write(msgwriter.Argument{
 		Message: msg,
-		Conn:    lc.conn,
+		Conn:    lc,
 		Encoder: cc.Packer,
 		Pool:    sharedPool.TakeBytesPool(),
 		OnDebug: debug.MessageDebug(c.logger, false),
 		EHandle: c.eHandle,
 	}, math.MaxUint8)
-	if err := c.pluginManager.AfterSend4C(pCtx, msg, writeErr); err != nil {
-		return err
+	if err = c.pluginManager.AfterSend4C(pCtx, msg, writeErr); err != nil {
+		return
 	}
 	if writeErr != nil {
 		switch writeErr.Code() {
 		case error2.UnsafeOption, error2.MessageEncodingFailed:
-			_ = lc.conn.Close()
+			_ = lc.ConnAdapter.Close()
 		default:
 			c.logger.Warn("LRPC: sendCallMsg Writer.Write return error: %v", writeErr)
 		}
-		return c.eHandle.LWarpErrorDesc(writeErr, "sendCallMsg usage Writer.Write failed")
+		return nil, c.eHandle.LWarpErrorDesc(writeErr, "sendCallMsg usage Writer.Write failed")
 	}
-	return nil
+	return
 }
 
 func (c *Client) getContextId() uint64 {

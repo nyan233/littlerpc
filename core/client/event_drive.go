@@ -5,7 +5,6 @@ import (
 	"github.com/nyan233/littlerpc/core/common/msgparser"
 	"github.com/nyan233/littlerpc/core/common/transport"
 	"github.com/nyan233/littlerpc/core/protocol/message"
-	"github.com/nyan233/littlerpc/core/utils/random"
 	"io"
 	"math"
 )
@@ -72,7 +71,7 @@ func (c *Client) parseMessageAndHandle(conn transport.ConnAdapter, data []byte, 
 					c.logger.Warn("LRPC: server parser parse message failed, but client notifySet channel is block")
 				}
 			}
-			_ = desc.conn.Close()
+			_ = desc.ConnAdapter.Close()
 			return
 		}
 		switch pMsg.Message.GetMsgType() {
@@ -81,16 +80,16 @@ func (c *Client) parseMessageAndHandle(conn transport.ConnAdapter, data []byte, 
 			// 这样会导致后续消息找不到通知通道,
 			continue
 		case message.Return:
-			done, ok := desc.LoadNotify(pMsg.Message.GetMsgId())
-			if !ok {
-				c.logger.Error("LRPC: Message read complete but done channel not found")
+			msgId := pMsg.Message.GetMsgId()
+			end, err := desc.PushCompleteMessage(msgId, Complete{
+				Message: pMsg.Message,
+			})
+			if err != nil {
+				c.logger.Warn(err.Error())
 				continue
 			}
-			select {
-			case done <- Complete{Message: pMsg.Message}:
-				break
-			default:
-				c.logger.Error("LRPC: OnMessage done channel is block")
+			if end && desc.isHalfClosed() {
+				c.logger.Debug("LRPC: soft close complete, all msg already completed : %v", desc.ConnAdapter.Close())
 			}
 		case message.Pong:
 			// TODO: keep-alive重置连接定时器
@@ -101,15 +100,7 @@ func (c *Client) parseMessageAndHandle(conn transport.ConnAdapter, data []byte, 
 }
 
 func (c *Client) onOpen(conn transport.ConnAdapter) {
-	desc := &connSource{
-		conn:       conn,
-		parser:     c.cfg.ParserFactory(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()}, 4096),
-		initSeq:    uint64(random.FastRand()),
-		LocalAddr:  conn.LocalAddr(),
-		RemoteAddr: conn.RemoteAddr(),
-		notifySet:  make(map[uint64]chan Complete, 1024),
-	}
-	c.connSourceSet.Store(conn, desc)
+	// 2023/03/14 - 新的负载均衡器设计使得connSource不需要在OnOpen()中初始化
 	return
 }
 
