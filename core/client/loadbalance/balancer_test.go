@@ -28,10 +28,10 @@ func TestBalancer(t *testing.T) {
 			}, nil
 		},
 		ConnectionFactory: func(node RpcNode) (transport.ConnAdapter, error) {
-			return new(net.TCPConn), nil
+			return new(testConn), nil
 		},
 		CloseFunc: func(conn transport.ConnAdapter) {
-			_, ok := conn.(*net.TCPConn)
+			_, ok := conn.(*testConn)
 			if !ok {
 				panic("conn type is not *net.TCPConn")
 			}
@@ -65,10 +65,10 @@ func BenchmarkBalancer(b *testing.B) {
 					return nodes, nil
 				},
 				ConnectionFactory: func(node RpcNode) (transport.ConnAdapter, error) {
-					return new(net.TCPConn), nil
+					return new(testConn), nil
 				},
 				CloseFunc: func(conn transport.ConnAdapter) {
-					_, ok := conn.(*net.TCPConn)
+					_, ok := conn.(*testConn)
 					if !ok {
 						panic("conn type is not *net.TCPConn")
 					}
@@ -91,4 +91,16 @@ func BenchmarkBalancer(b *testing.B) {
 			})
 		})
 	}
+}
+
+type testConn struct {
+	net.TCPConn
+}
+
+func (c *testConn) SetSource(s interface{}) {
+	return
+}
+
+func (c *testConn) Source() interface{} {
+	return nil
 }

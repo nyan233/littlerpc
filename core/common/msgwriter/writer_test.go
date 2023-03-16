@@ -2,25 +2,21 @@ package msgwriter
 
 import (
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
+	"github.com/nyan233/littlerpc/core/common/transport"
 	"github.com/nyan233/littlerpc/core/container"
 	"github.com/nyan233/littlerpc/core/middle/packer"
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	messageGen "github.com/nyan233/littlerpc/core/protocol/message/gen"
 	"github.com/nyan233/littlerpc/core/protocol/message/mux"
 	"github.com/stretchr/testify/assert"
-	"net"
 	"sync"
 	"syscall"
 	"testing"
-	"time"
 )
 
 type NilConn struct {
 	writeFailed bool
-}
-
-func (n2 *NilConn) Read(b []byte) (n int, err error) {
-	panic("implement me")
+	transport.NilConn
 }
 
 func (n2 *NilConn) Write(b []byte) (n int, err error) {
@@ -28,30 +24,6 @@ func (n2 *NilConn) Write(b []byte) (n int, err error) {
 		return -1, syscall.EINPROGRESS
 	}
 	return len(b), nil
-}
-
-func (n2 *NilConn) Close() error {
-	panic("implement me")
-}
-
-func (n2 *NilConn) LocalAddr() net.Addr {
-	panic("implement me")
-}
-
-func (n2 *NilConn) RemoteAddr() net.Addr {
-	panic("implement me")
-}
-
-func (n2 *NilConn) SetDeadline(t time.Time) error {
-	panic("implement me")
-}
-
-func (n2 *NilConn) SetReadDeadline(t time.Time) error {
-	panic("implement me")
-}
-
-func (n2 *NilConn) SetWriteDeadline(t time.Time) error {
-	panic("implement me")
 }
 
 func TestLRPCWriter(t *testing.T) {

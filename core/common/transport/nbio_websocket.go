@@ -181,3 +181,11 @@ func (w *WsConnAdapter) Write(b []byte) (n int, err error) {
 	}
 	return len(b), nil
 }
+
+func (w *WsConnAdapter) SetSource(s interface{}) {
+	w.SetSession(s)
+}
+
+func (w *WsConnAdapter) Source() interface{} {
+	return w.Session()
+}

@@ -55,7 +55,7 @@ func newTestServer(nilConn transport2.ConnAdapter) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	server.connsSourceDesc.Store(nilConn, &connSourceDesc{
+	nilConn.SetSource(&connSourceDesc{
 		Parser: msgparser2.NewLRPCTrait(msgparser2.NewDefaultSimpleAllocTor(), 4096),
 		Writer: msgwriter.NewLRPCTrait(),
 	})
@@ -110,16 +110,16 @@ func TestOnMessage(t *testing.T) {
 	}
 	t.Run("TestOnMessageRecover", func(t *testing.T) {
 		func() {
-			defer server.eventLoopTopRecover(nc, server.connsSourceDesc.Load(nc))
+			defer server.eventLoopTopRecover(nc, nc.Source().(*connSourceDesc))
 			a := make([]int, 10)
 			a[100] = 1
 		}()
 		func() {
-			defer server.eventLoopTopRecover(nc, server.connsSourceDesc.Load(nc))
+			defer server.eventLoopTopRecover(nc, nc.Source().(*connSourceDesc))
 			panic("Hello world")
 		}()
 		func() {
-			defer server.eventLoopTopRecover(nc, server.connsSourceDesc.Load(nc))
+			defer server.eventLoopTopRecover(nc, nc.Source().(*connSourceDesc))
 			panic(errorhandler.ContextNotFound)
 		}()
 	})

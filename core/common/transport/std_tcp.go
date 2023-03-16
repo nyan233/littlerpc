@@ -2,6 +2,7 @@ package transport
 
 import (
 	"errors"
+	"github.com/nyan233/littlerpc/core/common/logger"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -102,11 +103,8 @@ func (s *StdNetTcpEngine) Start() error {
 			s.mu.Unlock()
 			for {
 				conn, err := listener.Accept()
-				if conn == nil {
-					break
-				}
 				if err != nil {
-					s.onClose(conn, err)
+					logger.DefaultLogger.Warn("std-tcp engine accept conn failed, err = %v", err)
 					break
 				}
 				s.connService(conn)
@@ -118,7 +116,7 @@ func (s *StdNetTcpEngine) Start() error {
 }
 
 func (s *StdNetTcpEngine) connService(conn net.Conn) *nioConn {
-	nc := &nioConn{conn}
+	nc := &nioConn{Conn: conn}
 	s.onOpen(nc)
 	go func() {
 		var (
@@ -185,13 +183,22 @@ func (s *StdNetTcpEngine) OnClose(f func(conn ConnAdapter, err error)) {
 
 type nioConn struct {
 	net.Conn
+	source atomic.Value
 }
 
 // 保证OnRead只调用一次Read
-func (c nioConn) Read(p []byte) (n int, err error) {
+func (c *nioConn) Read(p []byte) (n int, err error) {
 	readN, err := c.Conn.Read(p)
 	if err != nil {
 		return readN, err
 	}
 	return readN, syscall.EWOULDBLOCK
+}
+
+func (c *nioConn) SetSource(s interface{}) {
+	c.source.Store(s)
+}
+
+func (c *nioConn) Source() interface{} {
+	return c.source.Load()
 }

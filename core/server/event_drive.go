@@ -25,13 +25,12 @@ func (s *Server) onClose(conn transport.ConnAdapter, err error) {
 		s.logger.Warn("LRPC: plugin entry interrupted onClose")
 	}
 	// 关闭之前的清理工作
-	desc, ok := s.connsSourceDesc.LoadOk(conn)
+	desc, ok := conn.Source().(*connSourceDesc)
 	if !ok {
-		s.logger.Warn("LRPC: onClose connection not found")
+		s.logger.Warn("LRPC: onClose connection source not found")
 		return
 	}
 	desc.ctxManager.CancelAll()
-	s.connsSourceDesc.Delete(conn)
 }
 
 func (s *Server) onRead(c transport.ConnAdapter) {
@@ -50,7 +49,7 @@ func (s *Server) parseMessageAndHandle(c transport.ConnAdapter, data []byte, pre
 		s.logger.Info("LRPC: plugin interrupted onRead")
 		return
 	}
-	desc, ok := s.connsSourceDesc.LoadOk(c)
+	desc, ok := c.Source().(*connSourceDesc)
 	if !ok {
 		s.logger.Error("LRPC: no register message-parser, remote ip = %s", c.RemoteAddr())
 		_ = c.Close()
@@ -117,7 +116,7 @@ func (s *Server) onOpen(conn transport.ConnAdapter) {
 	desc.localAddr = conn.LocalAddr()
 	desc.cacheCtx = lContext.WithLocalAddr(context.Background(), desc.localAddr)
 	desc.cacheCtx = lContext.WithRemoteAddr(context.Background(), desc.remoteAddr)
-	s.connsSourceDesc.Store(conn, desc)
+	conn.SetSource(desc)
 	// init keepalive
 	if cfg.KeepAlive {
 		if err := conn.SetDeadline(time.Now().Add(cfg.KeepAliveTimeout)); err != nil {

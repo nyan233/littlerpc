@@ -111,7 +111,6 @@ func (c *Client) initBalancer(config *Config) (afterStart func()) {
 		conn, err := c.engine.Client().NewConn(transport2.NetworkClientConfig{
 			ServerAddr: node.Address,
 			KeepAlive:  config.KeepAlive,
-			Dialer:     nil,
 		})
 		if err != nil {
 			return nil, err

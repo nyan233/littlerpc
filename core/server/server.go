@@ -52,8 +52,6 @@ type Server struct {
 	server transport2.ServerEngine
 	// 任务池
 	taskPool pool.TaskPool[string]
-	// 管理的连接与其拥有的资源
-	connsSourceDesc *container.RWMutexMap[transport2.ConnAdapter, *connSourceDesc]
 	// logger
 	logger logger.LLogger
 	// 注册的插件的管理器
@@ -76,7 +74,6 @@ func New(opts ...Option) *Server {
 	server.ev = newEvent()
 	server.services = container.NewRCUMap[string, *metadata.Process](128)
 	server.sources = container.NewRCUMap[string, *metadata.Source](128)
-	server.connsSourceDesc = new(container.RWMutexMap[transport2.ConnAdapter, *connSourceDesc])
 	// init reflection service
 	err := server.RegisterClass(ReflectionSource, &LittleRpcReflection{server}, nil)
 	if err != nil {

@@ -6,7 +6,9 @@ import (
 	"github.com/lesismal/nbio"
 	ntls "github.com/lesismal/nbio/extension/tls"
 	"net"
+	"runtime"
 	"sync/atomic"
+	"unsafe"
 )
 
 type NBioTcpEngine struct {
@@ -24,7 +26,7 @@ func NewNBioTcpClient() ClientBuilder {
 	return &NBioTcpEngine{
 		server: nbio.NewEngine(nbio.Config{
 			Name:    "LittleRpc-TCP-Client",
-			NPoller: 1,
+			NPoller: runtime.NumCPU(),
 		}),
 		onOpen: func(conn ConnAdapter) {
 			return
@@ -62,14 +64,15 @@ func NewNBioTcpServer(config NetworkServerConfig) ServerBuilder {
 }
 
 func (engine *NBioTcpEngine) NewConn(config NetworkClientConfig) (ConnAdapter, error) {
-	if config.Dialer != nil {
-		return config.Dialer.Dial("tcp", config.ServerAddr)
-	}
 	netConn, err := net.Dial("tcp", config.ServerAddr)
 	if err != nil {
 		return nil, err
 	}
-	return engine.server.AddConn(netConn)
+	convConn, err := engine.server.AddConn(netConn)
+	if err != nil {
+		return nil, err
+	}
+	return (*nTcpConn)(unsafe.Pointer(convConn)), nil
 }
 
 func (engine *NBioTcpEngine) EventDriveInter() EventDriveInter {
@@ -113,32 +116,32 @@ func (engine *NBioTcpEngine) bind() {
 	server := engine.server
 	if engine.tlsC == nil {
 		server.OnOpen(func(c *nbio.Conn) {
-			engine.onOpen(c)
+			engine.onOpen((*nTcpConn)(unsafe.Pointer(c)))
 		})
 		if engine.onRead == nil {
 			server.OnData(func(c *nbio.Conn, data []byte) {
-				engine.onMsg(c, data)
+				engine.onMsg((*nTcpConn)(unsafe.Pointer(c)), data)
 			})
 		} else {
 			server.OnRead(func(c *nbio.Conn) {
-				engine.onRead(c)
+				engine.onRead((*nTcpConn)(unsafe.Pointer(c)))
 			})
 		}
 		server.OnClose(func(c *nbio.Conn, err error) {
-			engine.onClose(c, err)
+			engine.onClose((*nTcpConn)(unsafe.Pointer(c)), err)
 		})
 	} else {
 		engine.tlsC.BuildNameToCertificate()
 		server.OnClose(ntls.WrapClose(func(c *nbio.Conn, tlsConn *ntls.Conn, err error) {
-			engine.onClose(tlsConn, err)
+			engine.onClose(nil, err)
 		}))
 		server.OnOpen(ntls.WrapOpen(engine.tlsC, false,
 			func(c *nbio.Conn, tlsConn *ntls.Conn) {
-				engine.onOpen(tlsConn)
+				engine.onOpen(nil)
 			}),
 		)
 		server.OnData(ntls.WrapData(func(c *nbio.Conn, tlsConn *ntls.Conn, data []byte) {
-			engine.onMsg(tlsConn, data)
+			engine.onMsg(nil, data)
 		}))
 	}
 }
@@ -149,4 +152,16 @@ func (engine *NBioTcpEngine) Stop() error {
 	}
 	engine.server.Stop()
 	return nil
+}
+
+type nTcpConn struct {
+	nbio.Conn
+}
+
+func (n *nTcpConn) SetSource(s interface{}) {
+	n.SetSession(s)
+}
+
+func (n *nTcpConn) Source() interface{} {
+	return n.Session()
 }

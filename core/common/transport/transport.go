@@ -27,10 +27,10 @@ type ClientEngine interface {
 // 接口中的方法应该是Sync style, 即方法执行完成后所有任务均已完成, 比如Read()为非
 // 阻塞接口的话则不满足要求, 需要实现传输层的框架提供一个Sync style的封装, 否则则会串包
 type ConnAdapter interface {
-	// TODO : Session API的实现
-	// Session() interface{}
-	// SetSession(interface{})
-
+	// SetSource Source主要用于server/client将连接的相关资源
+	// 比如: parser/writer/buffer等附加到conn中, 可以降低map查找的开销
+	SetSource(s interface{})
+	Source() interface{}
 	// Close 不管因为何种原因导致了连接被关闭, ServerTransportBuilder设置的OnClose
 	// 应该被调用, 从而让LittleRpc能够清理残余数据
 	Close() error
