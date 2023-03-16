@@ -38,30 +38,24 @@
 
 基准测试的指标来自[rpcx-benchmark](https://github.com/rpcxio/rpcx-benchmark)，以下结果仅供参考，不同平台的结果可能会不一致，想要清晰的测量结果之前最好自己动手试一试
 
-设置的`Client`&`Server`的参数
+`Platfrom`
+```shell
+Server
+CPU 		: AMD EPYC 7T83 16Core
+Memory  	: 16GB * 4 ECC
+Network 	: 7.5G
+NumaNode	: 0~0
 
-| Call Goroutine | Sharring Client | Request Number | Server Delay |
-| :------------: | :-------------: | :------------: | :----------: |
-|      5000      |       500       |    1000000     |    100ns     |
+Client
+CPU 		: AMD EPYC 7T83 16Core
+Memory  	: 16GB * 4 ECC
+Network 	: 7.5G
+NumaNode	: 0~0
+```
+在测试中, `client`/`server`分别在一台机器上运行
 
-基准测试使用的平台的详细信息
-
-|       CPU       |   Runtime    |       System       | Go Runtime |
-| :-------------: | :----------: | :----------------: | :--------: |
-| R7 4700U 8c/16t | Vmware15-pro | Centos7-3.10kernal |  Go 1.17   |
-
-参考结果
-
-|   Name    |    Min    |     Max      |     P99      |  Qps   |
-| :-------: | :-------: | :----------: | :----------: | :----: |
-| LittleRpc | 51285 ns  | 427180294 ns | 205480247 ns | 137287 |
-|  Std-Rpc  | 55503 ns  | 352554016 ns | 208655742 ns | 140686 |
-|   Rpcx    |   null    |     null     |     null     |  null  |
-|   Kitex   |   null    |     null     |     null     |  null  |
-|   Rpcx    |   null    |     null     |     null     |  null  |
-|   Arpc    |   null    |     null     |     null     |  null  |
-|  Grpc-go  | 173594 ns | 463660659 ns | 317374210 ns | 73959  |
-
+`Mock 10us`
+![result](https://raw.githubusercontent.com/zbh255/source/main/rpc-bench1.svg)
 ## Install
 
 ```go
