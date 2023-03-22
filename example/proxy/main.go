@@ -37,10 +37,7 @@ func (fs *FileServer) OpenSysFile(path string) ([]byte, error) {
 func main() {
 	server := server.New(server.WithAddressServer(":1234"))
 	_ = server.RegisterClass("", New(), nil)
-	err := server.Service()
-	if err != nil {
-		panic(err)
-	}
+	go server.Service()
 	client, err := client.New(client.WithAddress(":1234"))
 	if err != nil {
 		panic(err)

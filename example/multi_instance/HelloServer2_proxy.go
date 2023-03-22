@@ -2,7 +2,7 @@ package main
 
 /*
    @Generator   : pxtor
-   @CreateTime  : 2023-02-19 18:10:25.074787 +0800 CST m=+0.005534601
+   @CreateTime  : 2023-03-21 09:33:00.6421857 +0800 CST m=+0.002047001
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
@@ -12,16 +12,16 @@ import (
 )
 
 var (
-	_ binder17453203147392b81fcc375a6a22bbd8 = new(client.Client)
-	_ caller17453203147392b81fcc375a6a22bbd8 = new(client.Client)
+	_ binder174e4b300354f1e42979ca629e531277 = new(client.Client)
+	_ caller174e4b300354f1e42979ca629e531277 = new(client.Client)
 	_ HelloServer2Proxy                      = new(helloServer2Impl)
 )
 
-type binder17453203147392b81fcc375a6a22bbd8 interface {
+type binder174e4b300354f1e42979ca629e531277 interface {
 	BindFunc(source string, proxy interface{}) error
 }
 
-type caller17453203147392b81fcc375a6a22bbd8 interface {
+type caller174e4b300354f1e42979ca629e531277 interface {
 	Call(service string, opts []client.CallOption, args ...interface{}) (reps []interface{}, err error)
 }
 
@@ -31,30 +31,30 @@ type HelloServer2Proxy interface {
 }
 
 type helloServer2Impl struct {
-	caller17453203147392b81fcc375a6a22bbd8
+	caller174e4b300354f1e42979ca629e531277
 }
 
-func NewHelloServer2(b binder17453203147392b81fcc375a6a22bbd8) HelloServer2Proxy {
+func NewHelloServer2(b binder174e4b300354f1e42979ca629e531277) HelloServer2Proxy {
 	proxy := new(helloServer2Impl)
-	err := b.BindFunc("main.HelloServer2", proxy)
+	err := b.BindFunc("HelloServer2", proxy)
 	if err != nil {
 		panic(err)
 	}
-	c, ok := b.(caller17453203147392b81fcc375a6a22bbd8)
+	c, ok := b.(caller174e4b300354f1e42979ca629e531277)
 	if !ok {
 		panic("the argument is not implemented caller")
 	}
-	proxy.caller17453203147392b81fcc375a6a22bbd8 = c
+	proxy.caller174e4b300354f1e42979ca629e531277 = c
 	return proxy
 }
 
 func (p helloServer2Impl) Init(str string, opts ...client.CallOption) error {
-	_, err := p.Call("main.HelloServer2.Init", opts, str)
+	_, err := p.Call("HelloServer2.Init", opts, str)
 	return err
 }
 
 func (p helloServer2Impl) Hello(opts ...client.CallOption) (string, error) {
-	reps, err := p.Call("main.HelloServer2.Hello", opts)
+	reps, err := p.Call("HelloServer2.Hello", opts)
 	r0, _ := reps[0].(string)
 	return r0, err
 }

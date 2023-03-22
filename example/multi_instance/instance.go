@@ -1,18 +1,20 @@
 package main
 
-type HelloServer1 int
+type HelloServer1 struct{}
 
 func (s *HelloServer1) Hello() (string, error) {
 	return "my is server 1", nil
 }
 
-type HelloServer2 string
+type HelloServer2 struct {
+	S string
+}
 
 func (s *HelloServer2) Init(str string) error {
-	*s = HelloServer2(str)
+	s.S = str
 	return nil
 }
 
 func (s *HelloServer2) Hello() (string, error) {
-	return string(*s), nil
+	return s.S, nil
 }

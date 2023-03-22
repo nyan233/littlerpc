@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/nyan233/littlerpc/core/client"
 	"github.com/nyan233/littlerpc/core/common/logger"
-	"github.com/nyan233/littlerpc/core/middle/codec"
 	"github.com/nyan233/littlerpc/core/server"
 )
 
@@ -29,17 +28,18 @@ func (h *Hello) SayHelloToJson(jn *Student) (*Student, error) {
 }
 
 func main() {
-	logger.SetOpenLogger(true)
-	codec.Register(new(ProtoBufCodec))
-	server := server.New(server.WithAddressServer(":1234"))
+	logger.SetOpenLogger(false)
+	server := server.New(server.WithAddressServer(":1234"), server.WithStackTrace())
 	err := server.RegisterClass("", new(Hello), nil)
 	if err != nil {
 		panic(err)
 	}
 	defer server.Stop()
 	go server.Service()
-	client1, err := client.New(client.WithAddress(":1234"),
-		client.WithCodec("protobuf"), client.WithPacker("text"))
+	c, err := client.New(
+		client.WithAddress(":1234"),
+		client.WithCodec("protobuf"),
+		client.WithPacker("text"), client.WithStackTrace())
 	if err != nil {
 		panic(err)
 	}
@@ -48,21 +48,8 @@ func main() {
 		Male:   true,
 		Scores: []int32{20, 10, 20},
 	}
-	p1 := NewHello(client1)
-	s, err := p1.SayHelloToProtoBuf(student)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(s)
-	client2, err := client.New(client.WithAddress(":1234"))
-	if err != nil {
-		panic(err)
-	}
+	p := NewHello(c)
+	fmt.Println(p.SayHelloToProtoBuf(student))
 	student.Name = "Jeni"
-	p2 := NewHello(client2)
-	s, err = p2.SayHelloToJson(student)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(s)
+	fmt.Println(p.SayHelloToJson(student, client.WithCallCodec("json")))
 }

@@ -2,7 +2,7 @@ package main
 
 /*
    @Generator   : pxtor
-   @CreateTime  : 2023-02-19 18:08:19.5729892 +0800 CST m=+0.005759501
+   @CreateTime  : 2023-03-21 09:28:26.9436711 +0800 CST m=+0.002110801
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
@@ -37,7 +37,7 @@ type fileServerImpl struct {
 
 func NewFileServer(b binder) FileServerProxy {
 	proxy := new(fileServerImpl)
-	err := b.BindFunc("main.FileServer", proxy)
+	err := b.BindFunc("FileServer", proxy)
 	if err != nil {
 		panic(err)
 	}
@@ -50,19 +50,19 @@ func NewFileServer(b binder) FileServerProxy {
 }
 
 func (p fileServerImpl) SendFile(path string, data []byte, opts ...client.CallOption) error {
-	_, err := p.Call("main.FileServer.SendFile", opts, path, data)
+	_, err := p.Call("FileServer.SendFile", opts, path, data)
 	return err
 }
 
 func (p fileServerImpl) GetFile(path string, opts ...client.CallOption) ([]byte, bool, error) {
-	reps, err := p.Call("main.FileServer.GetFile", opts, path)
+	reps, err := p.Call("FileServer.GetFile", opts, path)
 	r0, _ := reps[0].([]byte)
 	r1, _ := reps[1].(bool)
 	return r0, r1, err
 }
 
 func (p fileServerImpl) OpenSysFile(path string, opts ...client.CallOption) ([]byte, error) {
-	reps, err := p.Call("main.FileServer.OpenSysFile", opts, path)
+	reps, err := p.Call("FileServer.OpenSysFile", opts, path)
 	r0, _ := reps[0].([]byte)
 	return r0, err
 }

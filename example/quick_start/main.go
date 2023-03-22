@@ -7,7 +7,7 @@ import (
 	"github.com/nyan233/littlerpc/core/server"
 )
 
-type Hello int
+type Hello struct{}
 
 func (receiver Hello) Hello(s string) (int, error) {
 	fmt.Println(s)
@@ -20,10 +20,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	err = server.Service()
-	if err != nil {
-		panic(err)
-	}
+	go server.Service()
 	client, err := client.New(client.WithAddress(":1234"))
 	if err != nil {
 		panic(err)

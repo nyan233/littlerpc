@@ -2,7 +2,7 @@ package main
 
 /*
    @Generator   : pxtor
-   @CreateTime  : 2023-02-19 18:10:21.4373582 +0800 CST m=+0.007177301
+   @CreateTime  : 2023-03-21 09:33:06.3022914 +0800 CST m=+0.002121301
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
@@ -12,16 +12,16 @@ import (
 )
 
 var (
-	_ binder174532023ba4d078c1c6c93f41e8a12c = new(client.Client)
-	_ caller174532023ba4d078c1c6c93f41e8a12c = new(client.Client)
+	_ binder174e4b3154b34dc8a163de4b93083d2d = new(client.Client)
+	_ caller174e4b3154b34dc8a163de4b93083d2d = new(client.Client)
 	_ HelloServer1Proxy                      = new(helloServer1Impl)
 )
 
-type binder174532023ba4d078c1c6c93f41e8a12c interface {
+type binder174e4b3154b34dc8a163de4b93083d2d interface {
 	BindFunc(source string, proxy interface{}) error
 }
 
-type caller174532023ba4d078c1c6c93f41e8a12c interface {
+type caller174e4b3154b34dc8a163de4b93083d2d interface {
 	Call(service string, opts []client.CallOption, args ...interface{}) (reps []interface{}, err error)
 }
 
@@ -30,25 +30,25 @@ type HelloServer1Proxy interface {
 }
 
 type helloServer1Impl struct {
-	caller174532023ba4d078c1c6c93f41e8a12c
+	caller174e4b3154b34dc8a163de4b93083d2d
 }
 
-func NewHelloServer1(b binder174532023ba4d078c1c6c93f41e8a12c) HelloServer1Proxy {
+func NewHelloServer1(b binder174e4b3154b34dc8a163de4b93083d2d) HelloServer1Proxy {
 	proxy := new(helloServer1Impl)
-	err := b.BindFunc("main.HelloServer1", proxy)
+	err := b.BindFunc("HelloServer1", proxy)
 	if err != nil {
 		panic(err)
 	}
-	c, ok := b.(caller174532023ba4d078c1c6c93f41e8a12c)
+	c, ok := b.(caller174e4b3154b34dc8a163de4b93083d2d)
 	if !ok {
 		panic("the argument is not implemented caller")
 	}
-	proxy.caller174532023ba4d078c1c6c93f41e8a12c = c
+	proxy.caller174e4b3154b34dc8a163de4b93083d2d = c
 	return proxy
 }
 
 func (p helloServer1Impl) Hello(opts ...client.CallOption) (string, error) {
-	reps, err := p.Call("main.HelloServer1.Hello", opts)
+	reps, err := p.Call("HelloServer1.Hello", opts)
 	r0, _ := reps[0].(string)
 	return r0, err
 }

@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
-	"time"
 )
 
 func main() {
@@ -24,9 +23,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	_ = server.Service()
+	go server.Service()
 	defer server.Stop()
-	time.Sleep(time.Second * 100000)
 	client1, err := client.New(client.WithAddress(":1234"))
 	if err != nil {
 		panic(err)

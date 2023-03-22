@@ -21,19 +21,16 @@ func (h *Hello) Hello(name string, id int64) (*UserJson, error) {
 }
 
 func Server() {
-	server := server.New(server.WithAddressServer(":1234"))
+	server := server.New(server.WithAddressServer(":1234"), server.WithStackTrace())
 	err := server.RegisterClass("", &Hello{}, nil)
 	if err != nil {
 		panic(err)
 	}
-	err = server.Service()
-	if err != nil {
-		panic(err)
-	}
+	go server.Service()
 }
 
 func Client() {
-	c, err := client.New(client.WithAddress(":1234"))
+	c, err := client.New(client.WithAddress(":1234"), client.WithStackTrace())
 	if err != nil {
 		panic(err)
 	}
