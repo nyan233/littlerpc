@@ -28,7 +28,7 @@ func TestParser(t *testing.T) {
 }
 
 func (f *ParserFullTest) SetupTest() {
-	f.parser = Get(DefaultParser)(NewDefaultSimpleAllocTor(), 4096).(*lRPCTrait)
+	f.parser = Get(DefaultParser)(NewAllocTorForUnitTest(), 4096).(*lRPCTrait)
 }
 
 func (f *ParserFullTest) TestLRPCParser() {
@@ -129,8 +129,9 @@ func (f *ParserFullTest) TestConcurrentHalfParse() {
 				if msgs != nil && len(msgs) > 0 {
 					for _, msg := range msgs {
 						assert.Equal(t, checkHeader, msg.Header)
-						parser.Free(msg.Message)
+						parser.FreeMessage(msg.Message)
 					}
+					parser.FreeContainer(msgs)
 				}
 			}
 		}
@@ -142,7 +143,7 @@ func (f *ParserFullTest) TestConcurrentHalfParse() {
 	var wg sync.WaitGroup
 	wg.Add(ConsumerSize)
 	for _, v := range consumerChannels {
-		go consumer(NewLRPCTrait(NewDefaultSimpleAllocTor(), MaxBufferSize), v, message2.MagicNumber, &wg)
+		go consumer(NewLRPCTrait(NewAllocTorForUnitTest(), MaxBufferSize), v, message2.MagicNumber, &wg)
 	}
 	go producer(consumerChannels, gen.NoMuxToBytes(gen.Big), CycleSize)
 	wg.Wait()

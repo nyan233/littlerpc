@@ -27,10 +27,8 @@ type ParserMessage struct {
 	Header byte
 }
 
-type Factory func(msgAllocator AllocTor, bufSize uint32) Parser
+type Factory func(msgAllocator Allocator, bufSize uint32) Parser
 
-// Parser 解析器的所有接口的实现必须是线程安全/goroutine safe
-// 否则则会出现data race/race conditions
 type Parser interface {
 	// ParseOnReader 用于处理读事件可减少一次memcopy, reader返回的错误会停止解析, 所以
 	// reader是包装了非阻塞的syscall的话不应该返回(syscall.EWOULDBLOCK | syscall.EINTR)等相关的错误
@@ -38,9 +36,10 @@ type Parser interface {
 	// Parse 处理数据的接口必须能够正确处理half-package
 	// 也必须能处理有多个完整报文的数据, 在解析失败时返回对应的error
 	Parse(data []byte) (msgs []ParserMessage, err error)
-	// Free 用于释放Parse返回的数据, 在Parse返回error时这个过程
+	// FreeMessage 用于释e返回的数据, 在Parse返回error时这个过程
 	// 绝对不能被调用
-	Free(msg *message.Message)
+	FreeMessage(msg *message.Message)
+	FreeContainer(c []ParserMessage)
 	inters.Reset
 }
 
@@ -70,20 +69,29 @@ func DefaultReader(reader io.Reader) func(p []byte) (n int, err error) {
 	var (
 		ErrLimit = errors.New("syscall limit out of range 16")
 	)
-	var count int
 	return func(p []byte) (n int, err error) {
-		if count > SyscallLimit {
-			return -1, ErrLimit
-		}
-		n, err = reader.Read(p)
-		count++
-		switch err {
-		case syscall.EINTR:
-			return n, nil
-		case syscall.EAGAIN:
-			return n, err
-		default:
-			return
+		var count int
+		var readPtr int
+		for {
+			if count > SyscallLimit {
+				return -1, ErrLimit
+			}
+			readN, err := reader.Read(p[readPtr:])
+			count++
+			if readN > 0 {
+				readPtr++
+			}
+			if readPtr == len(p) {
+				return readPtr, nil
+			}
+			switch err {
+			case syscall.EINTR, nil:
+				continue
+			case syscall.EAGAIN:
+				return readPtr, nil
+			default:
+				return readPtr, err
+			}
 		}
 	}
 }

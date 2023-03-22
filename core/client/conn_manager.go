@@ -41,7 +41,7 @@ func newConnSource(msgFactory msgparser.Factory, conn transport.ConnAdapter, nod
 		localAddr:   conn.LocalAddr(),
 		remoteAddr:  conn.RemoteAddr(),
 		node:        node,
-		parser:      msgFactory(&msgparser.SimpleAllocTor{SharedPool: sharedPool.TakeMessagePool()}, 4096),
+		parser:      msgFactory(msgparser.NewDefaultAllocator(sharedPool.TakeMessagePool()), 4096),
 		initSeq:     uint64(random.FastRand()),
 		notifySet:   make(map[uint64]chan Complete, 1024),
 	}

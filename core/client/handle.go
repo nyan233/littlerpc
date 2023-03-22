@@ -104,7 +104,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, notifyChannel chan C
 	if err != nil {
 		return nil, err
 	}
-	defer lc.parser.Free(msg)
+	defer lc.parser.FreeMessage(msg)
 	// 没有参数布局则表示该过程之后一个error类型的返回值
 	// 但error是不在返回值列表中处理的
 	iter := msg.PayloadsIterator()
@@ -113,7 +113,7 @@ func (c *Client) readMsgAndDecodeReply(ctx context.Context, notifyChannel chan C
 	// 用于查找type的reflect.Value为nil证明客户端使用了RawCall, 因为没法知道参数的类型和参数的
 	// 个数, 只能用保守的方法估算, 有多少算多少
 	if p == nil && len(reps) <= 0 {
-		reps = make([]interface{}, 0, iter.Tail())
+		reps = make([]interface{}, iter.Tail())
 	}
 	if iter.Tail() > 0 && p != nil && !bind {
 		// 处理结果再处理错误, 因为调用过程可能因为某种原因失败返回错误, 但也会返回处理到一定

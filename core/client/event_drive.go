@@ -18,7 +18,7 @@ func (c *Client) onMessage(conn transport.ConnAdapter, bytes []byte) {
 }
 
 func (c *Client) parseMessageAndHandle(conn transport.ConnAdapter, data []byte, prepared bool) {
-	desc, ok := c.connSourceSet.LoadOk(conn)
+	desc, ok := conn.Source().(*connSource)
 	if !ok {
 		c.logger.Error("LRPC: OnMessage lookup conn failed")
 		err := conn.Close()
@@ -42,9 +42,7 @@ func (c *Client) parseMessageAndHandle(conn transport.ConnAdapter, data []byte, 
 		}
 		return
 	}
-	if allMsg == nil || len(allMsg) <= 0 {
-		return
-	}
+	defer desc.parser.FreeContainer(allMsg)
 	for _, pMsg := range allMsg {
 		// 单个连接返回最大能分配的Message Id代表遇到了服务端解析器解析失败的错误
 		// 这种情况下, 服务端没办法知道真正的Message Id, 如果不通知在这个连接上等待的回复调用者
@@ -99,13 +97,13 @@ func (c *Client) parseMessageAndHandle(conn transport.ConnAdapter, data []byte, 
 	}
 }
 
-func (c *Client) onOpen(conn transport.ConnAdapter) {
+func (c *Client) onOpen(_ transport.ConnAdapter) {
 	// 2023/03/14 - 新的负载均衡器设计使得connSource不需要在OnOpen()中初始化
 	return
 }
 
 func (c *Client) onClose(conn transport.ConnAdapter, err error) {
-	desc, ok := c.connSourceSet.LoadOk(conn)
+	desc, ok := conn.Source().(*connSource)
 	if !ok {
 		c.logger.Error("LRPC: OnClose lookup conn failed")
 		return

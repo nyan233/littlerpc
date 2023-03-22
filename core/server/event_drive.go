@@ -72,12 +72,13 @@ func (s *Server) parseMessageAndHandle(c transport.ConnAdapter, data []byte, pre
 		s.logger.Warn("LRPC: parse failed %v", err)
 		return
 	}
+	defer desc.Parser.FreeContainer(traitMsgs)
 	for _, traitMsg := range traitMsgs {
 		// init message option
 		msgOpt := newConnDesc(s, traitMsg, c, desc)
 		msgOpt.SelectCodecAndEncoder()
 		msgOpt.setFreeFunc(func(msg *message.Message) {
-			desc.Parser.Free(msg)
+			desc.Parser.FreeMessage(msg)
 		})
 		switch traitMsg.Message.GetMsgType() {
 		case message.Ping:
@@ -107,7 +108,7 @@ func (s *Server) onOpen(conn transport.ConnAdapter) {
 	cfg := s.config.Load()
 	desc := &connSourceDesc{}
 	desc.Parser = cfg.ParserFactory(
-		&msgparser2.SimpleAllocTor{SharedPool: s.pool.TakeMessagePool()},
+		msgparser2.NewDefaultAllocator(s.pool.TakeMessagePool()),
 		uint32(s.config.Load().ReadBufferSize),
 	)
 	desc.Writer = cfg.WriterFactory()

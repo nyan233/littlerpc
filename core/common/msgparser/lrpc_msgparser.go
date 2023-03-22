@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/nyan233/littlerpc/core/container"
 	message2 "github.com/nyan233/littlerpc/core/protocol/message"
-	"sync"
 )
 
 type readyBuffer struct {
@@ -18,11 +17,11 @@ func (b *readyBuffer) IsUnmarshal() bool {
 	return b.MsgId != 0 && b.PayloadLength != 0
 }
 
+// TODO: 取消不必要的锁, 流数据都是顺序到来的, 锁没必要
 // lRPCTrait 特征化Parser, 根据Header自动选择适合的Handler
 type lRPCTrait struct {
-	mu sync.Mutex
 	// 简单的分配器接口, 用于分配可复用的Message
-	allocTor AllocTor
+	allocTor Allocator
 	// 下一个状态的触发间隔, 也就是距离转移到下一个状态需要读取的数据量
 	clickInterval int
 	// 当前parser选中的handler
@@ -45,7 +44,7 @@ type lRPCTrait struct {
 	halfBuffer container.ByteSlice
 }
 
-func NewLRPCTrait(allocTor AllocTor, bufSize uint32) Parser {
+func NewLRPCTrait(allocTor Allocator, bufSize uint32) Parser {
 	if bufSize > MaxBufferSize {
 		bufSize = MaxBufferSize
 	} else if bufSize == 0 {
@@ -61,32 +60,19 @@ func NewLRPCTrait(allocTor AllocTor, bufSize uint32) Parser {
 }
 
 func (h *lRPCTrait) ParseOnReader(reader func([]byte) (n int, err error)) (msgs []ParserMessage, err error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	currentLen := h.halfBuffer.Len()
 	currentCap := h.halfBuffer.Cap()
 	h.halfBuffer = h.halfBuffer[:currentCap]
-	for i := 0; i < 16; i++ {
-		readN, err := reader(h.halfBuffer[currentLen:currentCap])
-		if readN > 0 {
-			currentLen += readN
-		}
-		// read full
-		if currentLen == currentCap {
-			break
-		}
-		if err != nil {
-			break
-		}
+	readN, err := reader(h.halfBuffer[currentLen:currentCap])
+	if err != nil {
+		return nil, err
 	}
-	h.halfBuffer = h.halfBuffer[:currentLen]
+	h.halfBuffer = h.halfBuffer[:currentLen+readN]
 	return h.parseFromHalfBuffer()
 }
 
 // Parse io.Reader主要用来标识一个读取到半包的连接, 并不会真正去调用他的方法
 func (h *lRPCTrait) Parse(data []byte) (msgs []ParserMessage, err error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	if h.clickInterval == 1 && len(data) == 0 {
 		return nil, errors.New("data length == 0")
 	}
@@ -102,7 +88,8 @@ func (h *lRPCTrait) memSwap() {
 }
 
 func (h *lRPCTrait) parseFromHalfBuffer() (msgs []ParserMessage, err error) {
-	allMsg := make([]ParserMessage, 0, 4)
+	allMsg := h.allocTor.AllocContainer()
+	allMsg.Reset()
 	defer func() {
 		if err != nil {
 			h.ResetScan()
@@ -173,7 +160,7 @@ func (h *lRPCTrait) parseFromHalfBuffer() (msgs []ParserMessage, err error) {
 	return allMsg, nil
 }
 
-func (h *lRPCTrait) handleScanInit(allMsg *[]ParserMessage) (err error) {
+func (h *lRPCTrait) handleScanInit(allMsg *container.Slice[ParserMessage]) (err error) {
 	if handler := GetHandler(h.halfBuffer[h.startOffset]); handler != nil {
 		h.handler = handler
 	} else {
@@ -209,7 +196,7 @@ func (h *lRPCTrait) handleScanInit(allMsg *[]ParserMessage) (err error) {
 	return nil
 }
 
-func (h *lRPCTrait) handleScanParse1(allMsg *[]ParserMessage) (next bool, err error) {
+func (h *lRPCTrait) handleScanParse1(allMsg *container.Slice[ParserMessage]) (next bool, err error) {
 	interval := h.halfBuffer.Len() - h.linePtr
 	if interval < 0 {
 		return false, errors.New("no read buf")
@@ -228,7 +215,7 @@ func (h *lRPCTrait) handleScanParse1(allMsg *[]ParserMessage) (next bool, err er
 	return
 }
 
-func (h *lRPCTrait) handleScanParse2(allMsg *[]ParserMessage) (next bool, err error) {
+func (h *lRPCTrait) handleScanParse2(allMsg *container.Slice[ParserMessage]) (next bool, err error) {
 	interval := h.halfBuffer.Len() - h.linePtr
 	if interval < 0 {
 		return false, errors.New("no read buf")
@@ -258,8 +245,12 @@ func (h *lRPCTrait) handleScanParse2(allMsg *[]ParserMessage) (next bool, err er
 	return
 }
 
-func (h *lRPCTrait) Free(msg *message2.Message) {
+func (h *lRPCTrait) FreeMessage(msg *message2.Message) {
 	h.allocTor.FreeMessage(msg)
+}
+
+func (h *lRPCTrait) FreeContainer(c []ParserMessage) {
+	h.allocTor.FreeContainer(c)
 }
 
 func (h *lRPCTrait) Reset() {
@@ -278,14 +269,7 @@ func (h *lRPCTrait) deleteNoReadyBuffer(msgId uint64) {
 	delete(h.noReadyBuffer, msgId)
 }
 
-// State 下个状态的触发间隔&当前的状态&缓冲区的长度
-func (h *lRPCTrait) State() (int, int, int) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.clickInterval, h.state, len(h.halfBuffer)
-}
-
-func (h *lRPCTrait) handleAction(action Action, buf container.ByteSlice, msg *message2.Message, allMsg *[]ParserMessage, readData []byte) error {
+func (h *lRPCTrait) handleAction(action Action, buf container.ByteSlice, msg *message2.Message, allMsg *container.Slice[ParserMessage], readData []byte) error {
 	switch action {
 	case UnmarshalBase:
 		readBuf, ok := h.noReadyBuffer[msg.GetMsgId()]

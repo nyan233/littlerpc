@@ -30,10 +30,8 @@ type Client struct {
 	// 用于连接管理
 	balancer loadbalance.Balancer
 	// 客户端的事件驱动引擎
-	engine transport2.ClientBuilder
-	// 为每个连接分配的资源
-	connSourceSet *container2.RWMutexMap[transport2.ConnAdapter, *connSource]
-	contextM      *contextManager
+	engine   transport2.ClientBuilder
+	contextM *contextManager
 	// context id的起始, 开始时随机分配
 	contextInitId uint64
 	// services 可以支持不同实例的调用
@@ -73,8 +71,6 @@ func New(opts ...Option) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	// 初始化负载均衡功能
-	client.connSourceSet = new(container2.RWMutexMap[transport2.ConnAdapter, *connSource])
 	defer client.initBalancer(config)()
 	// init goroutine pool
 	if config.PoolSize <= 0 {
@@ -115,12 +111,11 @@ func (c *Client) initBalancer(config *Config) (afterStart func()) {
 		if err != nil {
 			return nil, err
 		}
-		connSrc := newConnSource(c.cfg.ParserFactory, conn, node)
-		c.connSourceSet.Store(conn, connSrc)
-		return connSrc, nil
+		conn.SetSource(newConnSource(c.cfg.ParserFactory, conn, node))
+		return conn, nil
 	}
 	bConfig.CloseFunc = func(conn transport2.ConnAdapter) {
-		connSrc, ok := conn.(*connSource)
+		connSrc, ok := conn.Source().(*connSource)
 		if !ok {
 			panic("closeFunc the conn type is not *connSource")
 		}
@@ -296,7 +291,7 @@ func (c *Client) call(
 			opt(cc)
 		}
 	}
-	process, ctx, ctxId, err := c.identArgAndEncode(service, cc, writeMsg, args, bind)
+	process, ctx, ctxId, err := c.identArgAndEncode(service, cc, writeMsg, args, !check)
 	if err != nil {
 		_ = c.pluginManager.Send4C(pCtx, writeMsg, err)
 		return nil, err
@@ -381,7 +376,7 @@ func (c *Client) AsyncCall(service string, opts []CallOption, args []interface{}
 
 func (c *Client) takeConnSource(service string) (*connSource, error2.LErrorDesc) {
 	conn := c.balancer.Target(service)
-	cs, ok := conn.(*connSource)
+	cs, ok := conn.Source().(*connSource)
 	if !ok {
 		return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, "target result is not connSource type")
 	}

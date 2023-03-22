@@ -56,7 +56,7 @@ func newTestServer(nilConn transport2.ConnAdapter) (*Server, error) {
 		return nil, err
 	}
 	nilConn.SetSource(&connSourceDesc{
-		Parser: msgparser2.NewLRPCTrait(msgparser2.NewDefaultSimpleAllocTor(), 4096),
+		Parser: msgparser2.NewLRPCTrait(msgparser2.NewAllocTorForUnitTest(), 4096),
 		Writer: msgwriter.NewLRPCTrait(),
 	})
 	server.eHandle = sc.ErrHandler
