@@ -3,13 +3,22 @@ package loadbalance
 import (
 	"context"
 	"fmt"
+	"github.com/lafikl/consistent"
 	"github.com/nyan233/littlerpc/core/common/logger"
 	"github.com/nyan233/littlerpc/core/common/transport"
 	"github.com/nyan233/littlerpc/core/container"
 	"github.com/nyan233/littlerpc/core/utils/convert"
 	"github.com/nyan233/littlerpc/core/utils/hash"
+	"github.com/nyan233/littlerpc/core/utils/random"
 	"sync/atomic"
 	"time"
+)
+
+const (
+	RANDOM          = "random"
+	HASH            = "hash"
+	CONSISTENT_HASH = "consistent-hash"
+	RANGE           = "range"
 )
 
 type nodeSource struct {
@@ -26,6 +35,8 @@ type balancerImpl struct {
 	// 地址列表的更新时间
 	updateInterval  time.Duration
 	nodeList        atomic.Pointer[[]RpcNode]
+	csNodeList      *consistent.Consistent
+	hashFunc        func(service string) RpcNode
 	connFactory     NewConn
 	muxConnSize     int
 	closeFunc       CloseConn
@@ -48,32 +59,25 @@ func New(cfg Config) Balancer {
 	b.resolve = cfg.Resolver
 	b.connFactory = cfg.ConnectionFactory
 	b.nodeConnManager = container.NewRCUMap[string, *nodeSource](128)
+	b.csNodeList = consistent.New()
+	switch cfg.Scheme {
+	case RANGE:
+		b.hashFunc = b.rangeSelector()
+	case RANDOM:
+		b.hashFunc = b.randomSelector()
+	case HASH:
+		b.hashFunc = b.hashSelector()
+	case CONSISTENT_HASH:
+		b.hashFunc = b.consistentHashSelector()
+	default:
+		b.hashFunc = b.hashSelector()
+	}
 	b.startResolver()
 	return b
 }
 
 func (b *balancerImpl) startResolver() {
-	nodeList, err := b.resolve()
-	if err != nil {
-		panic(fmt.Errorf("startResolver resolve faild: %v", err))
-	}
-	nodeConnInitSet := make([]container.RCUMapElement[string, *nodeSource], 0, len(nodeList))
-	for _, node := range nodeList {
-		conns, err := b.createConns(node, b.muxConnSize)
-		if err != nil {
-			panic(fmt.Errorf("startResolver init conns faild: %v", err))
-		}
-		nodeConnInitSet = append(nodeConnInitSet, container.RCUMapElement[string, *nodeSource]{
-			Key: node.Address,
-			Value: &nodeSource{
-				Count: 0,
-				Conns: conns,
-			},
-		})
-	}
-	b.nodeList.Store(&nodeList)
-	b.nodeConnManager.StoreMulti(nodeConnInitSet)
-	if b.updateInterval <= 0 {
+	if !b.resolverInit() {
 		return
 	}
 	ticker := time.NewTicker(b.updateInterval)
@@ -94,6 +98,41 @@ func (b *balancerImpl) startResolver() {
 	}()
 }
 
+func (b *balancerImpl) resolverInit() (next bool) {
+	nodeList, err := b.resolve()
+	if err != nil {
+		panic(fmt.Errorf("startResolver resolve faild: %v", err))
+	}
+	nodeConnInitSet := make([]container.RCUMapElement[string, *nodeSource], 0, len(nodeList))
+	for _, node := range nodeList {
+		conns, err := b.createConns(node, b.muxConnSize)
+		if err != nil {
+			panic(fmt.Errorf("startResolver init conns faild: %v", err))
+		}
+		if b.scheme == CONSISTENT_HASH {
+			b.csNodeList.Add(node.Address)
+		}
+		nodeConnInitSet = append(nodeConnInitSet, container.RCUMapElement[string, *nodeSource]{
+			Key: node.Address,
+			Value: &nodeSource{
+				Count: 0,
+				Conns: conns,
+			},
+		})
+	}
+	b.nodeList.Store(&nodeList)
+	b.nodeConnManager.StoreMulti(nodeConnInitSet)
+	if b.updateInterval <= 0 {
+		return false
+	}
+	return true
+}
+
+// 设oldList为S1,newList为S2
+// 那么第一次更新的结果也就是: (S1 - S2), S1和S2的差也即是需要在节点列表中删除的节点, 因为
+// 这部分节点不存在于新的列表中, 之后就用不上了
+// 第二次更新的结果: (S2 - S1), S2和S1的差即是需要新建连接的节点, 因为这部分节点之前都没有创建连接
+// 第三次更新的结果: S2 - (S2 ∩ S1), 最终需要追加的节点即为不存在于S1中的属于S2集合的元素
 func (b *balancerImpl) modifyNodeList(newNodeList container.Slice[RpcNode]) {
 	if newNodeList.Len() == 0 {
 		b.logger.Warn("LRPC: loadBalancer resolve result list length equal zero")
@@ -136,9 +175,17 @@ func (b *balancerImpl) modifyNodeList(newNodeList container.Slice[RpcNode]) {
 		if exist {
 			continue
 		}
+		if b.scheme == CONSISTENT_HASH {
+			b.csNodeList.Remove(oldNode.Address)
+		}
 		ableCloseNode = append(ableCloseNode, oldNode.Address)
 	}
 	ableCloseNodeSource := b.nodeConnManager.StoreAndDeleteMulti(newNodeConnSet, ableCloseNode)
+	if b.scheme == CONSISTENT_HASH {
+		for _, elem := range newNodeConnSet {
+			b.csNodeList.Add(elem.Key)
+		}
+	}
 	for _, v := range ableCloseNodeSource {
 		b.closeConns(v.Value.Conns)
 	}
@@ -164,17 +211,46 @@ func (b *balancerImpl) closeConns(conns []transport.ConnAdapter) {
 	}
 }
 
+func (b *balancerImpl) rangeSelector() func(service string) RpcNode {
+	var count int64 = -1
+	return func(service string) RpcNode {
+		nodeList := *b.nodeList.Load()
+		return nodeList[atomic.AddInt64(&count, 1)]
+	}
+}
+
+func (b *balancerImpl) randomSelector() func(service string) RpcNode {
+	return func(service string) RpcNode {
+		nodeList := *b.nodeList.Load()
+		return nodeList[random.FastRand()%uint32(len(nodeList))]
+	}
+}
+
+func (b *balancerImpl) hashSelector() func(service string) RpcNode {
+	const HASH_SEED = 1<<12 + 1
+	return func(service string) RpcNode {
+		nodeList := *b.nodeList.Load()
+		hashCode := hash.Murmurhash3Onx8632(convert.StringToBytes(service), HASH_SEED)
+		return nodeList[hashCode%uint32(len(nodeList))]
+	}
+}
+
+func (b *balancerImpl) consistentHashSelector() func(service string) RpcNode {
+	return func(service string) RpcNode {
+		nodeAddr, err := b.csNodeList.Get(service)
+		if err != nil {
+			panic(err)
+		}
+		return RpcNode{Address: nodeAddr}
+	}
+}
+
 func (b *balancerImpl) Scheme() string {
 	return b.scheme
 }
 
 func (b *balancerImpl) Target(service string) transport.ConnAdapter {
-	const (
-		HashSeed = 1024
-	)
-	hashCode := hash.Murmurhash3Onx8632(convert.StringToBytes(service), HashSeed)
-	nodeList := *b.nodeList.Load()
-	node := nodeList[hashCode%uint32(len(nodeList))]
+	node := b.hashFunc(service)
 	src, _ := b.nodeConnManager.LoadOk(node.Address)
 	conn := src.Conns[atomic.LoadUint64(&src.Count)%uint64(len(src.Conns))]
 	atomic.AddUint64(&src.Count, 1)

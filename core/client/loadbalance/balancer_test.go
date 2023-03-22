@@ -14,7 +14,7 @@ import (
 
 func TestBalancer(t *testing.T) {
 	b := New(Config{
-		Scheme:                 "hash",
+		Scheme:                 HASH,
 		ResolverUpdateInterval: time.Second * 120,
 		Resolver: func() ([]RpcNode, error) {
 			return []RpcNode{
@@ -59,7 +59,7 @@ func BenchmarkBalancer(b *testing.B) {
 				}
 			}
 			balancer := New(Config{
-				Scheme:                 "hash",
+				Scheme:                 CONSISTENT_HASH,
 				ResolverUpdateInterval: time.Second * 120,
 				Resolver: func() ([]RpcNode, error) {
 					return nodes, nil

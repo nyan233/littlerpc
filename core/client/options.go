@@ -228,19 +228,19 @@ func WithJsonRpc2Writer() Option {
 }
 
 func WithHashLoadBalance() Option {
-	return WithBalancerScheme("hash")
+	return WithBalancerScheme(loadbalance.HASH)
 }
 
 func WithRoundRobinBalance() Option {
-	return WithBalancerScheme("roundRobin")
+	return WithBalancerScheme(loadbalance.RANGE)
 }
 
 func WithRandomBalance() Option {
-	return WithBalancerScheme("random")
+	return WithBalancerScheme(loadbalance.RANDOM)
 }
 
 func WithConsistentHashBalance() Option {
-	return WithBalancerScheme("consistentHash")
+	return WithBalancerScheme(loadbalance.CONSISTENT_HASH)
 }
 
 func WithMessageParserOnRead() Option {
