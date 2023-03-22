@@ -68,22 +68,22 @@ func (R *RCUMap[Key, Val]) DeleteMulti(keys []Key) []RCUDeleteNode[Val] {
 	return R.StoreAndDeleteMulti(nil, keys)
 }
 
-func (R *RCUMap[Key, Val]) StoreAndDeleteMulti(kvs []RCUMapElement[Key, Val], ks []Key) (delRes []RCUDeleteNode[Val]) {
-	if len(kvs) == 0 && len(ks) == 0 {
+func (R *RCUMap[Key, Val]) StoreAndDeleteMulti(storeKvs []RCUMapElement[Key, Val], delKs []Key) (delRes []RCUDeleteNode[Val]) {
+	if len(storeKvs) == 0 && len(delKs) == 0 {
 		return
 	}
 	R.mu.Lock()
 	defer R.mu.Unlock()
 	copyMap := R.copy()
-	for _, kv := range kvs {
+	for _, kv := range storeKvs {
 		copyMap[kv.Key] = kv.Value
 	}
-	if len(kvs) > 0 && len(ks) == 0 {
+	if len(storeKvs) > 0 && len(delKs) == 0 {
 		R.pointer.Store(&copyMap)
 		return
 	}
-	values := make([]RCUDeleteNode[Val], 0, len(ks))
-	for _, key := range ks {
+	values := make([]RCUDeleteNode[Val], 0, len(delKs))
+	for _, key := range delKs {
 		val, ok := copyMap[key]
 		values = append(values, RCUDeleteNode[Val]{
 			Value: val,

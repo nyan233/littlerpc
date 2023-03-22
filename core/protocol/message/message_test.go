@@ -2,14 +2,15 @@ package message
 
 import (
 	"errors"
-	"github.com/nyan233/littlerpc/core/container"
-	"github.com/nyan233/littlerpc/core/utils/convert"
-	"github.com/nyan233/littlerpc/core/utils/random"
-	"github.com/stretchr/testify/assert"
 	"math"
 	"sync"
 	"testing"
 	"unsafe"
+
+	"github.com/nyan233/littlerpc/core/container"
+	"github.com/nyan233/littlerpc/core/utils/convert"
+	"github.com/nyan233/littlerpc/core/utils/random"
+	"github.com/stretchr/testify/assert"
 )
 
 func FuzzMessageBytes(f *testing.F) {
@@ -20,7 +21,7 @@ func FuzzMessageBytes(f *testing.F) {
 		Call,
 	}
 	msg.msgId = 1234455
-	msg.payloadLength = 1024
+	msg.length = 1024
 	msg.serviceName = "global/littlerpc/HelloTest.Say"
 	err := Marshal(msg, (*container.Slice[byte])(&bytes))
 	if err != nil {

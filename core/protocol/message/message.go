@@ -89,14 +89,13 @@ type Message struct {
 	scope [2]uint8
 	// 消息ID，用于表示一次完整的call/return的回复
 	msgId uint64
-	// 载荷数据的总长度
-	payloadLength uint32
+	// 消息的总长度
+	length uint32
 	// 实例名和调用方法名的布局
 	//	Length (1 Byte) | ServiceName
 	serviceName string
 	// NOTE:
-	//	有效载荷和元数据的范围
-	//	在Mux模式中MetaData及其Desc必须能在一个MuxBlock下被装下，否则将会丢失数据
+	//	自定义key/value数据
 	// 元数据的布局
 	//	NMetaData(1 Byte)|Key-Size(4 Byte)|Value-Size(4 Byte)|Key|Size
 	// Example :
@@ -127,8 +126,8 @@ func (m *Message) BaseLength() int {
 // Length 根据结构计算序列化之后的数据长度, 长度存在时直接返回结果
 // 不会设置m.payloadLength
 func (m *Message) Length() uint32 {
-	if m.payloadLength > 0 {
-		return m.payloadLength
+	if m.length > 0 {
+		return m.length
 	}
 	// desc : Scope & MsgId & PayloadLength & ServiceName & MetaData & Args
 	baseLen := m.MinMux() + _ServiceName + _Metadata + _PayloadLayout
@@ -150,7 +149,7 @@ func (m *Message) Length() uint32 {
 }
 
 func (m *Message) GetAndSetLength() uint32 {
-	m.payloadLength = m.Length()
+	m.length = m.Length()
 	return m.Length()
 }
 
@@ -230,7 +229,7 @@ func (m *Message) Reset() {
 	m.scope = [...]uint8{MagicNumber, 0}
 	m.serviceName = ""
 	m.msgId = 0
-	m.payloadLength = 0
+	m.length = 0
 	m.MetaData.Reset()
 	m.payloadLayout.Reset()
 	m.payloads.Reset()

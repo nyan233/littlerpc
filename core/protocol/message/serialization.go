@@ -4,9 +4,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
+
 	"github.com/nyan233/littlerpc/core/container"
 	"github.com/nyan233/littlerpc/core/utils/convert"
-	"math"
 )
 
 // MarshaToMux 此API只会序列化Mux功能需要的数据
@@ -18,7 +19,7 @@ func MarshaToMux(msg *Message, payloads *container.Slice[byte]) error {
 	*payloads = append(*payloads, msg.scope[:]...)
 	*payloads = (*payloads)[:msg.MinMux()]
 	binary.BigEndian.PutUint64((*payloads)[2:10], msg.msgId)
-	binary.BigEndian.PutUint32((*payloads)[10:14], msg.payloadLength)
+	binary.BigEndian.PutUint32((*payloads)[10:14], msg.length)
 	return nil
 }
 
@@ -29,7 +30,7 @@ func UnmarshalFromMux(data container.Slice[byte], msg *Message) error {
 	}
 	copy(msg.scope[:], data[:_ScopeLength])
 	msg.msgId = binary.BigEndian.Uint64(data[_ScopeLength:10])
-	msg.payloadLength = binary.BigEndian.Uint32(data[10:14])
+	msg.length = binary.BigEndian.Uint32(data[10:14])
 	return nil
 }
 
@@ -167,6 +168,6 @@ func ResetMsg(msg *Message, resetOther, freeMetaData, usePayload bool, useSize i
 		msg.scope = [...]uint8{MagicNumber, 0}
 		msg.serviceName = ""
 		msg.msgId = 0
-		msg.payloadLength = 0
+		msg.length = 0
 	}
 }
