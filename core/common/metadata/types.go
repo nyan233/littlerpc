@@ -23,14 +23,6 @@ type Process struct {
 	ResultsType []reflect.Type
 	// 用于复用输入参数的内存池
 	Pool sync.Pool
-	// 是否为匿名函数, 匿名函数不带接收器
-	// TODO: v0.4.0按照Service&Source为维度管理每个API, 这个字段被废弃
-	// AnonymousFunc bool
-	// 和Stream一起在注册时被识别
-	// 是否支持context的传入
-	SupportContext bool
-	// 是否支持stream的传入
-	SupportStream bool
 	// Option中的参数都是用于定义的, 在Process中的其它控制参数用户
 	// 并不能手动控制
 	Option ProcessOption

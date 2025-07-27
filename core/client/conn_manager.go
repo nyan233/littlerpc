@@ -3,9 +3,9 @@ package client
 import (
 	"errors"
 	"fmt"
-	"github.com/nyan233/littlerpc/core/client/loadbalance"
 	"github.com/nyan233/littlerpc/core/common/msgparser"
 	"github.com/nyan233/littlerpc/core/common/transport"
+	"github.com/nyan233/littlerpc/core/middle/ns"
 	"github.com/nyan233/littlerpc/core/utils/random"
 	"net"
 	"sync"
@@ -25,7 +25,7 @@ type connSource struct {
 	localAddr  net.Addr
 	remoteAddr net.Addr
 	// 表示该连接属于哪个节点
-	node loadbalance.RpcNode
+	node ns.Node
 	// message ID的起始, 开始时随机分配
 	initSeq uint64
 	// 负责消息的解析
@@ -35,7 +35,7 @@ type connSource struct {
 	notifySet map[uint64]chan Complete
 }
 
-func newConnSource(msgFactory msgparser.Factory, conn transport.ConnAdapter, node loadbalance.RpcNode) *connSource {
+func newConnSource(msgFactory msgparser.Factory, conn transport.ConnAdapter, node ns.Node) *connSource {
 	return &connSource{
 		ConnAdapter: conn,
 		localAddr:   conn.LocalAddr(),

@@ -59,7 +59,7 @@ func BenchmarkBalancer(b *testing.B) {
 				}
 			}
 			balancer := New(Config{
-				Scheme:                 CONSISTENT_HASH,
+				Scheme:                 HASH,
 				ResolverUpdateInterval: time.Second * 120,
 				Resolver: func() ([]RpcNode, error) {
 					return nodes, nil

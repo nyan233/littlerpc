@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	context2 "github.com/nyan233/littlerpc/core/common/context"
 	"github.com/nyan233/littlerpc/core/middle/plugin"
 	perror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
@@ -22,7 +23,7 @@ func NewServer() *ServerMetricsPlugin {
 	}
 }
 
-func (s *ServerMetricsPlugin) Receive4S(pub *plugin.Context, msg *message.Message) perror.LErrorDesc {
+func (s *ServerMetricsPlugin) Receive4S(ctx *context2.Context, msg *message.Message) perror.LErrorDesc {
 	if msg == nil {
 		return nil
 	}
@@ -31,21 +32,21 @@ func (s *ServerMetricsPlugin) Receive4S(pub *plugin.Context, msg *message.Messag
 	return nil
 }
 
-func (s *ServerMetricsPlugin) Call4S(pub *plugin.Context, args []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
+func (s *ServerMetricsPlugin) Call4S(ctx *context2.Context, args []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
 	if err != nil {
 		s.Call.IncFailed()
 	}
 	return nil
 }
 
-func (s *ServerMetricsPlugin) AfterCall4S(pub *plugin.Context, args, results []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
+func (s *ServerMetricsPlugin) AfterCall4S(ctx *context2.Context, args, results []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
 	if err != nil {
 		s.Call.IncFailed()
 	}
 	return nil
 }
 
-func (s *ServerMetricsPlugin) AfterSend4S(pub *plugin.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
+func (s *ServerMetricsPlugin) AfterSend4S(ctx *context2.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
 	if err != nil {
 		s.Call.IncFailed()
 		return nil

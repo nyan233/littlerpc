@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	context2 "github.com/nyan233/littlerpc/core/common/context"
 	"github.com/nyan233/littlerpc/core/common/sharedpool"
+	errno "github.com/nyan233/littlerpc/core/protocol/error"
 	"net"
 	"reflect"
 	"sync"
@@ -16,10 +18,8 @@ import (
 	"github.com/nyan233/littlerpc/core/common/metadata"
 	"github.com/nyan233/littlerpc/core/common/msgparser"
 	"github.com/nyan233/littlerpc/core/common/msgwriter"
-	"github.com/nyan233/littlerpc/core/common/stream"
 	transport2 "github.com/nyan233/littlerpc/core/common/transport"
 	"github.com/nyan233/littlerpc/core/common/utils/debug"
-	metaDataUtil "github.com/nyan233/littlerpc/core/common/utils/metadata"
 	"github.com/nyan233/littlerpc/core/container"
 	lerror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/internal/pool"
@@ -37,7 +37,6 @@ type connSourceDesc struct {
 	Writer     msgwriter.Writer
 	remoteAddr net.Addr
 	localAddr  net.Addr
-	cacheCtx   context.Context
 	ctxManager *contextManager
 }
 
@@ -108,10 +107,10 @@ func applyConfig(server *Server, opts []Option) {
 	}
 	// server engine
 	server.server = builder.Server()
-	// init plugin manager
-	server.pManager = newPluginManager(sc.Plugins)
 	// init ErrorHandler
 	server.eHandle = sc.ErrHandler
+	// init plugin manager
+	server.pManager = newPluginManager(sc.Plugins)
 	// New TaskPool
 	if sc.ExecPoolBuilder != nil {
 		server.taskPool = sc.ExecPoolBuilder.Builder(
@@ -214,14 +213,24 @@ func (s *Server) registerProcess(src *metadata.Source, process string, processVa
 	if option != nil {
 		processDesc.Option = *option
 	}
-	// 一个参数都没有的话则不需要进行那些根据输入参数来调整的选项
+	// NOTE: 至少要有一个参数(*context.Context), 和一个返回值(error)
 	if processValue.Type().NumIn() == 0 {
-		return
+		panic(s.eHandle.LNewErrorDesc(errno.UnsafeOption, fmt.Sprintf("method arg list len < 1 : %s", process)))
+	}
+	if processValue.Type().In(0) != reflect.TypeOf(any((*context2.Context)(nil))) {
+		panic(s.eHandle.LNewErrorDesc(errno.UnsafeOption, fmt.Sprintf("method first arg not is *context.Context : %s", process)))
+	}
+	if processValue.Type().NumOut() == 0 {
+		panic(s.eHandle.LNewErrorDesc(errno.UnsafeOption, fmt.Sprintf("method return list len < 1 : %s", process)))
+	}
+	if !processValue.Type().Out(processValue.Type().NumOut() - 1).Implements(reflect.TypeOf(error(nil))) {
+		panic(s.eHandle.LNewErrorDesc(errno.UnsafeOption, fmt.Sprintf("method last return value not impl error : %s", process)))
 	}
 	for j := 0; j < processValue.Type().NumIn(); j++ {
 		processDesc.ArgsType = append(processDesc.ArgsType, processValue.Type().In(j))
 	}
-	jOffset := metaDataUtil.IFContextOrStream(processDesc, processValue.Type())
+	// NOTE: 2025/07/27 method first arg must is *context.Context
+	jOffset := 1
 	if !processDesc.Option.CompleteReUsage {
 		goto asyncCheck
 	}
@@ -234,14 +243,12 @@ func (s *Server) registerProcess(src *metadata.Source, process string, processVa
 	}
 	processDesc.Pool = sync.Pool{
 		New: func() interface{} {
-			inputs := reflect2.FuncInputTypeListReturnValue(processDesc.ArgsType, 0, func(i int) bool {
+			// NOTE: 2025/07/27 method first arg must is *context.Context
+			inputs := reflect2.FuncInputTypeListReturnValue(processDesc.ArgsType, 1, func(i int) bool {
 				return false
 			}, true)
-			switch {
-			case processDesc.SupportContext && processDesc.SupportStream:
-				inputs[0] = reflect.ValueOf(context.Background())
-				inputs[1] = reflect.ValueOf(stream.LStream(nil))
-			}
+			// NOTE: 2025/07/27 method first arg must is *context.Context
+			inputs[0] = reflect.ValueOf(context2.NewContext(context.Background()))
 			return inputs
 		},
 	}
@@ -297,6 +304,7 @@ func (s *Server) Service() error {
 }
 
 func (s *Server) service() error {
+	s.pManager.setupAll(s)
 	err := s.server.Start()
 	if err != nil {
 		return err

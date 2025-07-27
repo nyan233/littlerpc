@@ -17,4 +17,5 @@ var (
 	ErrConnection          = DefaultErrHandler.LNewErrorDesc(error2.ConnectionErr, "connection error")
 	ContextNotFound        = DefaultErrHandler.LNewErrorDesc(error2.ContextNotFound, "context not found")
 	ErrPlugin              = DefaultErrHandler.LNewErrorDesc(10275, "plugin error")
+	StreamIdNotfound       = DefaultErrHandler.LNewErrorDesc(10281, "stream not found")
 )

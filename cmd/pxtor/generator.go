@@ -371,6 +371,9 @@ func createBeforeCode(pkgName, recvName, source string, allFunc []string, usageI
 			{
 				Path: "github.com/nyan233/littlerpc/core/client",
 			},
+			{
+				Path: "github.com/nyan233/littlerpc/core/common/context",
+			},
 		},
 		InterfaceName: interfaceName,
 		SourceName:    source,

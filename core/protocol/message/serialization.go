@@ -35,6 +35,7 @@ func UnmarshalFromMux(data container.Slice[byte], msg *Message) error {
 }
 
 // Unmarshal 从字节Slice中解码出Message，并返回载荷数据的起始地址
+// msg需要保证Reset过, Metadata是直接存入的, 可能会看到重复的Key
 func Unmarshal(p container.Slice[byte], msg *Message) error {
 	if p.Len() == 0 || msg == nil {
 		return errors.New("data or message is nil")
@@ -42,6 +43,7 @@ func Unmarshal(p container.Slice[byte], msg *Message) error {
 	if p.Len() < msg.BaseLength() {
 		return errors.New("data Length < baseLen")
 	}
+	var liveBuffer []byte
 	err := UnmarshalFromMux(p, msg)
 	if err != nil {
 		return err
@@ -62,19 +64,33 @@ func Unmarshal(p container.Slice[byte], msg *Message) error {
 	}
 	nMetaData := p[0]
 	p = p[_Metadata:]
+	var metadataRawSize uint32
+	pp := p
 	for i := 0; i < int(nMetaData); i++ {
-		if p.Len() < 8 {
+		if pp.Len() < 8 {
 			return errors.New("p Length less than 8 on nMetaData")
 		}
-		keySize := binary.BigEndian.Uint32(p[:4])
-		valueSize := binary.BigEndian.Uint32(p[4:8])
+		keySize := binary.BigEndian.Uint32(pp[:4])
+		valueSize := binary.BigEndian.Uint32(pp[4:8])
+		pp = pp[8:]
 		// 相加防止溢出, 所以需要检查溢出
-		if p.Len() < int(keySize+valueSize) || keySize > math.MaxUint32-valueSize {
+		if pp.Len() < int(keySize+valueSize) || keySize > math.MaxUint32-valueSize {
 			return errors.New("key and value size overflow")
 		}
+		pp = pp[keySize+valueSize:]
+		metadataRawSize += keySize + valueSize
+	}
+	liveBuffer = make([]byte, metadataRawSize, metadataRawSize)
+	for i := 0; i < int(nMetaData); i++ {
+		keySize := binary.BigEndian.Uint32(p[:4])
+		valueSize := binary.BigEndian.Uint32(p[4:8])
 		p = p[8:]
-		msg.MetaData.Store(string(p[:keySize]), string(p[keySize:keySize+valueSize]))
+		copy(liveBuffer, p[:keySize])
+		copy(liveBuffer, p[keySize:keySize+valueSize])
+		msg.MetaData.DirectStore(convert.BytesToString(liveBuffer[:keySize]),
+			convert.BytesToString(liveBuffer[keySize:keySize+valueSize]))
 		p = p[keySize+valueSize:]
+		liveBuffer = liveBuffer[keySize+valueSize:]
 	}
 	// 在可变长数据之后, 需要校验
 	if p.Len() < _PayloadLayout {

@@ -129,8 +129,7 @@ func (b *balancerImpl) resolverInit() (next bool) {
 }
 
 // 设oldList为S1,newList为S2
-// 那么第一次更新的结果也就是: (S1 - S2), S1和S2的差也即是需要在节点列表中删除的节点, 因为
-// 这部分节点不存在于新的列表中, 之后就用不上了
+// 那么第一次更新的结果也就是: (S1 - S2), S1和S2的差也即是需要在节点列表中删除的节点, 因为这部分节点不存在于新的列表中, 之后就用不上了
 // 第二次更新的结果: (S2 - S1), S2和S1的差即是需要新建连接的节点, 因为这部分节点之前都没有创建连接
 // 第三次更新的结果: S2 - (S2 ∩ S1), 最终需要追加的节点即为不存在于S1中的属于S2集合的元素
 func (b *balancerImpl) modifyNodeList(newNodeList container.Slice[RpcNode]) {

@@ -103,12 +103,14 @@ func (c *Client) onOpen(_ transport.ConnAdapter) {
 }
 
 func (c *Client) onClose(conn transport.ConnAdapter, err error) {
-	desc, ok := conn.Source().(*connSource)
+	cs, ok := conn.Source().(*connSource)
 	if !ok {
 		c.logger.Error("LRPC: OnClose lookup conn failed")
 		return
 	}
-	oldNotify := desc.SwapNotifyChannel(nil)
+	// delete conn
+	c.connCache.Delete(cs.node.Addr)
+	oldNotify := cs.SwapNotifyChannel(nil)
 	if oldNotify == nil {
 		c.logger.Warn("LRPC: onMessage click parse error")
 	} else {

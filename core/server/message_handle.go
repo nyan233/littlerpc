@@ -1,8 +1,8 @@
 package server
 
 import (
-	"context"
 	"fmt"
+	context2 "github.com/nyan233/littlerpc/core/common/context"
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	"github.com/nyan233/littlerpc/core/common/inters"
 	"github.com/nyan233/littlerpc/core/common/metadata"
@@ -137,15 +137,9 @@ func (s *Server) callHandleUnit(msgOpt *messageOpt) {
 		msgOpt.FreePluginCtx()
 	}()
 	callResult, cErr := s.handleCall(msgOpt.Service, msgOpt.CallArgs)
-	// context存在时且未被取消, 则在调用结束之后取消
-	if msgOpt.Service.SupportContext && msgOpt.CallArgs[0].Interface().(context.Context).Err() == nil && msgOpt.Cancel != nil {
+	// context在调用结束之后取消
+	if msgOpt.CallArgs[0].Interface().(*context2.Context).Err() == nil && msgOpt.Cancel != nil {
 		msgOpt.Cancel()
-	}
-
-	if cErr == nil && len(callResult) == 0 {
-		// TODO v0.4.x计划删除
-		// 函数在没有返回error则填充nil
-		callResult = append(callResult, reflect.ValueOf(nil))
 	}
 	err := s.pManager.AfterCall4S(msgOpt.PCtx, msgOpt.CallArgs, callResult, cErr)
 	// AfterCall4S()之后不会再被使用, 可以回收参数
@@ -190,7 +184,7 @@ func (s *Server) hijackCall(msgOpt *messageOpt) {
 		s.handleError(msgOpt.Conn, msgOpt.Desc.Writer, msgId, err)
 		return
 	}
-	if msgOpt.Service.SupportContext && stub.Context.Err() == nil && msgOpt.Cancel != nil {
+	if stub.Context.Err() == nil && msgOpt.Cancel != nil {
 		msgOpt.Cancel()
 	}
 	var hijackResults []reflect.Value

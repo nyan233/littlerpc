@@ -14,24 +14,24 @@ jobs:
         go_version: ["1.19"]
     runs-on: ${{matrix.os}}
     steps:
-    - name: Install Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: ${{matrix.go_version}}
-    - name: CheckOut Code
-      uses: actions/checkout@v2
-    - name: Init Environment
-      if: matrix.os == 'macos-latest'
-      run:
-        bash ./macos_init.sh
-    - name: Test
-      run:  make cover-test
-    - name: Upload coverage to Codecov
-      if: matrix.os != 'windows-latest'
-      run: bash <(curl -s https://codecov.io/bash)
-    - name: Upload coverage to Codecov On Windows
-      if: matrix.os == 'windows-latest'
-      run:
-        $ProgressPreference = 'SilentlyContinue' ;
-        Invoke-WebRequest -Uri https://uploader.codecov.io/latest/windows/codecov.exe -Outfile codecov.exe ; 
-        .\codecov.exe
+      - name: Install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{matrix.go_version}}
+      - name: CheckOut Code
+        uses: actions/checkout@v2
+      - name: Init Environment
+        if: matrix.os == 'macos-latest'
+        run:
+          bash ./macos_init.sh
+      - name: Test
+        run:  make cover-test
+      - name: Upload coverage to Codecov
+        if: matrix.os != 'windows-latest'
+        run: bash <(curl -s https://codecov.io/bash)
+      - name: Upload coverage to Codecov On Windows
+        if: matrix.os == 'windows-latest'
+        run:
+          $ProgressPreference = 'SilentlyContinue' ;
+          Invoke-WebRequest -Uri https://uploader.codecov.io/latest/windows/codecov.exe -Outfile codecov.exe ;
+          .\codecov.exe

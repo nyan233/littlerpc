@@ -1,10 +1,7 @@
 package metadata
 
 import (
-	"context"
 	"github.com/nyan233/littlerpc/core/common/metadata"
-	"github.com/nyan233/littlerpc/core/common/stream"
-	"reflect"
 )
 
 func InputOffset(m *metadata.Process) int {
@@ -16,20 +13,4 @@ func InputOffset(m *metadata.Process) int {
 	default:
 		return 0
 	}
-}
-
-// IFContextOrStream 检查输入参数中是否有context&stream
-// type必须为Method/Func类型
-func IFContextOrStream(opt *metadata.Process, typ reflect.Type) (offset int) {
-	for j := 0; j < typ.NumIn() && j < 2; j++ {
-		switch reflect.New(typ.In(j)).Interface().(type) {
-		case *context.Context:
-			opt.SupportContext = true
-			offset++
-		case *stream.LStream:
-			opt.SupportStream = true
-			offset++
-		}
-	}
-	return
 }

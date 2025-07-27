@@ -1,8 +1,6 @@
 package server
 
 import (
-	"context"
-	lContext "github.com/nyan233/littlerpc/core/common/context"
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	msgparser2 "github.com/nyan233/littlerpc/core/common/msgparser"
 	"github.com/nyan233/littlerpc/core/common/transport"
@@ -115,8 +113,6 @@ func (s *Server) onOpen(conn transport.ConnAdapter) {
 	desc.ctxManager = newContextManager()
 	desc.remoteAddr = conn.RemoteAddr()
 	desc.localAddr = conn.LocalAddr()
-	desc.cacheCtx = lContext.WithLocalAddr(context.Background(), desc.localAddr)
-	desc.cacheCtx = lContext.WithRemoteAddr(context.Background(), desc.remoteAddr)
 	conn.SetSource(desc)
 	// init keepalive
 	if cfg.KeepAlive {

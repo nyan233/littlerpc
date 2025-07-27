@@ -2,11 +2,11 @@ package client
 
 import (
 	"crypto/tls"
-	"github.com/nyan233/littlerpc/core/client/loadbalance"
 	"github.com/nyan233/littlerpc/core/common/logger"
 	"github.com/nyan233/littlerpc/core/common/msgparser"
 	"github.com/nyan233/littlerpc/core/common/msgwriter"
 	"github.com/nyan233/littlerpc/core/middle/codec"
+	"github.com/nyan233/littlerpc/core/middle/ns"
 	"github.com/nyan233/littlerpc/core/middle/packer"
 	"github.com/nyan233/littlerpc/core/middle/plugin"
 	perror "github.com/nyan233/littlerpc/core/protocol/error"
@@ -36,17 +36,10 @@ type Config struct {
 	Codec codec.Codec
 	// 用于连接复用的连接数量
 	MuxConnection int
-	// 是否开启负载均衡
-	OpenLoadBalance bool
-	// 负载均衡规则, 默认可选hash/roundRobin/random/consistentHash
-	BalancerScheme string
-	// 地址解析器, 默认提供http/file/live
-	BalancerResolverFunc loadbalance.ResolverFunc
-	// 负载均衡器的附加配置, 实现第三方的负载均衡器时可能需要此配置
-	BalancerTailConfig interface{}
-	// 负载均衡器的地址列表更新间隔, 默认120s
-	ResolverUpdateInterval time.Duration
-	BalancerFactory        func(config loadbalance.Config) loadbalance.Balancer
+	// name server storage
+	NsStorage ns.Storage
+	// name scheme, hash/random/consistent-hash
+	NsScheme string
 	// 安装的插件
 	Plugins []plugin.ClientPlugin
 	// 可以生成自定义错误的工厂回调函数

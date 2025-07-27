@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+option go_package = "pb/nameserver";
+
+package nameserver;
+
+service nameserver {
+  // 添加节点
+  rpc AddNodeList(AddNodeListReq) returns (AddNodeListRsp);
+  // 获取节点
+  rpc GetNodeList(GetNodeListReq) returns (GetNodeListRsp);
+  // 删除节点
+  rpc DeleteNodeList(DeleteNodeListReq) returns (DeleteNodeListRsp);
+  // 获取节点信息
+  // 可以比较version来判断是否更新
+  rpc GetNodeListInfo(GetNodeListInfoReq) returns (GetNodeListInfoRsp);
+  // 获取所有的key
+  rpc GetAllKey(GetAllKeyReq) returns (GetAllKeyRsp);
+}
+
+message Node {
+  string ip = 1;
+  uint32 port = 2;
+  uint32 priority = 3;
+  bytes ip_big_endian = 4;
+}
+
+message AddNodeListReq {
+  string key = 1;
+  repeated Node node_list = 2;
+}
+
+message AddNodeListRsp {
+  string key = 1;
+  uint32 version = 2;
+}
+
+message GetNodeListReq {
+  string key = 1;
+}
+
+message GetNodeListRsp {
+  string key = 1;
+  uint32 version = 2;
+  repeated Node node_list = 3;
+}
+
+message DeleteNodeListReq {
+  string key = 1;
+  repeated Node node_list = 4;
+}
+
+message DeleteNodeListRsp {
+  string key = 1;
+  uint32 version = 2;
+  uint32 del_count = 3;
+}
+
+message GetNodeListInfoReq {
+  string key = 1;
+}
+
+message GetNodeListInfoRsp {
+  string key = 1;
+  uint32 version = 2;
+  uint64 last_updated_at = 3;
+  uint32 node_list_length = 4;
+}
+
+message GetAllKeyReq {
+}
+
+message GetAllKeyRsp {
+  repeated string key_list = 1;
+}

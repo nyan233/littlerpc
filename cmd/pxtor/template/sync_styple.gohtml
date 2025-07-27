@@ -1,0 +1,5 @@
+func(p {{.ReceiverName}}) {{.MethodName}}({{range .InputTypeList}}{{.}}pIndex,{{end}}) () {
+    reps,err := p.Call("{{.SourceName}}.{{MethodName}}",{{range .InputTypeList}}{{.}}pIndex,{{end}})
+    {{range .InputTypeList}}{{.}}r$index,_ := reps[$index]{{end}}
+    {{range .InputTypeList}}{{.}}return r$index,{{end}}err
+}

@@ -9,22 +9,50 @@ import (
 
 const (
 	Big    int = 5000
+	Medium int = 500
 	Little int = 50
 )
 
 // NoMux level为生成的消息的标准, Big/Little
 func NoMux(level int) *message2.Message {
+	return NoMux2(&Option{
+		Level:          level,
+		MaxNMetadata:   10,
+		MetadataRandom: true,
+		MaxNArgument:   8,
+		ArgumentRandom: true,
+	})
+}
+
+type Option struct {
+	Level          int
+	MaxNMetadata   int
+	MetadataRandom bool
+	MaxNArgument   int
+	ArgumentRandom bool
+}
+
+func NoMux2(opt *Option) *message2.Message {
+	level := opt.Level
 	msg := message2.New()
 	msg.SetMsgId(uint64(random.FastRand()))
 	msg.MetaData.Store(message2.CodecScheme, random.GenStringOnAscii(100))
 	msg.MetaData.Store(message2.PackerScheme, random.GenStringOnAscii(100))
 	msg.SetMsgType(uint8(random.FastRand()))
 	msg.SetServiceName(random.GenStringOnAscii(100))
-	for i := 0; i < int(random.FastRandN(50)+1); i++ {
-		msg.AppendPayloads(random.GenBytesOnAscii(random.FastRandN(uint32(level))))
+	maxNMetadata := opt.MaxNMetadata
+	if opt.MetadataRandom {
+		maxNMetadata = int(random.FastRandN(uint32(opt.MaxNMetadata)) + 1)
 	}
-	for i := 0; i < int(random.FastRandN(10)+1); i++ {
-		msg.MetaData.Store(random.GenStringOnAscii(uint32(level)), random.GenStringOnAscii(10))
+	for i := 0; i < maxNMetadata; i++ {
+		msg.MetaData.DirectStore(random.GenStringOnAscii(uint32(level)), random.GenStringOnAscii(10))
+	}
+	maxNArgument := opt.MaxNArgument
+	if opt.ArgumentRandom {
+		maxNArgument = int(random.FastRandN(50) + 1)
+	}
+	for i := 0; i < maxNArgument; i++ {
+		msg.AppendPayloads(random.GenBytesOnAscii(random.FastRandN(uint32(level))))
 	}
 	return msg
 }

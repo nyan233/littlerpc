@@ -1,9 +1,9 @@
 package logger
 
 import (
-	"context"
 	"fmt"
-	lContext "github.com/nyan233/littlerpc/core/common/context"
+	context2 "github.com/nyan233/littlerpc/core/common/context"
+	"github.com/nyan233/littlerpc/core/common/logger"
 	"github.com/nyan233/littlerpc/core/middle/plugin"
 	errorCode "github.com/nyan233/littlerpc/core/protocol/error"
 	perror "github.com/nyan233/littlerpc/core/protocol/error"
@@ -14,11 +14,17 @@ import (
 	"time"
 )
 
-type statusCode struct{}
+const (
+	statusCode = "lp-status"
+	msgType    = "lp-msgType"
+	startTime  = "lp-startTime"
+)
 
 type Logger struct {
 	plugin.AbstractServer
-	w io.Writer
+	w         io.Writer
+	rpcLogger logger.LLogger
+	rpcEh     perror.LErrors
 }
 
 func New(w io.Writer) plugin.ServerPlugin {
@@ -27,16 +33,27 @@ func New(w io.Writer) plugin.ServerPlugin {
 	}
 }
 
-func (l Logger) Call4S(pub *plugin.Context, args []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
+func (l *Logger) Setup(a0 logger.LLogger, a1 perror.LErrors) {
+	l.rpcLogger = a0
+	l.rpcEh = a1
+}
+
+func (l *Logger) Receive4S(ctx *context2.Context, msg *message.Message) perror.LErrorDesc {
+	ctx.SetValue(msgType, msg.GetMsgType())
+	ctx.SetValue(startTime, time.Now())
+	return nil
+}
+
+func (l *Logger) Call4S(ctx *context2.Context, args []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
 	if err != nil {
-		return l.printLog(pub, nil, err, "Call")
+		return l.printLog(ctx, nil, err, "Call")
 	}
 	return nil
 }
 
-func (l Logger) AfterCall4S(pub *plugin.Context, args, results []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
+func (l *Logger) AfterCall4S(ctx *context2.Context, args, results []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
 	if err != nil {
-		return l.printLog(pub, nil, err, "AfterCall")
+		return l.printLog(ctx, nil, err, "AfterCall")
 	}
 	if results == nil || len(results) == 0 {
 		return nil
@@ -50,22 +67,22 @@ func (l Logger) AfterCall4S(pub *plugin.Context, args, results []reflect.Value, 
 	} else {
 		status = errorCode.Unknown
 	}
-	pub.PluginContext = context.WithValue(pub.PluginContext, statusCode{}, status)
+	ctx.SetValue(statusCode, status)
 	return nil
 }
 
-func (l Logger) Send4S(pub *plugin.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
+func (l *Logger) Send4S(ctx *context2.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
 	if err != nil {
-		return l.printLog(pub, msg, err, "Send")
+		return l.printLog(ctx, msg, err, "Send")
 	}
 	return nil
 }
 
-func (l Logger) AfterSend4S(pub *plugin.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
-	return l.printLog(pub, msg, err, "AfterSend")
+func (l *Logger) AfterSend4S(ctx *context2.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
+	return l.printLog(ctx, msg, err, "AfterSend")
 }
 
-func (l Logger) printLog(pub *plugin.Context, msg *message.Message, err perror.LErrorDesc, phase string) perror.LErrorDesc {
+func (l *Logger) printLog(ctx *context2.Context, msg *message.Message, err perror.LErrorDesc, phase string) perror.LErrorDesc {
 	const (
 		KB = 1024
 		MB = KB * 1024
@@ -74,14 +91,9 @@ func (l Logger) printLog(pub *plugin.Context, msg *message.Message, err perror.L
 	if phase == "" {
 		phase = "Unknown"
 	}
-	data := lContext.CheckInitData(pub.PluginContext)
-	if data == nil {
-		pub.Logger.Warn("logger error : init data not found")
-		return nil
-	}
 	var status int
 	if err == nil {
-		if ctxStatus, ok := pub.PluginContext.Value(statusCode{}).(int); !ok {
+		if ctxStatus, ok := ctx.Value(statusCode).(int); !ok {
 			status = errorCode.Success
 		} else {
 			status = ctxStatus
@@ -90,7 +102,7 @@ func (l Logger) printLog(pub *plugin.Context, msg *message.Message, err perror.L
 		status = err.Code()
 	}
 	live := time.Now()
-	interval := live.Sub(data.Start)
+	interval := live.Sub(ctx.Value(startTime).(time.Time))
 	var msgSize uint32
 	if msg != nil {
 		msgSize = msg.GetAndSetLength()
@@ -107,7 +119,7 @@ func (l Logger) printLog(pub *plugin.Context, msg *message.Message, err perror.L
 		size = fmt.Sprintf("%.3fGB", float64(msgSize)/GB)
 	}
 	var msgType string
-	switch data.MsgType {
+	switch ctx.Value(msgType).(uint8) {
 	case message.Call:
 		msgType = "Call"
 	case message.Ping:
@@ -123,11 +135,11 @@ func (l Logger) printLog(pub *plugin.Context, msg *message.Message, err perror.L
 		status,
 		interval,
 		size,
-		strings.Split(lContext.CheckRemoteAddr(pub.PluginContext).String(), ":")[0],
+		strings.Split(ctx.RemoteAddr.String(), ":")[0],
 		msgType,
-		data.ServiceName)
+		ctx.ServiceName)
 	if wErr != nil {
-		pub.Logger.Warn("logger write data error : %v", wErr)
+		l.rpcLogger.Warn("logger write data error : %v", wErr)
 	}
 	return nil
 }

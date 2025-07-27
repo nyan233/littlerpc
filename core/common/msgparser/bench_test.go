@@ -5,6 +5,7 @@ import (
 	"github.com/nyan233/littlerpc/core/container"
 	message2 "github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/protocol/message/gen"
+	"github.com/nyan233/littlerpc/core/utils/convert"
 	"io"
 	"testing"
 )
@@ -12,6 +13,9 @@ import (
 func BenchmarkParser(b *testing.B) {
 	const (
 		UsageParseOnReader = true
+		MsgLevel           = gen.Little
+		MaxNMetadata       = 4
+		MaxNArgument       = 2
 	)
 	parser := Get(DefaultParser)(NewAllocTorForUnitTest(), MaxBufferSize*32)
 	for i := 1; i <= (1 << 10); i *= 4 {
@@ -23,7 +27,13 @@ func BenchmarkParser(b *testing.B) {
 			messageSplits := make([]*message2.Message, 0)
 			lengths := make([]int, 0)
 			for j := 0; j < i; j++ {
-				msg := gen.NoMux(gen.Little)
+				msg := gen.NoMux2(&gen.Option{
+					Level:          MsgLevel,
+					MaxNMetadata:   MaxNMetadata,
+					MetadataRandom: false,
+					MaxNArgument:   MaxNArgument,
+					ArgumentRandom: false,
+				})
 				messageSplits = append(messageSplits, msg)
 				var bytes container.Slice[byte]
 				err := message2.Marshal(msg, &bytes)
@@ -60,7 +70,6 @@ func BenchmarkParser(b *testing.B) {
 					parseMsgs, err = parser.Parse(buf2)
 				}
 				if err != nil {
-					_, err = parser.Parse(messages)
 					b.Fatal(j, err)
 				}
 				b.StopTimer()
@@ -75,4 +84,30 @@ func BenchmarkParser(b *testing.B) {
 			b.ReportMetric(float64(runCount), "RunCount")
 		})
 	}
+}
+
+func BenchmarkMemoryBytesToString(b *testing.B) {
+	// escape
+	var bytes = make([]byte, 64)
+	var strSet = make([]string, 8)
+	b.Run("No-Merge", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < len(strSet); j++ {
+				strSet[j] = string(bytes)
+			}
+		}
+	})
+	b.Run("Merge", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			bytesLen := len(bytes)
+			b2 := make([]byte, len(strSet)*bytesLen)
+			for j := 0; j < len(strSet); j++ {
+				copy(b2, bytes)
+				strSet[j] = convert.BytesToString(b2[:bytesLen])
+				b2 = b2[bytesLen:]
+			}
+		}
+	})
 }

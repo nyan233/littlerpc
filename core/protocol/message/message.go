@@ -18,8 +18,7 @@ const (
 	Pong uint8 = 0x35
 
 	// BaseLen 的基本长度
-	BaseLen = _ScopeLength + 4 + 8
-	// DefaultPacker TODO: 将Encoder改为Packer
+	BaseLen              = _ScopeLength + 4 + 8
 	DefaultPacker string = "text" // encoding == text
 	DefaultCodec  string = "json" // codec == text
 
@@ -28,7 +27,6 @@ const (
 	ErrorMore    string = "bin"
 	ContextId    string = "context-id"
 	CodecScheme  string = "codec"
-	// PackerScheme TODO: 将Encoder改为Packer
 	PackerScheme string = "packer"
 )
 
@@ -111,8 +109,12 @@ type Message struct {
 	// OutPut:
 	//	0x00000002|0x00000014|0x00000014
 	payloadLayout container2.Slice[uint32]
-	// 调用参数序列化后的载荷数据
+	// 调用参数序列化后的载荷数据, 通过payloadLayout得出正确的分隔
 	// 如果被压缩了那么在反序列化时,最后剩下的数据均为参数载荷
+	// Example :
+	//	1024,1023,"my is string"
+	// Output :
+	//	1024|1023|my is string
 	payloads container2.Slice[byte]
 }
 

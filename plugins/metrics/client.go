@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	context2 "github.com/nyan233/littlerpc/core/common/context"
 	"github.com/nyan233/littlerpc/core/middle/plugin"
 	perror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
@@ -21,12 +22,12 @@ func NewClient() *ClientMetricsPlugin {
 	}
 }
 
-func (c *ClientMetricsPlugin) Request4C(pub *plugin.Context, args []interface{}, msg *message.Message) perror.LErrorDesc {
+func (c *ClientMetricsPlugin) Request4C(ctx *context2.Context, args []interface{}, msg *message.Message) perror.LErrorDesc {
 	c.Call.IncCount()
 	return nil
 }
 
-func (c *ClientMetricsPlugin) AfterSend4C(pub *plugin.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
+func (c *ClientMetricsPlugin) AfterSend4C(ctx *context2.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
 	if msg == nil || err != nil {
 		c.Call.IncFailed()
 		return nil
@@ -35,7 +36,7 @@ func (c *ClientMetricsPlugin) AfterSend4C(pub *plugin.Context, msg *message.Mess
 	return nil
 }
 
-func (c *ClientMetricsPlugin) Receive4C(pub *plugin.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
+func (c *ClientMetricsPlugin) Receive4C(ctx *context2.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
 	if err != nil {
 		c.Call.IncFailed()
 		return nil
@@ -44,7 +45,7 @@ func (c *ClientMetricsPlugin) Receive4C(pub *plugin.Context, msg *message.Messag
 	return nil
 }
 
-func (c *ClientMetricsPlugin) AfterReceive4C(pub *plugin.Context, results []interface{}, err perror.LErrorDesc) perror.LErrorDesc {
+func (c *ClientMetricsPlugin) AfterReceive4C(ctx *context2.Context, results []interface{}, err perror.LErrorDesc) perror.LErrorDesc {
 	if err != nil {
 		c.Call.IncFailed()
 		return nil

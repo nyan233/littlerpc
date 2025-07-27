@@ -4,24 +4,20 @@ import (
 	"context"
 	"fmt"
 	"github.com/nyan233/littlerpc/core/common/check"
-	rContext "github.com/nyan233/littlerpc/core/common/context"
+	context2 "github.com/nyan233/littlerpc/core/common/context"
 	"github.com/nyan233/littlerpc/core/common/errorhandler"
 	"github.com/nyan233/littlerpc/core/common/metadata"
 	"github.com/nyan233/littlerpc/core/common/msgparser"
-	"github.com/nyan233/littlerpc/core/common/stream"
 	"github.com/nyan233/littlerpc/core/common/transport"
 	metaDataUtil "github.com/nyan233/littlerpc/core/common/utils/metadata"
-	"github.com/nyan233/littlerpc/core/container"
 	"github.com/nyan233/littlerpc/core/middle/codec"
 	"github.com/nyan233/littlerpc/core/middle/packer"
-	"github.com/nyan233/littlerpc/core/middle/plugin"
 	perror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/protocol/message/mux"
 	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	"reflect"
 	"strconv"
-	"time"
 )
 
 // 该类型拥有的方法都有很多的副作用, 请谨慎
@@ -39,7 +35,7 @@ type messageOpt struct {
 	// Cancel func取消的是从context-id创建的原始context中派生的, 因此并没有context-id
 	Cancel   context.CancelFunc
 	CallArgs []reflect.Value
-	PCtx     *plugin.Context
+	PCtx     *context2.Context
 }
 
 func newConnDesc(s *Server, msg msgparser.ParserMessage, conn transport.ConnAdapter, desc *connSourceDesc) *messageOpt {
@@ -54,9 +50,9 @@ func newConnDesc(s *Server, msg msgparser.ParserMessage, conn transport.ConnAdap
 		opt.PCtx = nil
 	} else {
 		opt.PCtx = s.pManager.GetContext()
-		opt.PCtx.PluginContext = injectPluginContext(desc.cacheCtx, msg.Message.GetMsgType(), msg.Message.GetServiceName(), time.Now())
-		opt.PCtx.Logger = s.logger
-		opt.PCtx.EHandler = s.eHandle
+		opt.PCtx.ServiceName = msg.Message.GetServiceName()
+		opt.PCtx.LocalAddr = desc.localAddr
+		opt.PCtx.RemoteAddr = desc.remoteAddr
 	}
 	return opt
 }
@@ -173,7 +169,7 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 		}
 	}()
 	var callArgs []reflect.Value
-	var inputStart int
+	var inputStart = 1
 	if c.Service.Option.CompleteReUsage {
 		callArgs = c.Service.Pool.Get().([]reflect.Value)
 		defer func() {
@@ -181,10 +177,11 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 				c.Service.Pool.Put(&callArgs)
 			}
 		}()
-		inputStart, err = c.checkContextAndStream(callArgs, true)
+		ctx, err := c.getContext()
 		if err != nil {
-			return
+			return nil, err
 		}
+		callArgs[0] = reflect.ValueOf(ctx)
 	} else {
 		callArgs = reflect2.FuncInputTypeListReturnValue(c.Service.ArgsType, 0, func(i int) bool {
 			if len(iter.Take()) == 0 {
@@ -192,10 +189,11 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 			}
 			return false
 		}, true)
-		inputStart, err = c.checkContextAndStream(callArgs, true)
+		ctx, err := c.getContext()
 		if err != nil {
-			return
+			return nil, err
 		}
+		callArgs[0] = reflect.ValueOf(ctx)
 	}
 	iter.Reset()
 	for i := inputStart; i < len(callArgs) && iter.Next(); i++ {
@@ -210,54 +208,30 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 	return callArgs, nil
 }
 
-func (c *messageOpt) getContext() (context.Context, perror.LErrorDesc) {
-	ctx := context.Background()
+func (c *messageOpt) getContext() (*context2.Context, perror.LErrorDesc) {
+	ctx := context2.Background()
 	ctxIdStr, ok := c.Message.MetaData.LoadOk(message.ContextId)
-	// 客户端携带context-id且对应的过程支持context时才注册context
-	// 为不支持context的过程注册时无意义的且可能会导致context泄漏
-	if ok && c.Service.SupportContext {
+	// 客户端携带context-id才注册context
+	if ok {
 		ctxId, err := strconv.ParseUint(ctxIdStr, 10, 64)
 		if err != nil {
 			return nil, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
 		}
 		rawCtx, _ := c.Desc.ctxManager.RegisterContextCancel(ctxId)
-		ctx, c.Cancel = context.WithCancel(rawCtx)
+		ctx, c.Cancel = context2.WithCancelOfOrigin(rawCtx)
 		if err != nil {
 			return nil, c.Server.eHandle.LWarpErrorDesc(errorhandler.ErrServer, err.Error())
 		}
 	}
-	ctx = rContext.WithLocalAddr(ctx, c.Desc.localAddr)
-	ctx = rContext.WithRemoteAddr(ctx, c.Desc.remoteAddr)
+	ctx.LocalAddr = c.Desc.localAddr
+	ctx.RemoteAddr = c.Desc.remoteAddr
+	ctx.ServiceName = c.Message.GetServiceName()
+	c.Message.MetaData.Range(func(k string, v string) (next bool) {
+		// 干净的SliceMap直接存入key/value, 避免比较开销
+		ctx.Header.DirectStore(k, v)
+		return true
+	})
 	return ctx, nil
-}
-
-func (c *messageOpt) checkContextAndStream(callArgs container.Slice[reflect.Value], write bool) (offset int, err perror.LErrorDesc) {
-	ctx, err := c.getContext()
-	if err != nil {
-		return 0, err
-	}
-	callArgs.Reset()
-	switch {
-	case c.Service.SupportContext:
-		offset = 1
-		if write {
-			callArgs.AppendSingle(reflect.ValueOf(ctx))
-		}
-	case c.Service.SupportContext && c.Service.SupportStream:
-		offset = 2
-		if write {
-			callArgs.AppendS(reflect.ValueOf(ctx), reflect.ValueOf(*new(stream.LStream)))
-		}
-	case c.Service.SupportStream:
-		offset = 1
-		if write {
-			callArgs.AppendSingle(reflect.ValueOf(*new(stream.LStream)))
-		}
-	default:
-		// 不支持context&stream
-		break
-	}
-	return
 }
 
 func (c *messageOpt) initReplyMsg(msg *message.Message, msgId uint64) {
@@ -269,13 +243,4 @@ func (c *messageOpt) initReplyMsg(msg *message.Message, msgId uint64) {
 	if c.Packer.Scheme() != message.DefaultPacker {
 		msg.MetaData.Store(message.PackerScheme, c.Packer.Scheme())
 	}
-}
-
-func injectPluginContext(ctx context.Context, msgType uint8, service string, start time.Time) context.Context {
-	ctx = rContext.WithInitData(ctx, &rContext.InitData{
-		Start:       start,
-		ServiceName: service,
-		MsgType:     msgType,
-	})
-	return ctx
 }

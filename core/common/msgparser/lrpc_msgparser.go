@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/nyan233/littlerpc/core/container"
 	message2 "github.com/nyan233/littlerpc/core/protocol/message"
+	"io"
 )
 
 type readyBuffer struct {
@@ -64,7 +65,7 @@ func (h *lRPCTrait) ParseOnReader(reader func([]byte) (n int, err error)) (msgs 
 	currentCap := h.halfBuffer.Cap()
 	h.halfBuffer = h.halfBuffer[:currentCap]
 	readN, err := reader(h.halfBuffer[currentLen:currentCap])
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return nil, err
 	}
 	h.halfBuffer = h.halfBuffer[:currentLen+readN]

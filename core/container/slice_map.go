@@ -13,7 +13,7 @@ type SliceMap[K comparable, V any] struct {
 
 func NewSliceMap[K comparable, V any](size int) *SliceMap[K, V] {
 	return &SliceMap[K, V]{
-		nodes: make([]mapNode[K, V], size),
+		nodes: make([]mapNode[K, V], 0, size),
 	}
 }
 
@@ -23,18 +23,28 @@ func (m *SliceMap[K, V]) Reset() {
 }
 
 func (m *SliceMap[K, V]) Store(key K, value V) {
-	for index, node := range m.nodes {
-		if !node.StoreOk {
-			node.Key = key
-			node.Value = value
-			node.StoreOk = true
-			m.nodes[index] = node
-			m.length++
-			return
-		} else if node.StoreOk && node.Key == key {
-			node.Value = value
-			m.nodes[index] = node
-			return
+	m.store(key, value, false)
+}
+
+func (m *SliceMap[K, V]) DirectStore(key K, value V) {
+	m.store(key, value, true)
+}
+
+func (m *SliceMap[K, V]) store(key K, value V, direct bool) {
+	if !direct {
+		for index, node := range m.nodes {
+			if !node.StoreOk {
+				node.Key = key
+				node.Value = value
+				node.StoreOk = true
+				m.nodes[index] = node
+				m.length++
+				return
+			} else if node.StoreOk && node.Key == key {
+				node.Value = value
+				m.nodes[index] = node
+				return
+			}
 		}
 	}
 	m.nodes = append(m.nodes, mapNode[K, V]{

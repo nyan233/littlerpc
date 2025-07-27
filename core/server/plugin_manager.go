@@ -1,6 +1,7 @@
 package server
 
 import (
+	context2 "github.com/nyan233/littlerpc/core/common/context"
 	"github.com/nyan233/littlerpc/core/middle/plugin"
 	perror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
@@ -17,10 +18,16 @@ func newPluginManager(plugins []plugin.ServerPlugin) *pluginManager {
 	return &pluginManager{
 		ctxPool: sync.Pool{
 			New: func() interface{} {
-				return new(plugin.Context)
+				return context2.Background()
 			},
 		},
 		plugins: plugins,
+	}
+}
+
+func (m *pluginManager) setupAll(s *Server) {
+	for _, v := range m.plugins {
+		v.Setup(s.logger, s.eHandle)
 	}
 }
 
@@ -32,11 +39,11 @@ func (m *pluginManager) Size() int {
 	return len(m.plugins)
 }
 
-func (m *pluginManager) GetContext() *plugin.Context {
-	return m.ctxPool.Get().(*plugin.Context)
+func (m *pluginManager) GetContext() *context2.Context {
+	return m.ctxPool.Get().(*context2.Context)
 }
 
-func (m *pluginManager) FreeContext(ctx *plugin.Context) {
+func (m *pluginManager) FreeContext(ctx *context2.Context) {
 	m.ctxPool.Put(ctx)
 }
 
@@ -49,7 +56,7 @@ func (m *pluginManager) Event4S(ev plugin.Event) (next bool) {
 	return true
 }
 
-func (m *pluginManager) Receive4S(pub *plugin.Context, msg *message.Message) perror.LErrorDesc {
+func (m *pluginManager) Receive4S(pub *context2.Context, msg *message.Message) perror.LErrorDesc {
 	for _, p := range m.plugins {
 		if err := p.Receive4S(pub, msg); err != nil {
 			return err
@@ -58,7 +65,7 @@ func (m *pluginManager) Receive4S(pub *plugin.Context, msg *message.Message) per
 	return nil
 }
 
-func (m *pluginManager) Call4S(pub *plugin.Context, args []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
+func (m *pluginManager) Call4S(pub *context2.Context, args []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
 	for _, p := range m.plugins {
 		if err := p.Call4S(pub, args, err); err != nil {
 			return err
@@ -67,7 +74,7 @@ func (m *pluginManager) Call4S(pub *plugin.Context, args []reflect.Value, err pe
 	return nil
 }
 
-func (m *pluginManager) AfterCall4S(pub *plugin.Context, args, results []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
+func (m *pluginManager) AfterCall4S(pub *context2.Context, args, results []reflect.Value, err perror.LErrorDesc) perror.LErrorDesc {
 	for _, p := range m.plugins {
 		if err := p.AfterCall4S(pub, args, results, err); err != nil {
 			return err
@@ -76,7 +83,7 @@ func (m *pluginManager) AfterCall4S(pub *plugin.Context, args, results []reflect
 	return nil
 }
 
-func (m *pluginManager) Send4S(pub *plugin.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
+func (m *pluginManager) Send4S(pub *context2.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
 	for _, p := range m.plugins {
 		if err := p.Send4S(pub, msg, err); err != nil {
 			return err
@@ -85,7 +92,7 @@ func (m *pluginManager) Send4S(pub *plugin.Context, msg *message.Message, err pe
 	return nil
 }
 
-func (m *pluginManager) AfterSend4S(pub *plugin.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
+func (m *pluginManager) AfterSend4S(pub *context2.Context, msg *message.Message, err perror.LErrorDesc) perror.LErrorDesc {
 	for _, p := range m.plugins {
 		if err := p.AfterSend4S(pub, msg, err); err != nil {
 			return err
