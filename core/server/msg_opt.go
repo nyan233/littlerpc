@@ -15,7 +15,6 @@ import (
 	perror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/protocol/message/mux"
-	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 	"reflect"
 	"strconv"
 )
@@ -183,12 +182,15 @@ func (c *messageOpt) checkCallArgs() (values []reflect.Value, err perror.LErrorD
 		}
 		callArgs[0] = reflect.ValueOf(ctx)
 	} else {
-		callArgs = reflect2.FuncInputTypeListReturnValue(c.Service.ArgsType, 0, func(i int) bool {
+		callArgs = allocValueFromArgsType(c.Service.ArgsType, func(idx int) bool {
+			return !(idx < 1)
+		}, func(arg reflect.Type) reflect.Value {
 			if len(iter.Take()) == 0 {
-				return true
+				return reflect.New(arg).Elem()
+			} else {
+				return allocDefaultNewFunc(arg)
 			}
-			return false
-		}, true)
+		})
 		ctx, err := c.getContext()
 		if err != nil {
 			return nil, err

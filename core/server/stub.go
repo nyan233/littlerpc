@@ -1,8 +1,8 @@
 package server
 
 import (
-	"context"
 	"errors"
+	context2 "github.com/nyan233/littlerpc/core/common/context"
 	"github.com/nyan233/littlerpc/core/container"
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/utils/convert"
@@ -15,7 +15,7 @@ type Stub struct {
 	iter    *container.Iterator[[]byte]
 	reply   *message.Message
 	callErr error
-	context.Context
+	*context2.Context
 }
 
 func (stub *Stub) setup() {

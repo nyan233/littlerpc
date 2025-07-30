@@ -10,6 +10,7 @@ type callConfig struct {
 	Writer msgwriter2.Writer
 	Codec  codec.Codec
 	Packer packer.Packer
+	Addr   string
 }
 
 type CallOption func(cc *callConfig)
@@ -57,5 +58,11 @@ func WithCallJsonRpc2() CallOption {
 		cc.Codec = c.Codec
 		cc.Writer = c.Writer
 		cc.Packer = c.Packer
+	}
+}
+
+func WithAddr(addr string) CallOption {
+	return func(cc *callConfig) {
+		cc.Addr = addr
 	}
 }

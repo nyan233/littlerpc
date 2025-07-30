@@ -43,7 +43,6 @@ func Unmarshal(p container.Slice[byte], msg *Message) error {
 	if p.Len() < msg.BaseLength() {
 		return errors.New("data Length < baseLen")
 	}
-	var liveBuffer []byte
 	err := UnmarshalFromMux(p, msg)
 	if err != nil {
 		return err
@@ -80,17 +79,21 @@ func Unmarshal(p container.Slice[byte], msg *Message) error {
 		pp = pp[keySize+valueSize:]
 		metadataRawSize += keySize + valueSize
 	}
-	liveBuffer = make([]byte, metadataRawSize, metadataRawSize)
+	liveBuffer := make([]byte, 0, metadataRawSize)
 	for i := 0; i < int(nMetaData); i++ {
+		liveBufCurIdx := len(liveBuffer)
 		keySize := binary.BigEndian.Uint32(p[:4])
 		valueSize := binary.BigEndian.Uint32(p[4:8])
 		p = p[8:]
-		copy(liveBuffer, p[:keySize])
-		copy(liveBuffer, p[keySize:keySize+valueSize])
-		msg.MetaData.DirectStore(convert.BytesToString(liveBuffer[:keySize]),
-			convert.BytesToString(liveBuffer[keySize:keySize+valueSize]))
-		p = p[keySize+valueSize:]
-		liveBuffer = liveBuffer[keySize+valueSize:]
+		liveBuffer = liveBuffer[:uint32(liveBufCurIdx)+keySize+valueSize]
+		copy(liveBuffer[liveBufCurIdx:], p[:keySize])
+		p = p[keySize:]
+		copy(liveBuffer[uint32(liveBufCurIdx)+keySize:], p[:valueSize])
+		p = p[valueSize:]
+		msg.MetaData.DirectStore(
+			convert.BytesToString(liveBuffer[liveBufCurIdx:uint32(liveBufCurIdx)+keySize]),
+			convert.BytesToString(liveBuffer[uint32(liveBufCurIdx)+keySize:uint32(liveBufCurIdx)+keySize+valueSize]),
+		)
 	}
 	// 在可变长数据之后, 需要校验
 	if p.Len() < _PayloadLayout {

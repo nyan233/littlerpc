@@ -4,3 +4,5 @@
 fuzz
 
 all.cover.out
+go.sum
+/cmd/protoc-gen-go-lrpc/protoc-gen-go-lrpc.exe

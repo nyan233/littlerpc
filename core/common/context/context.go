@@ -18,7 +18,7 @@ type Context struct {
 }
 
 func NewContext(ctx context.Context) *Context {
-	return &Context{OriginCtx: ctx, Header: container.NewSliceMap[string, string](16), localStorage: make(map[any]any, 4)}
+	return &Context{OriginCtx: ctx, Header: container.NewSliceMap[string, string](8), localStorage: make(map[any]any, 4)}
 }
 
 func (c *Context) Deadline() (deadline time.Time, ok bool) {

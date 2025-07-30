@@ -5,12 +5,6 @@ import (
 )
 
 func InputOffset(m *metadata.Process) int {
-	switch {
-	case m.SupportStream && m.SupportContext:
-		return 2
-	case m.SupportContext, m.SupportStream:
-		return 1
-	default:
-		return 0
-	}
+	// NOTE : 2025/07/28 默认为1, 首个参数必定为*context.Context
+	return 1
 }

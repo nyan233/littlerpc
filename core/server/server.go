@@ -23,7 +23,6 @@ import (
 	"github.com/nyan233/littlerpc/core/container"
 	lerror "github.com/nyan233/littlerpc/core/protocol/error"
 	"github.com/nyan233/littlerpc/internal/pool"
-	reflect2 "github.com/nyan233/littlerpc/internal/reflect"
 )
 
 const (
@@ -74,9 +73,11 @@ func New(opts ...Option) *Server {
 	server.services = container.NewRCUMap[string, *metadata.Process](128)
 	server.sources = container.NewRCUMap[string, *metadata.Source](128)
 	// init reflection service
-	err := server.RegisterClass(ReflectionSource, &LittleRpcReflection{server}, nil)
-	if err != nil {
-		panic(err)
+	if server.config.Load().OpenReflection {
+		err := server.RegisterClass(ReflectionSource, &LittleRpcReflection{server}, nil)
+		if err != nil {
+			panic(err)
+		}
 	}
 	return server
 }
@@ -223,7 +224,7 @@ func (s *Server) registerProcess(src *metadata.Source, process string, processVa
 	if processValue.Type().NumOut() == 0 {
 		panic(s.eHandle.LNewErrorDesc(errno.UnsafeOption, fmt.Sprintf("method return list len < 1 : %s", process)))
 	}
-	if !processValue.Type().Out(processValue.Type().NumOut() - 1).Implements(reflect.TypeOf(error(nil))) {
+	if !(processValue.Type().Out(processValue.Type().NumOut()-1) == reflect.TypeOf((*error)(nil)).Elem()) {
 		panic(s.eHandle.LNewErrorDesc(errno.UnsafeOption, fmt.Sprintf("method last return value not impl error : %s", process)))
 	}
 	for j := 0; j < processValue.Type().NumIn(); j++ {
@@ -244,10 +245,9 @@ func (s *Server) registerProcess(src *metadata.Source, process string, processVa
 	processDesc.Pool = sync.Pool{
 		New: func() interface{} {
 			// NOTE: 2025/07/27 method first arg must is *context.Context
-			inputs := reflect2.FuncInputTypeListReturnValue(processDesc.ArgsType, 1, func(i int) bool {
-				return false
-			}, true)
-			// NOTE: 2025/07/27 method first arg must is *context.Context
+			inputs := allocValueFromArgsType(processDesc.ArgsType, func(idx int) bool {
+				return !(idx < 1)
+			}, allocDefaultNewFunc)
 			inputs[0] = reflect.ValueOf(context2.NewContext(context.Background()))
 			return inputs
 		},

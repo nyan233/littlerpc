@@ -77,12 +77,6 @@ func WithTlsClient(tlsC *tls.Config) Option {
 	}
 }
 
-func WithAddress(addr string) Option {
-	return func(config *Config) {
-		config.ServerAddr = addr
-	}
-}
-
 func WithCustomLogger(logger logger.LLogger) Option {
 	return func(config *Config) {
 		config.Logger = logger

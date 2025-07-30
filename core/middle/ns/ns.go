@@ -117,7 +117,8 @@ func (ns *NameServer) GetNode(path string) (Node, error) {
 		if err != nil {
 			return Node{}, err
 		}
-		ns.cache.Store(class, ns.genCacheVal(nodeList))
+		cv = ns.genCacheVal(nodeList)
+		ns.cache.Store(class, cv)
 	}
 success:
 	nNode := len(cv.NodeList)

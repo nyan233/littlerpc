@@ -72,6 +72,10 @@ func (c *Client) processRsp(cs *connSource, cc *callConfig, msg *message.Message
 			rspBytes = iter.Take()
 			err      error
 		)
+		if len(rspBytes) == 0 {
+			rspList = rspList[1:]
+			continue
+		}
 		err = cc.Codec.Unmarshal(rspBytes, rspList[0])
 		if err != nil {
 			return c.eHandle.LWarpErrorDesc(errorhandler.ErrCodecUnMarshalError, "cc.Codec.Unmarshal failed", err.Error())

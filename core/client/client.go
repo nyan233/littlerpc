@@ -12,6 +12,7 @@ import (
 	"github.com/nyan233/littlerpc/core/protocol/message"
 	"github.com/nyan233/littlerpc/core/utils/random"
 	"reflect"
+	"strconv"
 	"sync"
 )
 
@@ -60,14 +61,11 @@ func New(opts ...Option) (*Client, error) {
 	client.engine = transport2.Manager.GetClientEngine(config.NetWork)()
 	eventD := client.engine.EventDriveInter()
 	eventD.OnOpen(client.onOpen)
-	eventD.OnMessage(client.onMessage)
 	eventD.OnClose(client.onClose)
 	if config.RegisterMPOnRead {
 		eventD.OnRead(client.onRead)
-	}
-	err := client.engine.Client().Start()
-	if err != nil {
-		return nil, err
+	} else {
+		eventD.OnMessage(client.onMessage)
 	}
 	// init ErrHandler
 	client.eHandle = config.ErrHandler
@@ -83,7 +81,7 @@ func New(opts ...Option) (*Client, error) {
 		Storage: config.NsStorage,
 		Scheme:  config.NsScheme,
 	})
-	return client, nil
+	return client, client.Start()
 }
 
 func (c *Client) GetLogger() logger.LLogger {
@@ -108,21 +106,66 @@ func (c *Client) Request2(service string, opts []CallOption, reqCount int, args 
 			panic(fmt.Sprintf("rsp %d type is not pointer", idx))
 		}
 	}
-	cs, err := c.takeConnSource(service)
-	if err != nil {
-		return c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, err)
-	}
-	cc := &callConfig{
-		Writer: c.cfg.Writer,
-		Codec:  c.cfg.Codec,
-		Packer: c.cfg.Packer,
-	}
+	var (
+		cc = &callConfig{
+			Writer: c.cfg.Writer,
+			Codec:  c.cfg.Codec,
+			Packer: c.cfg.Packer,
+		}
+		cs  *connSource
+		err error2.LErrorDesc
+	)
 	if opts != nil && len(opts) > 0 {
 		for _, opt := range opts {
 			opt(cc)
 		}
 	}
+	if cc.Addr != "" {
+		cs, err = c.takeConnSourceWithNode(ns.Node{
+			Addr:     cc.Addr,
+			Priority: 1,
+		})
+	} else {
+		cs, err = c.takeConnSource(service)
+	}
+	if err != nil {
+		return err
+	}
 	return c.doRequest(service, cs, cc, reqList, rspList)
+}
+
+// Post 单请求/响应风格的API
+func (c *Client) Post(service string, opts []CallOption, ctx *context2.Context, req, rsp interface{}) error {
+	kind := reflect.TypeOf(rsp).Kind()
+	if kind != reflect.Pointer {
+		panic(fmt.Sprintf("rsp %s type is not pointer", kind))
+	}
+	var (
+		cc = &callConfig{
+			Writer: c.cfg.Writer,
+			Codec:  c.cfg.Codec,
+			Packer: c.cfg.Packer,
+		}
+		cs  *connSource
+		err error2.LErrorDesc
+	)
+	if opts != nil && len(opts) > 0 {
+		for _, opt := range opts {
+			opt(cc)
+		}
+	}
+	if cc.Addr != "" {
+		cs, err = c.takeConnSourceWithNode(ns.Node{
+			Addr:     cc.Addr,
+			Priority: 1,
+		})
+	} else {
+		cs, err = c.takeConnSource(service)
+	}
+	if err != nil {
+		return err
+	}
+	return c.doRequest(service, cs, cc, []interface{}{ctx, req}, []interface{}{rsp})
 }
 
 func (c *Client) doRequest(service string, cs *connSource, cc *callConfig, reqList, rspList []interface{}) (err error2.LErrorDesc) {
@@ -131,31 +174,43 @@ func (c *Client) doRequest(service string, cs *connSource, cc *callConfig, reqLi
 	defer mp.Put(writeMsg)
 	writeMsg.Reset()
 	writeMsg.SetServiceName(service)
+	writeMsg.SetMsgType(message.Call)
+	writeMsg.SetMsgId(cs.GetMsgId())
+	if cc.Codec.Scheme() != message.DefaultCodec {
+		writeMsg.MetaData.Store(message.CodecScheme, cc.Codec.Scheme())
+	}
+	if cc.Packer.Scheme() != message.DefaultPacker {
+		writeMsg.MetaData.Store(message.PackerScheme, cc.Packer.Scheme())
+	}
 	pCtx := c.pluginManager.GetContext()
 	defer c.pluginManager.FreeContext(pCtx)
 	if err := c.pluginManager.Request4C(pCtx, reqList, writeMsg); err != nil {
 		return err
 	}
 	var (
-		cctx  *context2.Context
-		ctxId uint64
+		cctx      *context2.Context
+		ctxId     uint64
+		returnErr error2.LErrorDesc
 	)
 	cctx, err = c.processReqList(cc, reqList, writeMsg, &ctxId)
 	if err != nil {
 		_ = c.pluginManager.Send4C(pCtx, writeMsg, err)
 		return err
 	}
+	if ctxId > 0 {
+		writeMsg.MetaData.Store(message.ContextId, strconv.FormatUint(ctxId, 10))
+	}
 	err = c.sendMessage(cs, cc, pCtx, cctx, writeMsg, func(rsp *message.Message) {
-		err = c.processRsp(cs, cc, rsp, rspList)
+		returnErr = c.processRsp(cs, cc, rsp, rspList)
 	})
 	// 插件错误中断后续的处理
 	if err != nil && (err.Code() == errorhandler.ErrPlugin.Code()) {
 		return err
 	}
-	if err := c.pluginManager.AfterReceive4C(pCtx, rspList, err); err != nil {
+	if err = c.pluginManager.AfterReceive4C(pCtx, rspList, returnErr); err != nil {
 		return err
 	}
-	return err
+	return returnErr
 }
 
 func (c *Client) takeConnSource(service string) (*connSource, error2.LErrorDesc) {
@@ -163,6 +218,11 @@ func (c *Client) takeConnSource(service string) (*connSource, error2.LErrorDesc)
 	if err != nil {
 		return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrClient, err)
 	}
+	return c.takeConnSourceWithNode(node)
+}
+
+func (c *Client) takeConnSourceWithNode(node ns.Node) (*connSource, error2.LErrorDesc) {
+	var err error
 	conn, ok := c.connCache.LoadOk(node.Addr)
 	if !ok {
 		c.connDialMu.Lock()
@@ -176,7 +236,6 @@ func (c *Client) takeConnSource(service string) (*connSource, error2.LErrorDesc)
 			KeepAlive:  c.cfg.KeepAlive,
 		})
 		if err != nil {
-			c.connDialMu.Unlock()
 			return nil, c.eHandle.LWarpErrorDesc(errorhandler.ErrConnection, err)
 		}
 		conn.SetSource(newConnSource(c.cfg.ParserFactory, conn, node))

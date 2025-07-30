@@ -54,7 +54,7 @@ func (m *Method) FormatToSync() string {
 				fmt.Fprintf(&rpcRequestArgList, "&r%d, ", index)
 			}
 		}
-		if index != len(m.InputList)-1 {
+		if index != len(m.OutputList)-1 {
 			returnList.WriteString(", ")
 		}
 	}
