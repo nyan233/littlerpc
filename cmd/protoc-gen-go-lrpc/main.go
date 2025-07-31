@@ -192,7 +192,7 @@ func generateMethodSignature(method *protogen.Method) string {
 func generateMethodImpl(method *protogen.Method, serviceName, implStruct string) string {
 	// 输入参数
 	args := []string{
-		"a0",
+		"a0 *context.Context",
 		fmt.Sprintf("a1 *%s", method.Input.GoIdent.GoName),
 		"opts ...client.CallOption",
 	}
