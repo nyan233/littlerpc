@@ -62,29 +62,65 @@ func generateServerCode(plugin *protogen.Plugin, file *protogen.File) {
 	g.P("import (")
 	g.P(`	"github.com/nyan233/littlerpc/core/server"`)
 	g.P(`	"github.com/nyan233/littlerpc/core/common/context"`)
+	g.P(`	"github.com/nyan233/littlerpc/core/common/metadata"`)
 	g.P(")")
 	g.P()
 
-	// 为每个服务生成代理代码
+	// 为每个服务生成代码
 	for _, service := range file.Services {
 		sTypeName := service.GoName + "Server"
-		g.P(fmt.Sprintf("type %s struct {", sTypeName))
-		g.P("    server.RpcServer")
-		g.P("}")
-		g.P()
-		g.P(fmt.Sprintf("func (s *%s) Setup() {}", sTypeName))
-		g.P()
-		for _, method := range service.Methods {
-			// 添加方法注释
-			if method.Comments.Leading.String() != "" {
-				g.P(formatComments(method.Comments.Leading.String()))
-			}
-			g.P(fmt.Sprintf("func (s *%s) RegisterHandler(ctx *context.Context, req *%s) (rsp *%s, err error) {", sTypeName, method.Input.GoIdent.GoName, method.Output.GoIdent.GoName))
-			g.P("    panic(\"not implemented\")")
-			g.P("}")
-			g.P()
-		}
+		generateServerInterface(service, sTypeName, g)
+		generateUnImplServer(service, sTypeName, g)
+		generateServerDesc(file, service, sTypeName, g)
+		generateServerHelpFunc(service, sTypeName, g)
 	}
+}
+
+func generateServerInterface(service *protogen.Service, sTypeName string, g *protogen.GeneratedFile) {
+	g.P("type ", sTypeName, " interface {")
+	for _, method := range service.Methods {
+		// 添加方法注释
+		if method.Comments.Leading.String() != "" {
+			g.P(formatComments(method.Comments.Leading.String()))
+		}
+		g.P(fmt.Sprintf("    %s(ctx *context.Context, req *%s) (rsp *%s, err error)", method.GoName, method.Input.GoIdent.GoName, method.Output.GoIdent.GoName))
+	}
+	g.P("}")
+	g.P()
+}
+
+func generateUnImplServer(service *protogen.Service, sTypeName string, g *protogen.GeneratedFile) {
+	structName := "UnImpl" + sTypeName
+	g.P("type ", structName, " struct {}")
+	for _, method := range service.Methods {
+		g.P(fmt.Sprintf("func (s %s) %s(ctx *context.Context, req *%s) (rsp *%s, err error) {panic(\"not implemented\")}", structName, method.GoName, method.Input.GoIdent.GoName, method.Output.GoIdent.GoName))
+		g.P()
+	}
+}
+
+func generateServerDesc(file *protogen.File, service *protogen.Service, sTypeName string, g *protogen.GeneratedFile) {
+	g.P(fmt.Sprintf("var %sDesc = server.Desc {", sTypeName))
+	g.P(fmt.Sprintf("    Package: \"%s\",", file.GoPackageName))
+	g.P("    ServiceMethods: map[string][]ServiceMethod{")
+	g.P(fmt.Sprintf("        \"%s\": {", service.GoName))
+	for _, method := range service.Methods {
+		g.P("            {")
+		g.P(fmt.Sprintf("                Name: \"%s\",", method.GoName))
+		g.P("                Options: nil,")
+		g.P("            },")
+	}
+	g.P("        },")
+	g.P("    },")
+	g.P("}")
+	g.P()
+}
+
+func generateServerHelpFunc(service *protogen.Service, sTypeName string, g *protogen.GeneratedFile) {
+	g.P(fmt.Sprintf("func Register%s(s *server.Server, i interface{}, option map[string]metadata.ProcessOption) error {", sTypeName))
+	g.P(fmt.Sprintf("    _ = i.(%s)", sTypeName))
+	g.P(fmt.Sprintf(`    return s.RegisterClass("%s", i, option)`, service.GoName))
+	g.P("}")
+	g.P()
 }
 
 func generateProxyCode(plugin *protogen.Plugin, file *protogen.File) {
