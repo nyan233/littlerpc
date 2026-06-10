@@ -3,7 +3,7 @@ package nameserver
 
 /*
    @Generator   : protoc-gen-go-lrpc
-   @CreateTime  : 2025-07-28 01:19:35.510424 +0800 CST
+   @CreateTime  : 2026-06-11 01:02:54.041899 +0800 CST
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
@@ -14,11 +14,11 @@ import (
 )
 
 var (
-	_ caller630a9b2f52f8458298da086c3a26ffa7 = new(client.Client)
+	_ caller2c713286565d4e71895755f751412cc1 = new(client.Client)
 	_ NameserverProxy                        = new(nameserverImpl)
 )
 
-type caller630a9b2f52f8458298da086c3a26ffa7 interface {
+type caller2c713286565d4e71895755f751412cc1 interface {
 	Request2(service string, opts []client.CallOption, reqCount int, args ...interface{}) error
 }
 
@@ -31,51 +31,51 @@ type NameserverProxy interface {
 }
 
 type nameserverImpl struct {
-	caller630a9b2f52f8458298da086c3a26ffa7
+	caller2c713286565d4e71895755f751412cc1
 }
 
-func NewNameserver(b caller630a9b2f52f8458298da086c3a26ffa7) NameserverProxy {
+func NewNameserver(b caller2c713286565d4e71895755f751412cc1) NameserverProxy {
 	proxy := new(nameserverImpl)
-	c, ok := b.(caller630a9b2f52f8458298da086c3a26ffa7)
+	c, ok := b.(caller2c713286565d4e71895755f751412cc1)
 	if !ok {
 		panic("the argument is not implemented caller")
 	}
-	proxy.caller630a9b2f52f8458298da086c3a26ffa7 = c
+	proxy.caller2c713286565d4e71895755f751412cc1 = c
 	return proxy
 }
 
 // 添加节点
-func (p nameserverImpl) AddNodeList(a0, a1 *AddNodeListReq, opts ...client.CallOption) (r0 *AddNodeListRsp, r1 error) {
+func (p nameserverImpl) AddNodeList(a0 *context.Context, a1 *AddNodeListReq, opts ...client.CallOption) (r0 *AddNodeListRsp, r1 error) {
 	r0 = new(AddNodeListRsp)
-	r1 = p.Request2("Nameserver.AddNodeList", opts, 2, a0, a1, &r0)
+	r1 = p.Request2("nameserver.AddNodeList", opts, 2, a0, a1, r0)
 	return
 }
 
 // 获取节点
-func (p nameserverImpl) GetNodeList(a0, a1 *GetNodeListReq, opts ...client.CallOption) (r0 *GetNodeListRsp, r1 error) {
+func (p nameserverImpl) GetNodeList(a0 *context.Context, a1 *GetNodeListReq, opts ...client.CallOption) (r0 *GetNodeListRsp, r1 error) {
 	r0 = new(GetNodeListRsp)
-	r1 = p.Request2("Nameserver.GetNodeList", opts, 2, a0, a1, &r0)
+	r1 = p.Request2("nameserver.GetNodeList", opts, 2, a0, a1, r0)
 	return
 }
 
 // 删除节点
-func (p nameserverImpl) DeleteNodeList(a0, a1 *DeleteNodeListReq, opts ...client.CallOption) (r0 *DeleteNodeListRsp, r1 error) {
+func (p nameserverImpl) DeleteNodeList(a0 *context.Context, a1 *DeleteNodeListReq, opts ...client.CallOption) (r0 *DeleteNodeListRsp, r1 error) {
 	r0 = new(DeleteNodeListRsp)
-	r1 = p.Request2("Nameserver.DeleteNodeList", opts, 2, a0, a1, &r0)
+	r1 = p.Request2("nameserver.DeleteNodeList", opts, 2, a0, a1, r0)
 	return
 }
 
 // 获取节点信息
 // 可以比较version来判断是否更新
-func (p nameserverImpl) GetNodeListInfo(a0, a1 *GetNodeListInfoReq, opts ...client.CallOption) (r0 *GetNodeListInfoRsp, r1 error) {
+func (p nameserverImpl) GetNodeListInfo(a0 *context.Context, a1 *GetNodeListInfoReq, opts ...client.CallOption) (r0 *GetNodeListInfoRsp, r1 error) {
 	r0 = new(GetNodeListInfoRsp)
-	r1 = p.Request2("Nameserver.GetNodeListInfo", opts, 2, a0, a1, &r0)
+	r1 = p.Request2("nameserver.GetNodeListInfo", opts, 2, a0, a1, r0)
 	return
 }
 
 // 获取所有的key
-func (p nameserverImpl) GetAllKey(a0, a1 *GetAllKeyReq, opts ...client.CallOption) (r0 *GetAllKeyRsp, r1 error) {
+func (p nameserverImpl) GetAllKey(a0 *context.Context, a1 *GetAllKeyReq, opts ...client.CallOption) (r0 *GetAllKeyRsp, r1 error) {
 	r0 = new(GetAllKeyRsp)
-	r1 = p.Request2("Nameserver.GetAllKey", opts, 2, a0, a1, &r0)
+	r1 = p.Request2("nameserver.GetAllKey", opts, 2, a0, a1, r0)
 	return
 }
