@@ -3,7 +3,7 @@ package nameserver
 
 /*
    @Generator   : protoc-gen-go-lrpc
-   @CreateTime  : 2026-06-11 01:02:54.041899 +0800 CST
+   @CreateTime  : 2026-06-11 01:37:05.348781 +0800 CST
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
@@ -14,11 +14,11 @@ import (
 )
 
 var (
-	_ caller2c713286565d4e71895755f751412cc1 = new(client.Client)
+	_ caller33342035c500446cbeb85424fb94c940 = new(client.Client)
 	_ NameserverProxy                        = new(nameserverImpl)
 )
 
-type caller2c713286565d4e71895755f751412cc1 interface {
+type caller33342035c500446cbeb85424fb94c940 interface {
 	Request2(service string, opts []client.CallOption, reqCount int, args ...interface{}) error
 }
 
@@ -31,16 +31,16 @@ type NameserverProxy interface {
 }
 
 type nameserverImpl struct {
-	caller2c713286565d4e71895755f751412cc1
+	caller33342035c500446cbeb85424fb94c940
 }
 
-func NewNameserver(b caller2c713286565d4e71895755f751412cc1) NameserverProxy {
+func NewNameserver(b caller33342035c500446cbeb85424fb94c940) NameserverProxy {
 	proxy := new(nameserverImpl)
-	c, ok := b.(caller2c713286565d4e71895755f751412cc1)
+	c, ok := b.(caller33342035c500446cbeb85424fb94c940)
 	if !ok {
 		panic("the argument is not implemented caller")
 	}
-	proxy.caller2c713286565d4e71895755f751412cc1 = c
+	proxy.caller33342035c500446cbeb85424fb94c940 = c
 	return proxy
 }
 

@@ -3,7 +3,7 @@ package nameserver
 
 /*
    @Generator   : protoc-gen-go-lrpc
-   @CreateTime  : 2026-06-11 01:02:54.042021 +0800 CST
+   @CreateTime  : 2026-06-11 01:37:05.349284 +0800 CST
    @Author      : NoAuthor
    @Comment     : code is auto generate do not edit
 */
@@ -80,5 +80,5 @@ var NameserverServerDesc = server.Desc{
 
 func RegisterNameserverServer(s *server.Server, i interface{}, option map[string]metadata.ProcessOption) error {
 	_ = i.(NameserverServer)
-	return s.RegisterClass("Nameserver", i, option)
+	return s.RegisterClass("nameserver", i, option)
 }
