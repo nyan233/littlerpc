@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"strings"
 	"time"
 
@@ -98,15 +99,51 @@ func generateUnImplServer(service *protogen.Service, sTypeName string, g *protog
 	}
 }
 
+type methodOption struct {
+	Name  string
+	Value string
+}
+
 func generateServerDesc(file *protogen.File, service *protogen.Service, sTypeName string, g *protogen.GeneratedFile) {
 	g.P(fmt.Sprintf("var %sDesc = server.Desc {", sTypeName))
 	g.P(fmt.Sprintf("    Package: \"%s\",", file.GoPackageName))
-	g.P("    ServiceMethods: map[string][]ServiceMethod{")
-	g.P(fmt.Sprintf("        \"%s\": {", service.GoName))
+	g.P("    ServiceMethods: map[string][]server.ServiceMethod{")
+	g.P(fmt.Sprintf("        \"%s\": {", service.Desc.Name()))
 	for _, method := range service.Methods {
 		g.P("            {")
 		g.P(fmt.Sprintf("                Name: \"%s\",", method.GoName))
-		g.P("                Options: nil,")
+		var methodOptionList = make([]methodOption, 0, 4)
+		// methodOptions, _ := method.Desc.Options().(*descriptorpb.MethodOptions)
+		//proto.RangeExtensions(method.Desc.Options(), func(extensionType protoreflect.ExtensionType, a any) bool {
+		//	return true
+		//})
+		method.Desc.Options().ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
+			if fd.Number() < 1000 {
+				return true
+			}
+			methodOptionList = append(methodOptionList, methodOption{
+				Name:  string(fd.Name()),
+				Value: fmt.Sprintf("%v", v.Interface()),
+			})
+			return true
+		})
+		//proto.RangeExtensions(method.Desc.Options(), func(extensionType protoreflect.ExtensionType, a any) bool {
+		//	name := extensionType.TypeDescriptor().Name()
+		//	methodOptions = append(methodOptions, methodOption{
+		//		Name:  string(name),
+		//		Value: fmt.Sprintf("%v", a),
+		//	})
+		//	return true
+		//})
+		if len(methodOptionList) == 0 {
+			g.P("                Options: nil,")
+		} else {
+			g.P("                Options: map[string]interface{}{")
+			for _, option := range methodOptionList {
+				g.P("                    \"%s\": %s,", option.Name, option.Value)
+			}
+			g.P("                },")
+		}
 		g.P("            },")
 	}
 	g.P("        },")
@@ -203,7 +240,7 @@ func generateProxyCode(plugin *protogen.Plugin, file *protogen.File) {
 			if method.Comments.Leading.String() != "" {
 				g.P(formatComments(method.Comments.Leading.String()))
 			}
-			g.P(generateMethodImpl(method, service.GoName, implStruct))
+			g.P(generateMethodImpl(method, string(service.Desc.Name()), implStruct))
 		}
 	}
 }
