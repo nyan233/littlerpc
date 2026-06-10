@@ -3,9 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"google.golang.org/protobuf/reflect/protoreflect"
 	"strings"
 	"time"
+
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/compiler/protogen"
@@ -155,7 +156,7 @@ func generateServerDesc(file *protogen.File, service *protogen.Service, sTypeNam
 func generateServerHelpFunc(service *protogen.Service, sTypeName string, g *protogen.GeneratedFile) {
 	g.P(fmt.Sprintf("func Register%s(s *server.Server, i interface{}, option map[string]metadata.ProcessOption) error {", sTypeName))
 	g.P(fmt.Sprintf("    _ = i.(%s)", sTypeName))
-	g.P(fmt.Sprintf(`    return s.RegisterClass("%s", i, option)`, service.GoName))
+	g.P(fmt.Sprintf(`    return s.RegisterClass("%s", i, option)`, service.Desc.Name()))
 	g.P("}")
 	g.P()
 }
