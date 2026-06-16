@@ -3,6 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
 	"github.com/nyan233/littlerpc/core/client"
 	context2 "github.com/nyan233/littlerpc/core/common/context"
 	"github.com/nyan233/littlerpc/core/common/logger"
@@ -13,14 +22,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zbh255/bilog"
-	"log"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-	"sync"
-	"sync/atomic"
-	"testing"
-	"time"
 )
 
 type User struct {
@@ -324,4 +325,31 @@ func TestBalance(t *testing.T) {
 	require.NoError(t, p1.Add(context2.Background(), 1024))
 	require.NoError(t, p2.Add(context2.Background(), 1023))
 	require.Equal(t, ht.count, int64(1024+1023))
+}
+
+func TestUnixSocket(t *testing.T) {
+	os.Remove("/tmp/lrpc.sock")
+	s := server2.New(
+		server2.WithNetwork("std_unix"),
+		server2.WithAddressServer("/tmp/lrpc.sock"),
+	)
+	err := s.RegisterClass("HelloTest", new(HelloTest), nil)
+	require.NoError(t, err)
+	go func() {
+		err2 := s.Service()
+		require.NoError(t, err2)
+	}()
+	time.Sleep(time.Second * 5)
+	c, err := client.New(
+		client.WithNetWork("std_unix"),
+		client.WithCodec("json"),
+		client.WithNsStorage(ns.NewFixedStorage([]string{"/tmp/lrpc.sock"})),
+	)
+	require.NoError(t, err)
+	cp := NewHelloTest(c)
+	err = cp.Add(context2.Background(), 1024)
+	require.NoError(t, err)
+	count, _, err := cp.GetCount(context2.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1024, int(count))
 }

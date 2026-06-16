@@ -2,32 +2,38 @@ package transport
 
 import (
 	"errors"
-	"github.com/lesismal/llib/std/crypto/tls"
-	"github.com/lesismal/nbio"
-	ntls "github.com/lesismal/nbio/extension/tls"
+	"fmt"
 	"net"
 	"runtime"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/lesismal/llib/std/crypto/tls"
+	"github.com/lesismal/nbio"
+	ntls "github.com/lesismal/nbio/extension/tls"
 )
 
-type NBioTcpEngine struct {
-	started int32
-	closed  int32
-	tlsC    *tls.Config
-	server  *nbio.Engine
-	onRead  func(conn ConnAdapter)
-	onMsg   func(conn ConnAdapter, bytes []byte)
-	onClose func(conn ConnAdapter, err error)
-	onOpen  func(conn ConnAdapter)
+type NBioBaseNetEngine struct {
+	started      int32
+	closed       int32
+	tlsC         *tls.Config
+	server       *nbio.Engine
+	engineConfig *nbio.Config
+	onRead       func(conn ConnAdapter)
+	onMsg        func(conn ConnAdapter, bytes []byte)
+	onClose      func(conn ConnAdapter, err error)
+	onOpen       func(conn ConnAdapter)
 }
 
-func NewNBioTcpClient() ClientBuilder {
-	return &NBioTcpEngine{
-		server: nbio.NewEngine(nbio.Config{
-			Name:    "LittleRpc-TCP-Client",
-			NPoller: runtime.NumCPU(),
-		}),
+func NewNBioBaseClient(network string) ClientBuilder {
+	config := nbio.Config{
+		Network: network,
+		Name:    fmt.Sprintf("littleRpc::%s::client", network),
+		NPoller: runtime.NumCPU(),
+	}
+	return &NBioBaseNetEngine{
+		server:       nbio.NewEngine(config),
+		engineConfig: &config,
 		onOpen: func(conn ConnAdapter) {
 			return
 		},
@@ -40,16 +46,18 @@ func NewNBioTcpClient() ClientBuilder {
 	}
 }
 
-func NewNBioTcpServer(config NetworkServerConfig) ServerBuilder {
-	nConfig := nbio.Config{}
-	nConfig.Name = "LittleRpc-Server-Tcp"
-	nConfig.Network = "tcp"
-	nConfig.ReadBufferSize = ReadBufferSize
-	nConfig.MaxWriteBufferSize = MaxWriteBufferSize
-	nConfig.Addrs = config.Addrs
+func NewNBioBaseServer(network string, config NetworkServerConfig) ServerBuilder {
+	nConfig := nbio.Config{
+		Name:               fmt.Sprintf("littleRpc::%s::server", network),
+		Network:            network,
+		ReadBufferSize:     ReadBufferSize,
+		MaxWriteBufferSize: MaxWriteBufferSize,
+		Addrs:              config.Addrs,
+	}
 	eng := nbio.NewEngine(nConfig)
-	server := &NBioTcpEngine{}
+	server := &NBioBaseNetEngine{}
 	server.server = eng
+	server.engineConfig = &nConfig
 	// set default function
 	server.onMsg = func(conn ConnAdapter, bytes []byte) {
 		return
@@ -63,8 +71,8 @@ func NewNBioTcpServer(config NetworkServerConfig) ServerBuilder {
 	return server
 }
 
-func (engine *NBioTcpEngine) NewConn(config NetworkClientConfig) (ConnAdapter, error) {
-	netConn, err := net.Dial("tcp", config.ServerAddr)
+func (engine *NBioBaseNetEngine) NewConn(config NetworkClientConfig) (ConnAdapter, error) {
+	netConn, err := net.Dial(engine.engineConfig.Network, config.ServerAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -72,38 +80,38 @@ func (engine *NBioTcpEngine) NewConn(config NetworkClientConfig) (ConnAdapter, e
 	if err != nil {
 		return nil, err
 	}
-	return (*nTcpConn)(unsafe.Pointer(convConn)), nil
+	return (*nConnWrap)(unsafe.Pointer(convConn)), nil
 }
 
-func (engine *NBioTcpEngine) EventDriveInter() EventDriveInter {
+func (engine *NBioBaseNetEngine) EventDriveInter() EventDriveInter {
 	return engine
 }
 
-func (engine *NBioTcpEngine) Client() ClientEngine {
+func (engine *NBioBaseNetEngine) Client() ClientEngine {
 	return engine
 }
 
-func (engine *NBioTcpEngine) Server() ServerEngine {
+func (engine *NBioBaseNetEngine) Server() ServerEngine {
 	return engine
 }
 
-func (engine *NBioTcpEngine) OnRead(f func(conn ConnAdapter)) {
+func (engine *NBioBaseNetEngine) OnRead(f func(conn ConnAdapter)) {
 	engine.onRead = f
 }
 
-func (engine *NBioTcpEngine) OnMessage(f func(conn ConnAdapter, data []byte)) {
+func (engine *NBioBaseNetEngine) OnMessage(f func(conn ConnAdapter, data []byte)) {
 	engine.onMsg = f
 }
 
-func (engine *NBioTcpEngine) OnOpen(f func(conn ConnAdapter)) {
+func (engine *NBioBaseNetEngine) OnOpen(f func(conn ConnAdapter)) {
 	engine.onOpen = f
 }
 
-func (engine *NBioTcpEngine) OnClose(f func(conn ConnAdapter, err error)) {
+func (engine *NBioBaseNetEngine) OnClose(f func(conn ConnAdapter, err error)) {
 	engine.onClose = f
 }
 
-func (engine *NBioTcpEngine) Start() error {
+func (engine *NBioBaseNetEngine) Start() error {
 	if !atomic.CompareAndSwapInt32(&engine.started, 0, 1) {
 		return errors.New("wsEngine already started")
 	}
@@ -112,41 +120,41 @@ func (engine *NBioTcpEngine) Start() error {
 	return server.Start()
 }
 
-func (engine *NBioTcpEngine) bind() {
+func (engine *NBioBaseNetEngine) bind() {
 	server := engine.server
 	if engine.tlsC == nil {
 		server.OnOpen(func(c *nbio.Conn) {
-			engine.onOpen((*nTcpConn)(unsafe.Pointer(c)))
+			engine.onOpen(&nConnWrap{c})
 		})
 		if engine.onRead == nil {
 			server.OnData(func(c *nbio.Conn, data []byte) {
-				engine.onMsg((*nTcpConn)(unsafe.Pointer(c)), data)
+				engine.onMsg(&nConnWrap{c}, data)
 			})
 		} else {
 			server.OnRead(func(c *nbio.Conn) {
-				engine.onRead((*nTcpConn)(unsafe.Pointer(c)))
+				engine.onRead(&nConnWrap{c})
 			})
 		}
 		server.OnClose(func(c *nbio.Conn, err error) {
-			engine.onClose((*nTcpConn)(unsafe.Pointer(c)), err)
+			engine.onClose(&nConnWrap{c}, err)
 		})
 	} else {
 		engine.tlsC.BuildNameToCertificate()
 		server.OnClose(ntls.WrapClose(func(c *nbio.Conn, tlsConn *ntls.Conn, err error) {
-			engine.onClose(nil, err)
+			engine.onClose(&nTlsConnWrap{tlsConn}, err)
 		}))
 		server.OnOpen(ntls.WrapOpen(engine.tlsC, false,
 			func(c *nbio.Conn, tlsConn *ntls.Conn) {
-				engine.onOpen(nil)
+				engine.onOpen(&nTlsConnWrap{tlsConn})
 			}),
 		)
 		server.OnData(ntls.WrapData(func(c *nbio.Conn, tlsConn *ntls.Conn, data []byte) {
-			engine.onMsg(nil, data)
+			engine.onMsg(&nTlsConnWrap{tlsConn}, data)
 		}))
 	}
 }
 
-func (engine *NBioTcpEngine) Stop() error {
+func (engine *NBioBaseNetEngine) Stop() error {
 	if !atomic.CompareAndSwapInt32(&engine.closed, 0, 1) {
 		return errors.New("wsEngine already closed")
 	}
@@ -154,14 +162,26 @@ func (engine *NBioTcpEngine) Stop() error {
 	return nil
 }
 
-type nTcpConn struct {
-	nbio.Conn
+type nConnWrap struct {
+	*nbio.Conn
 }
 
-func (n *nTcpConn) SetSource(s interface{}) {
+func (n *nConnWrap) SetSource(s interface{}) {
 	n.SetSession(s)
 }
 
-func (n *nTcpConn) Source() interface{} {
+func (n *nConnWrap) Source() interface{} {
+	return n.Session()
+}
+
+type nTlsConnWrap struct {
+	*ntls.Conn
+}
+
+func (n *nTlsConnWrap) SetSource(s interface{}) {
+	n.SetSession(s)
+}
+
+func (n *nTlsConnWrap) Source() interface{} {
 	return n.Session()
 }

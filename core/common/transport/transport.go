@@ -1,13 +1,12 @@
 package transport
 
 import (
-	"github.com/nyan233/littlerpc/core/protocol/message/mux"
 	"net"
 )
 
 const (
-	ReadBufferSize     = mux.MaxBlockSize
-	MaxWriteBufferSize = 1024 * 1024
+	ReadBufferSize     = 1024 * 16        // 16KB
+	MaxWriteBufferSize = 16 * 1024 * 1024 // 16MB
 )
 
 type ServerEngine interface {

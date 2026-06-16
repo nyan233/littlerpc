@@ -30,10 +30,42 @@ func (m *manager) GetClientEngine(scheme string) NewClientBuilder {
 }
 
 func init() {
-	Manager.RegisterServerEngine("nbio_tcp", NewNBioTcpServer)
-	Manager.RegisterClientEngine("nbio_tcp", NewNBioTcpClient)
+	Manager.RegisterServerEngine("nbio_tcp", func(config NetworkServerConfig) ServerBuilder {
+		return NewNBioBaseServer("tcp", config)
+	})
+	Manager.RegisterClientEngine("nbio_tcp", func() ClientBuilder {
+		return NewNBioBaseClient("tcp")
+	})
+	Manager.RegisterServerEngine("nbio_udp", func(config NetworkServerConfig) ServerBuilder {
+		return NewNBioBaseServer("udp", config)
+	})
+	Manager.RegisterClientEngine("nbio_udp", func() ClientBuilder {
+		return NewNBioBaseClient("udp")
+	})
+	Manager.RegisterServerEngine("nbio_unix", func(config NetworkServerConfig) ServerBuilder {
+		return NewNBioBaseServer("unix", config)
+	})
+	Manager.RegisterClientEngine("nbio_unix", func() ClientBuilder {
+		return NewNBioBaseClient("unix")
+	})
 	Manager.RegisterServerEngine("nbio_ws", NewNBioWebsocketServer)
 	Manager.RegisterClientEngine("nbio_ws", NewNBioWebsocketClient)
-	Manager.RegisterServerEngine("std_tcp", NewStdTcpServer)
-	Manager.RegisterClientEngine("std_tcp", NewStdTcpClient)
+	Manager.RegisterServerEngine("std_tcp", func(config NetworkServerConfig) ServerBuilder {
+		return NewStdNetServer("tcp", config)
+	})
+	Manager.RegisterClientEngine("std_tcp", func() ClientBuilder {
+		return NewStdNetClient("tcp")
+	})
+	Manager.RegisterServerEngine("std_udp", func(config NetworkServerConfig) ServerBuilder {
+		return NewStdNetServer("udp", config)
+	})
+	Manager.RegisterClientEngine("std_udp", func() ClientBuilder {
+		return NewStdNetClient("udp")
+	})
+	Manager.RegisterServerEngine("std_unix", func(config NetworkServerConfig) ServerBuilder {
+		return NewStdNetServer("unix", config)
+	})
+	Manager.RegisterClientEngine("std_unix", func() ClientBuilder {
+		return NewStdNetClient("unix")
+	})
 }

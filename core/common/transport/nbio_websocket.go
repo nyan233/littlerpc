@@ -2,13 +2,13 @@ package transport
 
 import (
 	"errors"
-	"github.com/lesismal/nbio/nbhttp"
-	"github.com/lesismal/nbio/nbhttp/websocket"
 	"net/http"
 	"net/url"
 	"sync/atomic"
 	"time"
-	"unsafe"
+
+	"github.com/lesismal/nbio/nbhttp"
+	"github.com/lesismal/nbio/nbhttp/websocket"
 )
 
 const (
@@ -59,7 +59,7 @@ func NewNBioWebsocketServer(config NetworkServerConfig) ServerBuilder {
 	server := &NBioWebSocketEngine{wsEngine: nbhttp.NewEngine(nConfig)}
 	// set default function
 	server.onErr = func(err error) {
-		panic(interface{}(err))
+		panic(err)
 	}
 	server.onOpen = func(conn ConnAdapter) {
 		return
@@ -79,13 +79,16 @@ func (engine *NBioWebSocketEngine) NewConn(config NetworkClientConfig) (ConnAdap
 		Upgrader: func() *websocket.Upgrader {
 			u := websocket.NewUpgrader()
 			u.OnMessage(func(conn *websocket.Conn, messageType websocket.MessageType, bytes []byte) {
-				engine.onMsg((*WsConnAdapter)(unsafe.Pointer(conn)), bytes)
+				// engine.onMsg((*WsConnAdapter)(unsafe.Pointer(conn)), bytes)
+				engine.onMsg(&WsConnAdapter{Conn: conn}, bytes)
 			})
 			u.OnOpen(func(conn *websocket.Conn) {
-				engine.onOpen((*WsConnAdapter)(unsafe.Pointer(conn)))
+				// engine.onOpen((*WsConnAdapter)(unsafe.Pointer(conn)))
+				engine.onOpen(&WsConnAdapter{Conn: conn})
 			})
 			u.OnClose(func(conn *websocket.Conn, err error) {
-				engine.onClose((*WsConnAdapter)(unsafe.Pointer(conn)), err)
+				// engine.onClose((*WsConnAdapter)(unsafe.Pointer(conn)), err)
+				engine.onClose(&WsConnAdapter{Conn: conn}, err)
 			})
 			return u
 		}(),
@@ -103,7 +106,7 @@ func (engine *NBioWebSocketEngine) NewConn(config NetworkClientConfig) (ConnAdap
 	if err != nil {
 		return nil, err
 	}
-	return (*WsConnAdapter)(unsafe.Pointer(conn)), nil
+	return &WsConnAdapter{Conn: conn}, nil
 }
 
 func (engine *NBioWebSocketEngine) Server() ServerEngine {
@@ -142,13 +145,15 @@ func (engine *NBioWebSocketEngine) Start() error {
 	mux.HandleFunc(wsUrl, func(writer http.ResponseWriter, request *http.Request) {
 		ws := websocket.NewUpgrader()
 		ws.OnMessage(func(conn *websocket.Conn, messageType websocket.MessageType, bytes []byte) {
-			engine.onMsg((*WsConnAdapter)(unsafe.Pointer(conn)), bytes)
+			// engine.onMsg((*WsConnAdapter)(unsafe.Pointer(conn)), bytes)
+			engine.onMsg(&WsConnAdapter{Conn: conn}, bytes)
 		})
 		ws.OnClose(func(conn *websocket.Conn, err error) {
-			engine.onClose((*WsConnAdapter)(unsafe.Pointer(conn)), err)
+			// engine.onClose((*WsConnAdapter)(unsafe.Pointer(conn)), err)
+			engine.onClose(&WsConnAdapter{Conn: conn}, err)
 		})
 		ws.OnOpen(func(conn *websocket.Conn) {
-			engine.onOpen((*WsConnAdapter)(unsafe.Pointer(conn)))
+			engine.onOpen(&WsConnAdapter{Conn: conn})
 		})
 		// 从Http升级到WebSocket
 		conn, err := ws.Upgrade(writer, request, nil)
@@ -171,7 +176,7 @@ func (engine *NBioWebSocketEngine) Stop() error {
 }
 
 type WsConnAdapter struct {
-	websocket.Conn
+	*websocket.Conn
 }
 
 func (w *WsConnAdapter) Write(b []byte) (n int, err error) {

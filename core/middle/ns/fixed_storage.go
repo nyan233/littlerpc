@@ -14,19 +14,24 @@ func NewFixedStorage(addrList []string) Storage {
 	s := new(fixedStorage)
 	for _, addr := range addrList {
 		host, port, err := net.SplitHostPort(addr)
-		if err != nil {
-			panic(err)
+		if err == nil {
+			portUint, err := strconv.ParseUint(port, 10, 64)
+			if err != nil {
+				panic(err)
+			}
+			s.nodeList = append(s.nodeList, Node{
+				Ip:       net.ParseIP(host),
+				Port:     uint32(portUint),
+				Addr:     addr,
+				Priority: 1,
+			})
+		} else {
+			// 可能是unix sock地址
+			s.nodeList = append(s.nodeList, Node{
+				Addr:     addr,
+				Priority: 1,
+			})
 		}
-		portUint, err := strconv.ParseUint(port, 10, 64)
-		if err != nil {
-			panic(err)
-		}
-		s.nodeList = append(s.nodeList, Node{
-			Ip:       net.ParseIP(host),
-			Port:     uint32(portUint),
-			Addr:     addr,
-			Priority: 1,
-		})
 	}
 	return s
 }
