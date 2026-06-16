@@ -31,7 +31,6 @@ func NewNBioWebsocketClient() ClientBuilder {
 	return &NBioWebSocketEngine{
 		wsEngine: nbhttp.NewEngine(nbhttp.Config{
 			NPoller: 1,
-			NParser: 1,
 		}),
 		onMsg: func(conn ConnAdapter, bytes []byte) {
 			return
@@ -160,8 +159,7 @@ func (engine *NBioWebSocketEngine) Start() error {
 		if err != nil {
 			engine.onErr(err)
 		}
-		wsConn := conn.(*websocket.Conn)
-		_ = wsConn
+		_ = conn
 	})
 	engine.wsEngine.Handler = mux
 	return engine.wsEngine.Start()

@@ -6,7 +6,6 @@ import (
 	"net"
 	"runtime"
 	"sync/atomic"
-	"unsafe"
 
 	"github.com/lesismal/llib/std/crypto/tls"
 	"github.com/lesismal/nbio"
@@ -80,7 +79,7 @@ func (engine *NBioBaseNetEngine) NewConn(config NetworkClientConfig) (ConnAdapte
 	if err != nil {
 		return nil, err
 	}
-	return (*nConnWrap)(unsafe.Pointer(convConn)), nil
+	return &nConnWrap{convConn}, nil
 }
 
 func (engine *NBioBaseNetEngine) EventDriveInter() EventDriveInter {

@@ -330,7 +330,7 @@ func TestBalance(t *testing.T) {
 func TestUnixSocket(t *testing.T) {
 	os.Remove("/tmp/lrpc.sock")
 	s := server2.New(
-		server2.WithNetwork("std_unix"),
+		server2.WithNetwork("nbio_unix"),
 		server2.WithAddressServer("/tmp/lrpc.sock"),
 	)
 	err := s.RegisterClass("HelloTest", new(HelloTest), nil)
@@ -341,7 +341,7 @@ func TestUnixSocket(t *testing.T) {
 	}()
 	time.Sleep(time.Second * 5)
 	c, err := client.New(
-		client.WithNetWork("std_unix"),
+		client.WithNetWork("nbio_unix"),
 		client.WithCodec("json"),
 		client.WithNsStorage(ns.NewFixedStorage([]string{"/tmp/lrpc.sock"})),
 	)
